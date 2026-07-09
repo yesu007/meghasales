@@ -159,14 +159,14 @@ export default function LeadsPage() {
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input type="text" placeholder="Search by name, company, email, phone..." value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
+              className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
             {searchInput && <button onClick={() => { setSearchInput(''); setSearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><XMarkIcon className="h-4 w-4" /></button>}
           </div>
-          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500">
+          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
             <option value="">All Statuses</option>
             {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
-          <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500">
+          <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
             <option value="">All Sources</option>
             {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
@@ -179,7 +179,7 @@ export default function LeadsPage() {
           <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Business Vertical</label>
-              <select value={verticalFilter} onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+              <select value={verticalFilter} onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
                 <option value="">All</option>
                 {VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
               </select>
@@ -266,49 +266,49 @@ export default function LeadsPage() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="col-span-2">
                           <label className="block text-sm font-medium text-slate-700 mb-1">Company Name *</label>
-                          <input required value={form.companyName} onChange={(e) => setForm(f => ({...f, companyName: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500" />
+                          <input required value={form.companyName} onChange={(e) => setForm(f => ({...f, companyName: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person *</label>
-                          <input required value={form.contactPerson} onChange={(e) => setForm(f => ({...f, contactPerson: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500" />
+                          <input required value={form.contactPerson} onChange={(e) => setForm(f => ({...f, contactPerson: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Mobile *</label>
-                          <input required value={form.mobile} onChange={(e) => setForm(f => ({...f, mobile: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500" />
+                          <input required value={form.mobile} onChange={(e) => setForm(f => ({...f, mobile: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                          <input type="email" value={form.email} onChange={(e) => setForm(f => ({...f, email: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500" />
+                          <input type="email" value={form.email} onChange={(e) => setForm(f => ({...f, email: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Lead Source *</label>
-                          <select required value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500">
+                          <select required value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
                             <option value="">Select</option>
                             {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                           </select>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
-                          <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500">
+                          <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
                             <option value="">Select</option>
                             {VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
                           </select>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Country</label>
-                          <input value={form.country} onChange={(e) => setForm(f => ({...f, country: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500" />
+                          <input value={form.country} onChange={(e) => setForm(f => ({...f, country: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">State</label>
-                          <input value={form.state} onChange={(e) => setForm(f => ({...f, state: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500" />
+                          <input value={form.state} onChange={(e) => setForm(f => ({...f, state: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
-                          <input value={form.city} onChange={(e) => setForm(f => ({...f, city: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500" />
+                          <input value={form.city} onChange={(e) => setForm(f => ({...f, city: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                         </div>
                         <div className="col-span-2">
                           <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-                          <textarea rows={3} value={form.notes} onChange={(e) => setForm(f => ({...f, notes: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500" />
+                          <textarea rows={3} value={form.notes} onChange={(e) => setForm(f => ({...f, notes: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                         </div>
                       </div>
                       <div className="flex justify-end gap-3 pt-4 border-t">
