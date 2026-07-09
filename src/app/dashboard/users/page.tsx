@@ -1,10 +1,389 @@
 'use client';
 
+import { useState, useEffect, Fragment } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Dialog, Transition } from '@headlessui/react';
+import {
+  PlusIcon,
+  MagnifyingGlassIcon,
+  XMarkIcon,
+  InboxIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
+  ArrowsUpDownIcon,
+} from '@heroicons/react/24/outline';
+import toast from 'react-hot-toast';
+import dayjs from 'dayjs';
+
+const ROLES = [
+  { id: 1, name: 'ADMIN', label: 'Admin' },
+  { id: 2, name: 'SALES_EXECUTIVE', label: 'Sales Executive' },
+  { id: 3, name: 'PRESALES', label: 'Pre-Sales' },
+  { id: 4, name: 'IMPLEMENTATION', label: 'Implementation' },
+  { id: 5, name: 'SUPPORT', label: 'Support' },
+];
+
+interface User {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  phone: string | null;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  roleId: number;
+  roleName: string;
+}
+
+async function fetchUsers(params: Record<string, string>) {
+  const query = new URLSearchParams(params).toString();
+  const res = await fetch(`/api/users?${query}`);
+  if (!res.ok) throw new Error('Failed to fetch users');
+  return res.json();
+}
+
 export default function UsersPage() {
+  const queryClient = useQueryClient();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [activeFilter, setActiveFilter] = useState('');
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortDir, setSortDir] = useState('desc');
+  const [page, setPage] = useState(0);
+  const size = 10;
+
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setPage(0); }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const params: Record<string, string> = { page: String(page), size: String(size), sortBy, sortDir };
+  if (search) params.search = search;
+  if (roleFilter) params.roleId = roleFilter;
+  if (activeFilter) params.isActive = activeFilter;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['users', params],
+    queryFn: () => fetchUsers(params),
+    placeholderData: (prev: any) => prev,
+  });
+
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    password: '',
+    roleId: '',
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof form) => {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to create user');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User created successfully!');
+      setForm({ firstName: '', lastName: '', email: '', phone: '', password: '', roleId: '' });
+      setDrawerOpen(false);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const toggleActive = async (id: number, isActive: boolean) => {
+    await fetch(`/api/users/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: !isActive }),
+    });
+    queryClient.invalidateQueries({ queryKey: ['users'] });
+    toast.success(`User ${!isActive ? 'activated' : 'deactivated'}`);
+  };
+
+  const handleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+    setPage(0);
+  };
+
+  const users: User[] = data?.content || [];
+  const totalElements = data?.totalElements || 0;
+  const totalPages = data?.totalPages || 0;
+
+  const SortIcon = ({ col }: { col: string }) => {
+    if (sortBy !== col) return <ArrowsUpDownIcon className="h-3 w-3 text-slate-300" />;
+    return sortDir === 'asc' ? <ChevronUpIcon className="h-3 w-3 text-amber-600" /> : <ChevronDownIcon className="h-3 w-3 text-amber-600" />;
+  };
+
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-slate-800">Users</h1>
-      <p className="text-slate-500 mt-1">User management and role assignments — coming soon</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Users</h1>
+          <p className="text-slate-500 mt-1">Manage user accounts and access</p>
+        </div>
+        <button onClick={() => setDrawerOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+          <PlusIcon className="h-4 w-4" /> Add User
+        </button>
+      </div>
+
+      {/* Search & Filters */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by name, email, phone..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            />
+            {searchInput && (
+              <button onClick={() => { setSearchInput(''); setSearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <select
+            value={roleFilter}
+            onChange={(e) => { setRoleFilter(e.target.value); setPage(0); }}
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+          >
+            <option value="">All Roles</option>
+            {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+          <select
+            value={activeFilter}
+            onChange={(e) => { setActiveFilter(e.target.value); setPage(0); }}
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+          >
+            <option value="">All Status</option>
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+          {(searchInput || roleFilter || activeFilter) && (
+            <button onClick={() => { setSearchInput(''); setSearch(''); setRoleFilter(''); setActiveFilter(''); setPage(0); }} className="text-sm text-slate-500 hover:text-red-500">
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        {isLoading ? (
+          <div className="text-center py-16">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" />
+            <p className="mt-4 text-sm text-slate-500">Loading...</p>
+          </div>
+        ) : users.length === 0 ? (
+          <div className="text-center py-16">
+            <InboxIcon className="h-12 w-12 mx-auto text-slate-300" />
+            <p className="mt-4 text-lg font-medium text-slate-600">No users found</p>
+            <p className="text-sm text-slate-400 mt-1">Add a user to get started</p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left">
+                      <button onClick={() => handleSort('firstName')} className="flex items-center gap-1 font-semibold text-slate-700">
+                        Name <SortIcon col="firstName" />
+                      </button>
+                    </th>
+                    <th className="px-4 py-3 text-left">
+                      <button onClick={() => handleSort('email')} className="flex items-center gap-1 font-semibold text-slate-700">
+                        Email <SortIcon col="email" />
+                      </button>
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden md:table-cell">Phone</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Role</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
+                    <th className="px-4 py-3 text-left hidden lg:table-cell">
+                      <button onClick={() => handleSort('lastLoginAt')} className="flex items-center gap-1 font-semibold text-slate-700">
+                        Last Login <SortIcon col="lastLoginAt" />
+                      </button>
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden lg:table-cell">
+                      <button onClick={() => handleSort('createdAt')} className="flex items-center gap-1 font-semibold text-slate-700">
+                        Created <SortIcon col="createdAt" />
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {users.map((user) => (
+                    <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-sm font-bold">
+                            {user.firstName[0]}{user.lastName[0]}
+                          </div>
+                          <span className="font-medium text-slate-800">{user.fullName}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{user.email}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{user.phone || '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                          {user.roleName}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => toggleActive(user.id, user.isActive)}
+                          className={`px-2 py-0.5 rounded text-xs font-medium ${user.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+                        >
+                          {user.isActive ? 'Active' : 'Inactive'}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">
+                        {user.lastLoginAt ? dayjs(user.lastLoginAt).format('DD MMM, h:mm A') : 'Never'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">
+                        {dayjs(user.createdAt).format('DD MMM YYYY')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+              <p className="text-sm text-slate-500">
+                Showing {page * size + 1}–{Math.min((page + 1) * size, totalElements)} of {totalElements}
+              </p>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40">
+                  <ChevronLeftIcon className="h-4 w-4 text-slate-600" />
+                </button>
+                <span className="text-sm font-medium text-slate-700">{page + 1} / {totalPages || 1}</span>
+                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40">
+                  <ChevronRightIcon className="h-4 w-4 text-slate-600" />
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Create User Drawer */}
+      <Transition appear show={drawerOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setDrawerOpen(false)}>
+          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <div className="fixed inset-0 bg-black/40" />
+          </Transition.Child>
+          <div className="fixed inset-0 overflow-hidden">
+            <div className="fixed inset-y-0 right-0 flex max-w-full pl-10">
+              <Transition.Child as={Fragment} enter="transform transition ease-in-out duration-300" enterFrom="translate-x-full" enterTo="translate-x-0" leave="transform transition ease-in-out duration-200" leaveFrom="translate-x-0" leaveTo="translate-x-full">
+                <Dialog.Panel className="w-screen max-w-lg">
+                  <div className="flex h-full flex-col bg-white shadow-xl overflow-y-auto">
+                    <div className="flex items-center justify-between px-6 py-4 border-b">
+                      <Dialog.Title className="text-lg font-semibold text-slate-800">Add New User</Dialog.Title>
+                      <button onClick={() => setDrawerOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded">
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(form); }} className="flex-1 px-6 py-4 space-y-4">
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">First Name *</label>
+                            <input
+                              required
+                              value={form.firstName}
+                              onChange={(e) => setForm(f => ({ ...f, firstName: e.target.value }))}
+                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Last Name *</label>
+                            <input
+                              required
+                              value={form.lastName}
+                              onChange={(e) => setForm(f => ({ ...f, lastName: e.target.value }))}
+                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
+                          <input
+                            required
+                            type="email"
+                            value={form.email}
+                            onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                          <input
+                            value={form.phone}
+                            onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Password *</label>
+                          <input
+                            required
+                            type="password"
+                            value={form.password}
+                            onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                            placeholder="Min 8 characters"
+                            minLength={8}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Role *</label>
+                          <select
+                            required
+                            value={form.roleId}
+                            onChange={(e) => setForm(f => ({ ...f, roleId: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                          >
+                            <option value="">Select role</option>
+                            {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-3 pt-4 border-t">
+                        <button type="button" onClick={() => setDrawerOpen(false)} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">
+                          Cancel
+                        </button>
+                        <button type="submit" disabled={createMutation.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                          {createMutation.isPending ? 'Creating...' : 'Create User'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
+          </div>
+        </Dialog>
+      </Transition>
     </div>
   );
 }
