@@ -51,8 +51,14 @@ interface Lead {
   mobile: string | null;
   status: string;
   leadSource: string;
+  assignedBaId: number | null;
   assignedBaName: string | null;
   createdAt: string;
+}
+
+interface UserOption {
+  id: number;
+  fullName: string;
 }
 
 async function fetchLeads(params: Record<string, string>) {
@@ -60,6 +66,13 @@ async function fetchLeads(params: Record<string, string>) {
   const res = await fetch(`/api/leads?${query}`);
   if (!res.ok) throw new Error('Failed to fetch leads');
   return res.json();
+}
+
+async function fetchUsers(): Promise<UserOption[]> {
+  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
 }
 
 export default function LeadsPage() {
@@ -97,6 +110,12 @@ export default function LeadsPage() {
     placeholderData: (prev: any) => prev,
   });
 
+  // Fetch users for BA assignment
+  const { data: users = [] } = useQuery<UserOption[]>({
+    queryKey: ['users-for-ba'],
+    queryFn: fetchUsers,
+  });
+
   // Create lead form
   const [form, setForm] = useState({ companyName: '', contactPerson: '', mobile: '', email: '', leadSource: '', businessVerticals: '', country: '', state: '', city: '', notes: '' });
 
@@ -119,6 +138,12 @@ export default function LeadsPage() {
     await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
     queryClient.invalidateQueries({ queryKey: ['leads'] });
     toast.success('Status updated');
+  };
+
+  const assignBa = async (id: number, assignedBaId: string) => {
+    await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedBaId: assignedBaId || null }) });
+    queryClient.invalidateQueries({ queryKey: ['leads'] });
+    toast.success('BA assigned');
   };
 
   const handleSort = (col: string) => {
@@ -228,7 +253,16 @@ export default function LeadsPage() {
                           {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{lead.assignedBaName || '—'}</td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <select
+                          value={lead.assignedBaId || ''}
+                          onChange={(e) => assignBa(lead.id, e.target.value)}
+                          className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="">Unassigned</option>
+                          {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                        </select>
+                      </td>
                       <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{dayjs(lead.createdAt).format('DD MMM YYYY')}</td>
                     </tr>
                   ))}

@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
       mobile: lead.mobile,
       status: lead.status,
       leadSource: lead.leadSource,
+      assignedBaId: lead.assignedBaId,
       assignedBaName: lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : null,
       createdAt: lead.createdAt,
       updatedAt: lead.updatedAt,

@@ -33,6 +33,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.email !== undefined && { email: body.email }),
         ...(body.leadSource && { leadSource: body.leadSource }),
         ...(body.status && { status: body.status }),
+        ...(body.assignedBaId !== undefined && { assignedBaId: body.assignedBaId ? parseInt(body.assignedBaId) : null }),
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.city !== undefined && { city: body.city }),
         ...(body.state !== undefined && { state: body.state }),
