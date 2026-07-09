@@ -1,0 +1,407 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// USERS & ACCESS CONTROL
+// ============================================================
+
+model Role {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  description String?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          Int              @id @default(autoincrement())
+  name        String           @unique
+  description String?
+  module      String
+  createdAt   DateTime         @default(now()) @map("created_at")
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       Int        @map("role_id")
+  permissionId Int        @map("permission_id")
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id          Int       @id @default(autoincrement())
+  email       String    @unique
+  password    String
+  firstName   String    @map("first_name")
+  lastName    String    @map("last_name")
+  phone       String?
+  avatarUrl   String?   @map("avatar_url")
+  roleId      Int       @map("role_id")
+  isActive    Boolean   @default(true) @map("is_active")
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  role        Role      @relation(fields: [roleId], references: [id])
+
+  // Relations
+  assignedLeads     Lead[]          @relation("AssignedBA")
+  createdLeads      Lead[]          @relation("CreatedBy")
+  leadActivities    LeadActivity[]
+  assignedDemos     Demo[]
+  implementations   Implementation[] @relation("ProjectManager")
+  notifications     Notification[]
+
+  @@map("users")
+}
+
+// ============================================================
+// LEADS & OPPORTUNITIES
+// ============================================================
+
+model Lead {
+  id                   Int       @id @default(autoincrement())
+  companyName          String    @map("company_name")
+  contactPerson        String    @map("contact_person")
+  mobile               String?
+  email                String?
+  country              String?
+  state                String?
+  city                 String?
+  jewelleryBusinessType String?  @map("jewellery_business_type")
+  numberOfBranches     Int?      @map("number_of_branches")
+  existingErp          String?   @map("existing_erp")
+  leadSource           String    @map("lead_source")
+  assignedBaId         Int?      @map("assigned_ba_id")
+  status               String    @default("NEW")
+  businessVerticals    String?   @map("business_verticals")
+  notes                String?
+  createdById          Int?      @map("created_by")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  assignedBa   User?   @relation("AssignedBA", fields: [assignedBaId], references: [id])
+  createdBy    User?   @relation("CreatedBy", fields: [createdById], references: [id])
+  activities   LeadActivity[]
+  demos        Demo[]
+  quotations   Quotation[]
+  implementations Implementation[]
+
+  @@map("leads")
+}
+
+model LeadActivity {
+  id            Int      @id @default(autoincrement())
+  leadId        Int      @map("lead_id")
+  activityType  String   @map("activity_type")
+  description   String?
+  performedById Int?     @map("performed_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  lead        Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  performedBy User? @relation(fields: [performedById], references: [id])
+
+  @@map("lead_activities")
+}
+
+model Demo {
+  id                    Int       @id @default(autoincrement())
+  leadId                Int       @map("lead_id")
+  demoType              String    @map("demo_type")
+  assignedToId          Int?      @map("assigned_to")
+  scheduledDate         DateTime? @map("scheduled_date")
+  actualDate            DateTime? @map("actual_date")
+  status                String    @default("SCHEDULED")
+  attendees             String?
+  modulesDemonstrated   String?   @map("modules_demonstrated")
+  customerInterestLevel String?   @map("customer_interest_level")
+  questions             String?
+  nextAction            String?   @map("next_action")
+  feedback              String?
+  recordingUrl          String?   @map("recording_url")
+  stakeholderFeedback   String?   @map("stakeholder_feedback")
+  approvalStatus        String?   @default("PENDING") @map("approval_status")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  lead       Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedTo User? @relation(fields: [assignedToId], references: [id])
+
+  @@map("demos")
+}
+
+// ============================================================
+// QUOTATIONS
+// ============================================================
+
+model Quotation {
+  id                    Int       @id @default(autoincrement())
+  leadId                Int       @map("lead_id")
+  quotationNumber       String    @unique @map("quotation_number")
+  softwareModules       Json?     @map("software_modules")
+  businessModule        String?   @map("business_module")
+  implementationCost    Decimal?  @map("implementation_cost") @db.Decimal(15, 2)
+  trainingCost          Decimal?  @map("training_cost") @db.Decimal(15, 2)
+  annualMaintenance     Decimal?  @map("annual_maintenance") @db.Decimal(15, 2)
+  customDevelopmentCost Decimal?  @map("custom_development_cost") @db.Decimal(15, 2)
+  discountPercentage    Decimal?  @map("discount_percentage") @db.Decimal(5, 2)
+  discountAmount        Decimal?  @map("discount_amount") @db.Decimal(15, 2)
+  taxPercentage         Decimal?  @map("tax_percentage") @db.Decimal(5, 2)
+  taxAmount             Decimal?  @map("tax_amount") @db.Decimal(15, 2)
+  totalAmount           Decimal?  @map("total_amount") @db.Decimal(15, 2)
+  validUntil            DateTime? @map("valid_until")
+  status                String    @default("DRAFT")
+  version               Int       @default(1)
+  clientCountry         String?   @map("client_country")
+  clientState           String?   @map("client_state")
+  clientCity            String?   @map("client_city")
+  currencyCode          String?   @default("INR") @map("currency_code")
+  exchangeRate          Decimal?  @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  taxBreakdown          Json?     @map("tax_breakdown")
+  addons                Json?
+  pricingSnapshot       Json?     @map("pricing_snapshot")
+  notes                 String?
+  createdById           Int?      @map("created_by")
+  approvedById          Int?      @map("approved_by")
+  customerApprovedAt    DateTime? @map("customer_approved_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  lead    Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("quotations")
+}
+
+// ============================================================
+// IMPLEMENTATIONS
+// ============================================================
+
+model Implementation {
+  id               Int       @id @default(autoincrement())
+  leadId           Int       @map("lead_id")
+  projectName      String?   @map("project_name")
+  projectManagerId Int?      @map("project_manager_id")
+  status           String    @default("PLANNING")
+  startDate        DateTime? @map("start_date")
+  targetEndDate    DateTime? @map("target_end_date")
+  actualEndDate    DateTime? @map("actual_end_date")
+  currentStage     String?   @map("current_stage")
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  lead           Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  projectManager User? @relation("ProjectManager", fields: [projectManagerId], references: [id])
+
+  @@map("implementations")
+}
+
+// ============================================================
+// QUOTATION CONFIGURATION
+// ============================================================
+
+model QuotationModuleConfig {
+  id                    Int      @id @default(autoincrement())
+  moduleCode            String   @unique @map("module_code")
+  moduleName            String   @map("module_name")
+  description           String?
+  isActive              Boolean  @default(true) @map("is_active")
+  defaultCurrency       String   @default("INR") @map("default_currency")
+  defaultCountry        String   @default("IN") @map("default_country")
+  baseLicenseCost       Decimal  @default(0) @map("base_license_cost") @db.Decimal(15, 2)
+  additionalUserCost    Decimal  @default(0) @map("additional_user_cost") @db.Decimal(15, 2)
+  additionalBranchCost  Decimal  @default(0) @map("additional_branch_cost") @db.Decimal(15, 2)
+  additionalCompanyCost Decimal  @default(0) @map("additional_company_cost") @db.Decimal(15, 2)
+  implementationCost    Decimal  @default(0) @map("implementation_cost") @db.Decimal(15, 2)
+  dataMigrationCost     Decimal  @default(0) @map("data_migration_cost") @db.Decimal(15, 2)
+  trainingCost          Decimal  @default(0) @map("training_cost") @db.Decimal(15, 2)
+  customDevelopmentCost Decimal  @default(0) @map("custom_development_cost") @db.Decimal(15, 2)
+  cloudHostingCost      Decimal  @default(0) @map("cloud_hosting_cost") @db.Decimal(15, 2)
+  annualMaintenanceCost Decimal  @default(0) @map("annual_maintenance_cost") @db.Decimal(15, 2)
+  supportCharges        Decimal  @default(0) @map("support_charges") @db.Decimal(15, 2)
+  oneTimeSetupFee       Decimal  @default(0) @map("one_time_setup_fee") @db.Decimal(15, 2)
+  includedUsers         Int      @default(5) @map("included_users")
+  includedBranches      Int      @default(1) @map("included_branches")
+  includedCompanies     Int      @default(1) @map("included_companies")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("quotation_module_config")
+}
+
+model QuotationAddonConfig {
+  id          Int      @id @default(autoincrement())
+  addonCode   String   @unique @map("addon_code")
+  addonName   String   @map("addon_name")
+  description String?
+  price       Decimal  @default(0) @db.Decimal(15, 2)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("quotation_addon_config")
+}
+
+// ============================================================
+// TAX & CURRENCY
+// ============================================================
+
+model CountryTaxMaster {
+  id            Int       @id @default(autoincrement())
+  countryCode   String    @map("country_code")
+  countryName   String    @map("country_name")
+  taxName       String    @map("tax_name")
+  taxType       String    @map("tax_type")
+  defaultRate   Decimal   @default(0) @map("default_rate") @db.Decimal(6, 3)
+  isActive      Boolean   @default(true) @map("is_active")
+  effectiveFrom DateTime? @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  currencyCode  String?   @map("currency_code")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@unique([countryCode, taxName, effectiveFrom])
+  @@map("country_tax_master")
+}
+
+model StateTaxMaster {
+  id            Int       @id @default(autoincrement())
+  countryCode   String    @map("country_code")
+  stateCode     String    @map("state_code")
+  stateName     String    @map("state_name")
+  taxName       String    @map("tax_name")
+  taxType       String    @map("tax_type")
+  rate          Decimal   @default(0) @db.Decimal(6, 3)
+  isActive      Boolean   @default(true) @map("is_active")
+  effectiveFrom DateTime? @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@unique([countryCode, stateCode, taxName, effectiveFrom])
+  @@map("state_tax_master")
+}
+
+model CurrencyMaster {
+  id               Int      @id @default(autoincrement())
+  currencyCode     String   @unique @map("currency_code")
+  currencyName     String   @map("currency_name")
+  currencySymbol   String   @map("currency_symbol")
+  decimalPlaces    Int      @default(2) @map("decimal_places")
+  exchangeRateToInr Decimal @default(1) @map("exchange_rate_to_inr") @db.Decimal(15, 6)
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("currency_master")
+}
+
+// ============================================================
+// COMPANY PROFILE
+// ============================================================
+
+model CompanyProfile {
+  id                    Int      @id @default(autoincrement())
+  companyName           String   @map("company_name")
+  tagline               String?
+  logoUrl               String?  @map("logo_url")
+  addressLine1          String?  @map("address_line1")
+  addressLine2          String?  @map("address_line2")
+  city                  String?
+  state                 String?
+  country               String?
+  postalCode            String?  @map("postal_code")
+  phone                 String?
+  email                 String?
+  website               String?
+  gstNumber             String?  @map("gst_number")
+  panNumber             String?  @map("pan_number")
+  bankName              String?  @map("bank_name")
+  bankAccountNumber     String?  @map("bank_account_number")
+  bankIfsc              String?  @map("bank_ifsc")
+  authorizedSignatory   String?  @map("authorized_signatory")
+  signatoryDesignation  String?  @map("signatory_designation")
+  primaryColor          String?  @default("#1E3A5F") @map("primary_color")
+  secondaryColor        String?  @default("#D4AF37") @map("secondary_color")
+  termsAndConditions    String?  @map("terms_and_conditions")
+  paymentTerms          String?  @map("payment_terms")
+  warrantyTerms         String?  @map("warranty_terms")
+  assumptions           String?
+  exclusions            String?
+  confidentialityNotice String?  @map("confidentiality_notice")
+  supplierStateCode     String?  @default("TN") @map("supplier_state_code")
+  isActive              Boolean  @default(true) @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("company_profile")
+}
+
+// ============================================================
+// NOTIFICATIONS & STATUS
+// ============================================================
+
+model Notification {
+  id         Int       @id @default(autoincrement())
+  userId     Int       @map("user_id")
+  title      String
+  message    String?
+  type       String
+  channel    String
+  entityType String?   @map("entity_type")
+  entityId   Int?      @map("entity_id")
+  isRead     Boolean   @default(false) @map("is_read")
+  readAt     DateTime? @map("read_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model StatusMaster {
+  id           Int      @id @default(autoincrement())
+  module       String
+  statusValue  String   @map("status_value")
+  displayLabel String   @map("display_label")
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  color        String?
+  description  String?
+
+  @@unique([module, statusValue])
+  @@map("status_master")
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?     @map("user_id")
+  action      String
+  entityType  String?  @map("entity_type")
+  entityId    Int?     @map("entity_id")
+  oldValue    Json?    @map("old_value")
+  newValue    Json?    @map("new_value")
+  ipAddress   String?  @map("ip_address")
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
