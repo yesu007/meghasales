@@ -11,6 +11,9 @@ import {
   CalendarIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
+  WrenchScrewdriverIcon,
+  UserGroupIcon,
+  BellIcon,
 } from '@heroicons/react/24/outline';
 
 const NAV_ITEMS = [
@@ -18,6 +21,9 @@ const NAV_ITEMS = [
   { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon },
   { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon },
   { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon },
+  { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon },
+  { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
+  { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
   { href: '/dashboard/settings', label: 'Settings', icon: Cog6ToothIcon },
 ];
 
