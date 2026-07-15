@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
       projectName: impl.projectName,
       companyName: impl.lead.companyName,
       contactPerson: impl.lead.contactPerson,
+      projectManagerId: impl.projectManagerId,
       projectManagerName: impl.projectManager ? `${impl.projectManager.firstName} ${impl.projectManager.lastName}` : null,
       status: impl.status,
       startDate: impl.startDate,

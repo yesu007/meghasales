@@ -42,6 +42,7 @@ interface Implementation {
   projectName: string | null;
   companyName: string;
   contactPerson: string;
+  projectManagerId: number | null;
   projectManagerName: string | null;
   status: string;
   startDate: string | null;
@@ -58,6 +59,11 @@ interface Lead {
   contactPerson: string;
 }
 
+interface UserOption {
+  id: number;
+  fullName: string;
+}
+
 async function fetchImplementations(params: Record<string, string>) {
   const query = new URLSearchParams(params).toString();
   const res = await fetch(`/api/implementations?${query}`);
@@ -70,6 +76,13 @@ async function fetchLeads(): Promise<Lead[]> {
   if (!res.ok) throw new Error('Failed to fetch leads');
   const data = await res.json();
   return data.content;
+}
+
+async function fetchUsers(): Promise<UserOption[]> {
+  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
 }
 
 export default function ImplementationsPage() {
@@ -104,12 +117,18 @@ export default function ImplementationsPage() {
     queryFn: fetchLeads,
   });
 
+  const { data: users = [] } = useQuery<UserOption[]>({
+    queryKey: ['users-for-impl'],
+    queryFn: fetchUsers,
+  });
+
   const [form, setForm] = useState({
     leadId: '',
     projectName: '',
     startDate: '',
     targetEndDate: '',
     currentStage: '',
+    projectManagerId: '',
     notes: '',
   });
 
@@ -126,21 +145,31 @@ export default function ImplementationsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['implementations'] });
       toast.success('Implementation project created!');
-      setForm({ leadId: '', projectName: '', startDate: '', targetEndDate: '', currentStage: '', notes: '' });
+      setForm({ leadId: '', projectName: '', startDate: '', targetEndDate: '', currentStage: '', projectManagerId: '', notes: '' });
       setDrawerOpen(false);
     },
     onError: () => toast.error('Failed to create implementation'),
   });
 
-  const updateStatus = async (id: number, status: string) => {
-    await fetch(`/api/implementations/${id}`, {
+  const updateImpl = async (id: number, patch: Record<string, any>, successMsg: string) => {
+    const res = await fetch(`/api/implementations/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(patch),
     });
+    if (!res.ok) {
+      toast.error('Failed to update implementation');
+      return;
+    }
     queryClient.invalidateQueries({ queryKey: ['implementations'] });
-    toast.success('Status updated');
+    toast.success(successMsg);
   };
+
+  const updateStatus = (id: number, status: string) => updateImpl(id, { status }, 'Status updated');
+  const assignManager = (id: number, projectManagerId: string) => updateImpl(id, { projectManagerId: projectManagerId || null }, 'Project manager updated');
+  const updateStage = (id: number, currentStage: string) => updateImpl(id, { currentStage: currentStage || null }, 'Stage updated');
+  const updateStartDate = (id: number, startDate: string) => updateImpl(id, { startDate: startDate || null }, 'Start date updated');
+  const updateTargetEndDate = (id: number, targetEndDate: string) => updateImpl(id, { targetEndDate: targetEndDate || null }, 'Target end date updated');
 
   const handleSort = (col: string) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -262,14 +291,42 @@ export default function ImplementationsPage() {
                           {IMPL_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{impl.currentStage || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">
-                        {impl.startDate ? dayjs(impl.startDate).format('DD MMM YYYY') : '—'}
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        <select
+                          value={impl.currentStage || ''}
+                          onChange={(e) => updateStage(impl.id, e.target.value)}
+                          className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="">Select stage</option>
+                          {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">
-                        {impl.targetEndDate ? dayjs(impl.targetEndDate).format('DD MMM YYYY') : '—'}
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <input
+                          type="date"
+                          value={impl.startDate ? dayjs(impl.startDate).format('YYYY-MM-DD') : ''}
+                          onChange={(e) => updateStartDate(impl.id, e.target.value)}
+                          className="px-2 py-1 border border-slate-200 rounded text-xs text-slate-700 focus:ring-2 focus:ring-amber-500"
+                        />
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{impl.projectManagerName || '—'}</td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <input
+                          type="date"
+                          value={impl.targetEndDate ? dayjs(impl.targetEndDate).format('YYYY-MM-DD') : ''}
+                          onChange={(e) => updateTargetEndDate(impl.id, e.target.value)}
+                          className="px-2 py-1 border border-slate-200 rounded text-xs text-slate-700 focus:ring-2 focus:ring-amber-500"
+                        />
+                      </td>
+                      <td className="px-4 py-3 hidden xl:table-cell">
+                        <select
+                          value={impl.projectManagerId || ''}
+                          onChange={(e) => assignManager(impl.id, e.target.value)}
+                          className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="">Unassigned</option>
+                          {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                        </select>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -366,6 +423,19 @@ export default function ImplementationsPage() {
                           >
                             <option value="">Select stage</option>
                             {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Project Manager</label>
+                          <select
+                            value={form.projectManagerId}
+                            onChange={(e) => setForm(f => ({ ...f, projectManagerId: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                          >
+                            <option value="">Unassigned</option>
+                            {users.map((u) => (
+                              <option key={u.id} value={u.id}>{u.fullName}</option>
+                            ))}
                           </select>
                         </div>
                         <div>
