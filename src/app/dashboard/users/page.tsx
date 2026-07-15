@@ -19,13 +19,15 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 
-const ROLES = [
-  { id: 1, name: 'ADMIN', label: 'Admin' },
-  { id: 2, name: 'SALES_EXECUTIVE', label: 'Sales Executive' },
-  { id: 3, name: 'PRESALES', label: 'Pre-Sales' },
-  { id: 4, name: 'IMPLEMENTATION', label: 'Implementation' },
-  { id: 5, name: 'SUPPORT', label: 'Support' },
-];
+// Title-cases a SNAKE_CASE role name for display, e.g. BUSINESS_ANALYST -> "Business Analyst"
+function roleLabel(name: string): string {
+  return name.split('_').map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
+}
+
+interface RoleOption {
+  id: number;
+  name: string;
+}
 
 interface User {
   id: number;
@@ -45,6 +47,12 @@ async function fetchUsers(params: Record<string, string>) {
   const query = new URLSearchParams(params).toString();
   const res = await fetch(`/api/users?${query}`);
   if (!res.ok) throw new Error('Failed to fetch users');
+  return res.json();
+}
+
+async function fetchRoles(): Promise<RoleOption[]> {
+  const res = await fetch('/api/roles');
+  if (!res.ok) return [];
   return res.json();
 }
 
@@ -75,6 +83,11 @@ export default function UsersPage() {
     queryKey: ['users', params],
     queryFn: () => fetchUsers(params),
     placeholderData: (prev: any) => prev,
+  });
+
+  const { data: roles = [] } = useQuery<RoleOption[]>({
+    queryKey: ['roles'],
+    queryFn: fetchRoles,
   });
 
   const blankForm = { firstName: '', lastName: '', email: '', phone: '', password: '', roleId: '' };
@@ -188,7 +201,7 @@ export default function UsersPage() {
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
           >
             <option value="">All Roles</option>
-            {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+            {roles.map(r => <option key={r.id} value={r.id}>{roleLabel(r.name)}</option>)}
           </select>
           <select
             value={activeFilter}
@@ -395,7 +408,7 @@ export default function UsersPage() {
                             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
                           >
                             <option value="">Select role</option>
-                            {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                            {roles.map(r => <option key={r.id} value={r.id}>{roleLabel(r.name)}</option>)}
                           </select>
                         </div>
                       </div>
