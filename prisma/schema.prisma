@@ -69,6 +69,13 @@ model User {
   implementations   Implementation[] @relation("ProjectManager")
   notifications     Notification[]
 
+  // Accounting
+  createdInvoices    Invoice[]         @relation("InvoiceCreatedBy")
+  updatedInvoices    Invoice[]         @relation("InvoiceUpdatedBy")
+  recordedPayments   Payment[]         @relation("PaymentRecordedBy")
+  reminderFollowUps  PaymentReminder[] @relation("ReminderFollowedUpBy")
+  issuedCreditNotes  CreditNote[]      @relation("CreditNoteIssuedBy")
+
   @@map("users")
 }
 
@@ -103,6 +110,8 @@ model Lead {
   demos        Demo[]
   quotations   Quotation[]
   implementations Implementation[]
+  invoices     Invoice[]
+  creditNotes  CreditNote[]
 
   @@map("leads")
 }
@@ -185,6 +194,7 @@ model Quotation {
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
   lead    Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  invoices Invoice[]
 
   @@map("quotations")
 }
@@ -409,4 +419,122 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ============================================================
+// ACCOUNTING
+// ============================================================
+
+model Invoice {
+  id                 Int       @id @default(autoincrement())
+  invoiceNumber      String    @unique @map("invoice_number")
+  leadId             Int       @map("lead_id")
+  quotationId        Int?      @map("quotation_id")
+  invoiceDate        DateTime  @default(now()) @map("invoice_date")
+  dueDate            DateTime  @map("due_date")
+  lineItems          Json      @map("line_items")
+  subtotal           Decimal   @db.Decimal(15, 2)
+  discountPercentage Decimal?  @map("discount_percentage") @db.Decimal(5, 2)
+  discountAmount     Decimal?  @map("discount_amount") @db.Decimal(15, 2)
+  taxBreakdown       Json?     @map("tax_breakdown")
+  taxAmount          Decimal?  @map("tax_amount") @db.Decimal(15, 2)
+  totalAmount        Decimal   @map("total_amount") @db.Decimal(15, 2)
+  amountPaid         Decimal   @default(0) @map("amount_paid") @db.Decimal(15, 2)
+  balanceDue         Decimal   @map("balance_due") @db.Decimal(15, 2)
+  currencyCode       String    @default("INR") @map("currency_code")
+  status             String    @default("PENDING") @map("status") // PENDING | PARTIALLY_PAID | PAID | CANCELLED
+  notes              String?
+  createdById        Int?      @map("created_by")
+  updatedById        Int?      @map("updated_by")
+  deletedAt          DateTime? @map("deleted_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  lead        Lead              @relation(fields: [leadId], references: [id])
+  quotation   Quotation?        @relation(fields: [quotationId], references: [id])
+  createdBy   User?             @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User?             @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
+  payments    Payment[]
+  reminders   PaymentReminder[]
+  creditNotes CreditNote[]
+
+  @@index([status])
+  @@index([leadId])
+  @@index([dueDate])
+  @@map("invoices")
+}
+
+model Payment {
+  id              Int       @id @default(autoincrement())
+  paymentNumber   String    @unique @map("payment_number")
+  invoiceId       Int       @map("invoice_id")
+  amount          Decimal   @db.Decimal(15, 2)
+  paymentDate     DateTime  @default(now()) @map("payment_date")
+  paymentMethod   String    @map("payment_method") // CASH | BANK_TRANSFER | CHEQUE | CARD | UPI | OTHER
+  referenceNumber String?   @map("reference_number")
+  attachmentUrl   String?   @map("attachment_url")
+  attachmentName  String?   @map("attachment_name")
+  notes           String?
+  recordedById    Int?      @map("recorded_by")
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  invoice    Invoice @relation(fields: [invoiceId], references: [id])
+  recordedBy User?   @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([invoiceId])
+  @@index([paymentDate])
+  @@map("payments")
+}
+
+model PaymentReminder {
+  id             Int       @id @default(autoincrement())
+  invoiceId      Int       @map("invoice_id")
+  reminderType   String    @map("reminder_type") // UPCOMING_7D | DUE_TODAY | OVERDUE_3D | OVERDUE_7D | OVERDUE_15D | OVERDUE_30D
+  status         String    @default("PENDING") // PENDING | FOLLOWED_UP
+  notes          String?
+  followedUpAt   DateTime? @map("followed_up_at")
+  followedUpById Int?      @map("followed_up_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  invoice      Invoice @relation(fields: [invoiceId], references: [id])
+  followedUpBy User?   @relation("ReminderFollowedUpBy", fields: [followedUpById], references: [id])
+
+  @@unique([invoiceId, reminderType])
+  @@index([invoiceId])
+  @@map("payment_reminders")
+}
+
+model ReminderTemplate {
+  id           Int      @id @default(autoincrement())
+  name         String
+  reminderType String   @map("reminder_type") // matches PaymentReminder.reminderType, or CUSTOM
+  channel      String   // EMAIL | WHATSAPP
+  subject      String?
+  body         String   // supports {{customerName}}, {{invoiceNumber}}, {{amountDue}}, {{dueDate}} tokens
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("reminder_templates")
+}
+
+model CreditNote {
+  id               Int       @id @default(autoincrement())
+  creditNoteNumber String    @unique @map("credit_note_number")
+  invoiceId        Int?      @map("invoice_id")
+  leadId           Int       @map("lead_id")
+  amount           Decimal   @db.Decimal(15, 2)
+  reason           String?
+  issuedById       Int?      @map("issued_by")
+  deletedAt        DateTime? @map("deleted_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  invoice  Invoice? @relation(fields: [invoiceId], references: [id])
+  lead     Lead     @relation(fields: [leadId], references: [id])
+  issuedBy User?    @relation("CreditNoteIssuedBy", fields: [issuedById], references: [id])
+
+  @@index([leadId])
+  @@map("credit_notes")
 }

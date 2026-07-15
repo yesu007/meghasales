@@ -125,6 +125,45 @@ async function main() {
   });
   console.log('  ✓ Company profile seeded');
 
+  // Accounting permissions
+  const accountingPermissions = [
+    { name: 'view_accounting', description: 'View accounting module data', module: 'ACCOUNTING' },
+    { name: 'manage_invoices', description: 'Create/edit/delete invoices', module: 'ACCOUNTING' },
+    { name: 'manage_payments', description: 'Record/edit/delete payments', module: 'ACCOUNTING' },
+  ];
+  for (const p of accountingPermissions) {
+    await prisma.permission.upsert({ where: { name: p.name }, update: {}, create: p });
+  }
+  console.log('  ✓ Accounting permissions seeded');
+
+  // Default reminder templates (one per threshold, email + WhatsApp variants)
+  const reminderThresholds = [
+    { type: 'UPCOMING_7D', label: 'Payment Due in 7 Days' },
+    { type: 'DUE_TODAY', label: 'Payment Due Today' },
+    { type: 'OVERDUE_3D', label: 'Payment Overdue by 3 Days' },
+    { type: 'OVERDUE_7D', label: 'Payment Overdue by 7 Days' },
+    { type: 'OVERDUE_15D', label: 'Payment Overdue by 15 Days' },
+    { type: 'OVERDUE_30D', label: 'Payment Overdue by 30+ Days' },
+  ];
+  for (const t of reminderThresholds) {
+    for (const channel of ['EMAIL', 'WHATSAPP']) {
+      const name = `${t.label} (${channel === 'EMAIL' ? 'Email' : 'WhatsApp'})`;
+      const existing = await prisma.reminderTemplate.findFirst({ where: { reminderType: t.type, channel } });
+      if (!existing) {
+        await prisma.reminderTemplate.create({
+          data: {
+            name,
+            reminderType: t.type,
+            channel,
+            subject: channel === 'EMAIL' ? `${t.label} - Invoice {{invoiceNumber}}` : null,
+            body: `Dear {{customerName}}, this is a reminder that invoice {{invoiceNumber}} for {{amountDue}} was due on {{dueDate}}. Please arrange payment at your earliest convenience.`,
+          },
+        });
+      }
+    }
+  }
+  console.log('  ✓ Reminder templates seeded');
+
   console.log('✅ Seeding complete!');
 }
 
