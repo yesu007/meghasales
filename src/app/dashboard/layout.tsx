@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   HomeIcon,
@@ -15,6 +15,8 @@ import {
   UserGroupIcon,
   BellIcon,
   ClipboardDocumentListIcon,
+  BanknotesIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
 
@@ -24,6 +26,17 @@ const NAV_ITEMS = [
   { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon },
   { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon },
   { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon },
+  {
+    href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon,
+    children: [
+      { href: '/dashboard/accounting', label: 'Dashboard' },
+      { href: '/dashboard/accounting/pending-invoices', label: 'Pending Invoices' },
+      { href: '/dashboard/accounting/paid-invoices', label: 'Paid Invoices' },
+      { href: '/dashboard/accounting/payment-reminders', label: 'Payment Reminders' },
+      { href: '/dashboard/accounting/customer-ledger', label: 'Customer Ledger' },
+      { href: '/dashboard/accounting/reports', label: 'Reports' },
+    ],
+  },
   { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
   { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
   { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon },
@@ -34,10 +47,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { data: session, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
   }, [status, router]);
+
+  useEffect(() => {
+    const activeParent = NAV_ITEMS.find((item) => 'children' in item && item.children && pathname.startsWith(item.href));
+    if (activeParent) setExpandedGroups((prev) => new Set(prev).add(activeParent.href));
+  }, [pathname]);
 
   if (status === 'loading') {
     return (
@@ -64,6 +83,47 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <nav className="flex-1 py-4">
           {NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+
+            if ('children' in item && item.children) {
+              const isExpanded = expandedGroups.has(item.href);
+              return (
+                <div key={item.href}>
+                  <button
+                    onClick={() => setExpandedGroups((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(item.href)) next.delete(item.href); else next.add(item.href);
+                      return next;
+                    })}
+                    className={`w-full flex items-center gap-3 px-6 py-3 text-sm transition-colors ${
+                      isActive ? 'text-amber-400' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <item.icon className="h-5 w-5" />
+                    <span className="flex-1 text-left">{item.label}</span>
+                    <ChevronDownIcon className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isExpanded && (
+                    <div className="pb-1">
+                      {item.children.map((child) => {
+                        const isChildActive = pathname === child.href;
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            className={`block pl-12 pr-6 py-2 text-sm transition-colors ${
+                              isChildActive ? 'bg-slate-800 text-amber-400 border-r-2 border-amber-400' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                            }`}
+                          >
+                            {child.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             return (
               <Link
                 key={item.href}

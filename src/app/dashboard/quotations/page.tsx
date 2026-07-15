@@ -13,8 +13,10 @@ import {
   ArrowDownTrayIcon,
   PencilIcon,
   TrashIcon,
+  DocumentPlusIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
 import { generateInvoicePDF } from '@/lib/generateInvoicePDF';
 import dayjs from 'dayjs';
 
@@ -55,6 +57,7 @@ function fmt(amount: number, symbol: string = '₹'): string {
 
 export default function QuotationsPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingQuotationNumber, setEditingQuotationNumber] = useState('');
@@ -201,6 +204,24 @@ export default function QuotationsPage() {
     toast.success('Status updated');
   };
 
+  const generateInvoice = async (q: any) => {
+    if (!window.confirm(`Generate an invoice from quotation ${q.quotationNumber}?`)) return;
+    const dueDate = dayjs().add(30, 'day').format('YYYY-MM-DD');
+    const res = await fetch('/api/accounting/invoices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadId: q.leadId, quotationId: q.id, dueDate }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      toast.error(err.message || 'Failed to generate invoice');
+      return;
+    }
+    const invoice = await res.json();
+    toast.success(`Invoice ${invoice.invoiceNumber} created`);
+    router.push(`/dashboard/accounting/invoices/${invoice.id}`);
+  };
+
   const downloadPDF = () => {
     if (!pricing) return;
     const symbol = pricing.currencySymbol;
@@ -309,6 +330,9 @@ export default function QuotationsPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <button onClick={() => downloadQuotationPDF(q)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download PDF"><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                      {q.status === 'APPROVED' && (
+                        <button onClick={() => generateInvoice(q)} className="p-1.5 rounded text-slate-400 hover:text-green-600 hover:bg-green-50" title="Generate Invoice"><DocumentPlusIcon className="h-4 w-4" /></button>
+                      )}
                       <button onClick={() => openEdit(q.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>
                       <button onClick={() => deleteQuotation(q.id, q.quotationNumber)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>
                     </div>
