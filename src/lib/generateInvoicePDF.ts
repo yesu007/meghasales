@@ -1,11 +1,20 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { TEKFILO_LOGO } from './logo';
+import { INTER_REGULAR_TTF, INTER_BOLD_TTF } from './invoiceFont';
 
-// Tekfilo brand colors (from logo - purple/magenta)
-const PRIMARY = [128, 0, 128] as const;    // Purple
-const PRIMARY_DARK = [90, 0, 90] as const;  // Dark purple
-const ACCENT = [200, 50, 150] as const;     // Magenta/pink accent
+const FONT = 'Inter';
+
+// Subtle palette matching the app's own slate + amber design system (see dashboard UI)
+const SLATE_900 = [15, 23, 42] as const;
+const SLATE_700 = [51, 65, 85] as const;
+const SLATE_500 = [100, 116, 139] as const;
+const SLATE_400 = [148, 163, 184] as const;
+const SLATE_200 = [226, 232, 240] as const;
+const SLATE_50 = [248, 250, 252] as const;
+const AMBER_700 = [180, 83, 9] as const;
+const AMBER_50 = [255, 251, 235] as const;
+const WHITE = [255, 255, 255] as const;
 
 interface InvoiceData {
   quotationNumber: string;
@@ -35,238 +44,213 @@ function fmt(amount: number, symbol: string): string {
 export function generateInvoicePDF(data: InvoiceData) {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 15;
+  const contentWidth = pageWidth - marginX * 2;
   const sym = data.currencySymbol;
 
-  // === TOP HEADER BAR (purple diagonal design) ===
-  doc.setFillColor(...PRIMARY_DARK);
-  doc.triangle(0, 0, 70, 0, 0, 45, 'F');
-  doc.setFillColor(...PRIMARY);
-  doc.triangle(0, 0, 85, 0, 0, 55, 'F');
-  doc.setFillColor(...ACCENT);
-  doc.rect(0, 0, 3, 60, 'F');
+  // Embed a real Unicode font so ₹ (and other currency symbols) render as an
+  // actual glyph — jsPDF's built-in Helvetica only supports WinAnsi and
+  // silently substitutes a broken character for the Rupee sign.
+  doc.addFileToVFS('Inter-Regular.ttf', INTER_REGULAR_TTF);
+  doc.addFont('Inter-Regular.ttf', FONT, 'normal');
+  doc.addFileToVFS('Inter-Bold.ttf', INTER_BOLD_TTF);
+  doc.addFont('Inter-Bold.ttf', FONT, 'bold');
+  doc.setFont(FONT, 'normal');
 
-  // Right side accent
-  doc.setFillColor(...PRIMARY_DARK);
-  doc.triangle(pageWidth, 0, pageWidth - 50, 0, pageWidth, 35, 'F');
-  doc.setFillColor(...PRIMARY);
-  doc.triangle(pageWidth, 0, pageWidth - 65, 0, pageWidth, 45, 'F');
-
-  // === LOGO ===
+  // === HEADER ===
   try {
-    doc.addImage(TEKFILO_LOGO, 'PNG', 14, 12, 40, 10);
+    // Logo aspect ratio is 165:43
+    doc.addImage(TEKFILO_LOGO, 'PNG', marginX, 14, 34, 8.85);
   } catch {
-    doc.setFontSize(16);
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.text('TEKFILO', 14, 22);
+    doc.setFontSize(15);
+    doc.setTextColor(...SLATE_900);
+    doc.setFont(FONT, 'bold');
+    doc.text('TEKFILO', marginX, 20);
   }
 
-  // === "INVOICE" title ===
-  doc.setFontSize(28);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...PRIMARY);
-  doc.text('INVOICE', pageWidth - 14, 28, { align: 'right' });
-
-  // Decorative line under INVOICE
-  doc.setDrawColor(...ACCENT);
-  doc.setLineWidth(2);
-  doc.line(pageWidth - 65, 32, pageWidth - 14, 32);
-
-  // === CLIENT INFO (Left) ===
-  let y = 68;
-  doc.setFontSize(9);
-  doc.setTextColor(100);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Invoice To:', 14, y);
-  y += 7;
-
-  doc.setFontSize(13);
-  doc.setTextColor(30, 30, 30);
-  doc.setFont('helvetica', 'bold');
-  doc.text(data.clientName.toUpperCase(), 14, y);
-  y += 6;
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(80);
-  doc.text(data.companyName, 14, y);
-  y += 6;
-
-  if (data.clientPhone) { doc.text(`P : ${data.clientPhone}`, 14, y); y += 5; }
-  if (data.clientEmail) { doc.text(`E : ${data.clientEmail}`, 14, y); y += 5; }
-
-  // === INVOICE DETAILS (Right) ===
-  const rightX = pageWidth - 14;
-  let ry = 68;
-
-  // Invoice number box
-  doc.setDrawColor(...PRIMARY);
-  doc.setLineWidth(0.8);
-  doc.roundedRect(rightX - 58, ry - 5, 58, 12, 1, 1, 'S');
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...PRIMARY);
-  doc.text(`INVOICE NO: #${data.quotationNumber}`, rightX - 29, ry + 2, { align: 'center' });
-  ry += 16;
+  doc.setFontSize(20);
+  doc.setFont(FONT, 'bold');
+  doc.setTextColor(...SLATE_900);
+  doc.text('INVOICE', pageWidth - marginX, 20, { align: 'right' });
 
   doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(80);
-  doc.text('Invoice Date', rightX - 45, ry);
-  doc.text(data.date, rightX, ry, { align: 'right' });
+  doc.setFont(FONT, 'normal');
+  doc.setTextColor(...AMBER_700);
+  doc.text(`#${data.quotationNumber}`, pageWidth - marginX, 26, { align: 'right' });
+
+  doc.setDrawColor(...SLATE_200);
+  doc.setLineWidth(0.4);
+  doc.line(marginX, 33, pageWidth - marginX, 33);
+
+  // === CLIENT INFO (left) & DOCUMENT META (right) ===
+  const infoTop = 44;
+
+  doc.setFontSize(8);
+  doc.setFont(FONT, 'normal');
+  doc.setTextColor(...SLATE_400);
+  doc.text('BILL TO', marginX, infoTop);
+
+  doc.setFontSize(12);
+  doc.setFont(FONT, 'bold');
+  doc.setTextColor(...SLATE_900);
+  doc.text(data.clientName, marginX, infoTop + 7);
+
+  doc.setFontSize(9.5);
+  doc.setFont(FONT, 'normal');
+  doc.setTextColor(...SLATE_700);
+  let clientY = infoTop + 13;
+  doc.text(data.companyName, marginX, clientY);
+  if (data.clientPhone) { clientY += 5; doc.text(data.clientPhone, marginX, clientY); }
+  if (data.clientEmail) { clientY += 5; doc.text(data.clientEmail, marginX, clientY); }
+
+  // Meta card (right)
+  const cardW = 62;
+  const cardX = pageWidth - marginX - cardW;
+  const cardY = infoTop - 4;
+  doc.setFillColor(...SLATE_50);
+  doc.setDrawColor(...SLATE_200);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(cardX, cardY, cardW, 22, 1.5, 1.5, 'FD');
+
+  doc.setFontSize(8);
+  doc.setFont(FONT, 'normal');
+  doc.setTextColor(...SLATE_500);
+  doc.text('QUOTATION NO.', cardX + 5, cardY + 7);
+  doc.setFontSize(9.5);
+  doc.setFont(FONT, 'bold');
+  doc.setTextColor(...SLATE_900);
+  doc.text(data.quotationNumber, pageWidth - marginX - 5, cardY + 7, { align: 'right' });
+
+  doc.setFontSize(8);
+  doc.setFont(FONT, 'normal');
+  doc.setTextColor(...SLATE_500);
+  doc.text('DATE', cardX + 5, cardY + 16);
+  doc.setFontSize(9.5);
+  doc.setFont(FONT, 'bold');
+  doc.setTextColor(...SLATE_900);
+  doc.text(data.date, pageWidth - marginX - 5, cardY + 16, { align: 'right' });
 
   // === TABLE ===
-  const tableStartY = 108;
-
-  // Add services/implementation rows
   const tableBody: any[] = [];
-  data.modules.forEach(m => {
+  const addRow = (name: string, description: string, qty: number, unitPrice: number, total: number) => {
     tableBody.push([
-      { content: m.name + (m.description ? `\n${m.description}` : ''), styles: { fontStyle: 'bold', cellPadding: { top: 5, bottom: 5, left: 6, right: 4 } } },
-      { content: String(m.quantity).padStart(2, '0'), styles: { halign: 'center' } },
-      { content: fmt(m.unitPrice, sym), styles: { halign: 'center' } },
-      { content: fmt(m.total, sym), styles: { halign: 'center', fontStyle: 'bold' } },
+      { content: name + (description ? `\n${description}` : ''), styles: { fontStyle: 'bold' } },
+      { content: String(qty).padStart(2, '0'), styles: { halign: 'center' } },
+      { content: fmt(unitPrice, sym), styles: { halign: 'right' } },
+      { content: fmt(total, sym), styles: { halign: 'right', fontStyle: 'bold' } },
     ]);
-  });
+  };
 
-  // Add implementation, training, AMC as line items if they exist
-  if (data.implementationCost > 0) {
-    tableBody.push([
-      { content: 'Implementation & Setup', styles: { fontStyle: 'bold', cellPadding: { top: 5, bottom: 5, left: 6, right: 4 } } },
-      { content: '01', styles: { halign: 'center' } },
-      { content: fmt(data.implementationCost, sym), styles: { halign: 'center' } },
-      { content: fmt(data.implementationCost, sym), styles: { halign: 'center', fontStyle: 'bold' } },
-    ]);
-  }
-  if (data.trainingCost > 0) {
-    tableBody.push([
-      { content: 'Training', styles: { fontStyle: 'bold', cellPadding: { top: 5, bottom: 5, left: 6, right: 4 } } },
-      { content: '01', styles: { halign: 'center' } },
-      { content: fmt(data.trainingCost, sym), styles: { halign: 'center' } },
-      { content: fmt(data.trainingCost, sym), styles: { halign: 'center', fontStyle: 'bold' } },
-    ]);
-  }
-  if (data.annualMaintenanceCost > 0) {
-    tableBody.push([
-      { content: 'Annual Maintenance (AMC)', styles: { fontStyle: 'bold', cellPadding: { top: 5, bottom: 5, left: 6, right: 4 } } },
-      { content: '01', styles: { halign: 'center' } },
-      { content: fmt(data.annualMaintenanceCost, sym), styles: { halign: 'center' } },
-      { content: fmt(data.annualMaintenanceCost, sym), styles: { halign: 'center', fontStyle: 'bold' } },
-    ]);
-  }
+  data.modules.forEach(m => addRow(m.name, m.description, m.quantity, m.unitPrice, m.total));
+  if (data.implementationCost > 0) addRow('Implementation & Setup', '', 1, data.implementationCost, data.implementationCost);
+  if (data.trainingCost > 0) addRow('Training', '', 1, data.trainingCost, data.trainingCost);
+  if (data.annualMaintenanceCost > 0) addRow('Annual Maintenance (AMC)', '', 1, data.annualMaintenanceCost, data.annualMaintenanceCost);
 
   autoTable(doc, {
-    startY: tableStartY,
-    head: [['Item Description', 'Quantity', 'Unit Price', 'Total Price']],
+    startY: 76,
+    head: [['Item Description', 'Qty', 'Unit Price', 'Total Price']],
     body: tableBody,
     theme: 'plain',
+    styles: {
+      font: FONT,
+      lineColor: SLATE_200 as unknown as [number, number, number],
+      lineWidth: 0.2,
+    },
     headStyles: {
-      fillColor: [...PRIMARY] as any,
-      textColor: [255, 255, 255],
+      fillColor: SLATE_900 as unknown as [number, number, number],
+      textColor: WHITE as unknown as [number, number, number],
       fontStyle: 'bold',
-      fontSize: 10,
-      cellPadding: 6,
+      fontSize: 9.5,
+      cellPadding: { top: 5, bottom: 5, left: 6, right: 5 },
     },
     bodyStyles: {
       fontSize: 9,
-      textColor: [40, 40, 40],
-      lineColor: [230, 230, 230],
-      lineWidth: 0.3,
+      textColor: SLATE_700 as unknown as [number, number, number],
+      cellPadding: { top: 5, bottom: 5, left: 6, right: 5 },
+      valign: 'middle',
     },
     alternateRowStyles: {
-      fillColor: [248, 245, 252],
+      fillColor: SLATE_50 as unknown as [number, number, number],
     },
     columnStyles: {
-      0: { cellWidth: 75 },
-      1: { cellWidth: 30, halign: 'center' },
-      2: { cellWidth: 40, halign: 'center' },
-      3: { cellWidth: 40, halign: 'center' },
+      0: { cellWidth: contentWidth - 22 - 40 - 40 },
+      1: { cellWidth: 22, halign: 'center' },
+      2: { cellWidth: 40, halign: 'right' },
+      3: { cellWidth: 40, halign: 'right' },
     },
-    margin: { left: 14, right: 14 },
+    margin: { left: marginX, right: marginX },
   });
 
-  // === TOTALS SECTION ===
-  let ty = (doc as any).lastAutoTable.finalY + 12;
-  const totalsX = pageWidth - 14;
-  const labelsX = pageWidth - 80;
+  // === TOTALS ===
+  let ty = (doc as any).lastAutoTable.finalY + 10;
+  const totalsX = pageWidth - marginX;
+  const labelsX = pageWidth - marginX - 65;
 
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(80);
+  doc.setFontSize(9.5);
+  doc.setFont(FONT, 'normal');
+  doc.setTextColor(...SLATE_700);
 
   doc.text('Sub Total', labelsX, ty);
   doc.text(fmt(data.subtotal, sym), totalsX, ty, { align: 'right' });
-  ty += 8;
+  ty += 7;
 
-  // Tax
   data.taxBreakdown.forEach(t => {
-    doc.text(`${t.taxName} ${t.rate}%`, labelsX, ty);
+    doc.text(`${t.taxName} (${t.rate}%)`, labelsX, ty);
     doc.text(fmt(t.amount, sym), totalsX, ty, { align: 'right' });
-    ty += 8;
+    ty += 7;
   });
 
-  // Discount
   if (data.discountAmount > 0) {
-    doc.text(`Discount ${data.discountPercentage}%`, labelsX, ty);
-    doc.setTextColor(0, 128, 0);
+    doc.setTextColor(...SLATE_700);
+    doc.text(`Discount (${data.discountPercentage}%)`, labelsX, ty);
+    doc.setTextColor(21, 128, 61);
     doc.text(`-${fmt(data.discountAmount, sym)}`, totalsX, ty, { align: 'right' });
-    doc.setTextColor(80);
-    ty += 8;
+    ty += 7;
   }
 
-  // Grand Total bar
-  ty += 4;
-  doc.setFillColor(...PRIMARY);
-  doc.roundedRect(labelsX - 5, ty - 5, totalsX - labelsX + 19, 14, 2, 2, 'F');
+  // Grand Total — emphasized but subtle (light tint + border, not a solid saturated block)
+  ty += 3;
+  const totalBoxW = totalsX - labelsX + 12;
+  doc.setFillColor(...AMBER_50);
+  doc.setDrawColor(...AMBER_700);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(labelsX - 5, ty - 6, totalBoxW, 13, 1.5, 1.5, 'FD');
   doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(255, 255, 255);
-  doc.text('Grand Total', labelsX, ty + 4);
-  doc.text(fmt(data.grandTotal, sym), totalsX, ty + 4, { align: 'right' });
+  doc.setFont(FONT, 'bold');
+  doc.setTextColor(...SLATE_900);
+  doc.text('Grand Total', labelsX, ty + 2);
+  doc.text(fmt(data.grandTotal, sym), totalsX, ty + 2, { align: 'right' });
 
-  // === PAYMENT & TERMS (Left bottom) ===
-  ty += 28;
-
-  // Only show if enough space
-  if (ty < 240) {
+  // === TERMS ===
+  ty += 24;
+  if (ty < 235) {
     doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(30, 30, 30);
-    doc.text('Terms & Conditions:', 14, ty);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100);
-    doc.text('This quotation is valid for 30 days from the date of issue.', 14, ty + 6);
-    doc.text('Payment terms as per agreement.', 14, ty + 12);
+    doc.setFont(FONT, 'bold');
+    doc.setTextColor(...SLATE_900);
+    doc.text('Terms & Conditions', marginX, ty);
 
-    ty += 26;
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...PRIMARY);
-    doc.text('Thank you for your business!', 14, ty);
+    doc.setFont(FONT, 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...SLATE_500);
+    doc.text('This quotation is valid for 30 days from the date of issue.', marginX, ty + 6);
+    doc.text('Payment terms as per agreement.', marginX, ty + 11.5);
+
+    doc.setFont(FONT, 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(...AMBER_700);
+    doc.text('Thank you for your business!', marginX, ty + 22);
   }
 
   // === FOOTER ===
-  const footerY = 280;
-
-  // Bottom decorative bar
-  doc.setFillColor(...PRIMARY);
-  doc.rect(0, footerY - 2, pageWidth, 2, 'F');
+  const footerY = 283;
+  doc.setDrawColor(...SLATE_200);
+  doc.setLineWidth(0.3);
+  doc.line(marginX, footerY, pageWidth - marginX, footerY);
 
   doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100);
-  doc.text('Tekfilo - MeghaJewels CRM | www.tekfilo.com', pageWidth / 2, footerY + 8, { align: 'center' });
+  doc.setFont(FONT, 'normal');
+  doc.setTextColor(...SLATE_400);
+  doc.text('Tekfilo - MeghaJewels CRM  |  www.tekfilo.com', pageWidth / 2, footerY + 6, { align: 'center' });
 
-  // Bottom corner accents
-  doc.setFillColor(...PRIMARY_DARK);
-  doc.triangle(0, 297, 40, 297, 0, 270, 'F');
-  doc.setFillColor(...PRIMARY);
-  doc.triangle(0, 297, 30, 297, 0, 278, 'F');
-
-  doc.setFillColor(...PRIMARY_DARK);
-  doc.triangle(pageWidth, 297, pageWidth - 40, 297, pageWidth, 270, 'F');
-  doc.setFillColor(...PRIMARY);
-  doc.triangle(pageWidth, 297, pageWidth - 30, 297, pageWidth, 278, 'F');
-
-  // Save
   doc.save(data.fileName);
 }
