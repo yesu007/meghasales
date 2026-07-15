@@ -1,5 +1,9 @@
 # Demos Page: Missing Fields Fix (2026-07-15)
 
+> **Update (2026-07-15):** the same pattern turned up on two more pages the
+> same day — see "Confirmed recurrences" at the bottom. This doc is now the
+> canonical reference for the pattern across the whole app, not just Demos.
+
 ## Issue
 
 The Demos page (`src/app/dashboard/demos/page.tsx`) was missing UI for four fields:
@@ -30,7 +34,9 @@ than the backend they're rewriting. When a "field is missing" bug is reported:
    simply never got a control built for it.
 
 Worth checking the same pattern on Leads, Quotations, and Implementations
-pages if similar "field missing" reports come in.
+pages if similar "field missing" reports come in. (Update: checked — see
+"Confirmed recurrences" below. Leads was already fine; Implementations and
+Quotations both had it.)
 
 ## Fix applied
 
@@ -73,6 +79,37 @@ list endpoint (what the table actually renders) → clean up test row with
 - Local Postgres (`meghasales_next` db, `postgres`/`postgres`) backs
   `DATABASE_URL` in `.env`. Seed data: 2 users (Admin User id 1, BA User id 2),
   1 lead (Golden Touch Jewellers id 1).
+
+## Confirmed recurrences (same day)
+
+Checked the other three list pages for the same class of bug immediately
+after the Demos fix. Result: the pattern is real and recurring, not
+Demos-specific.
+
+- **Leads page** — already fine. `assignedBaId` was already in the list API
+  response and already inline-editable in the table. No fix needed.
+- **Implementations page** — had it. `projectManagerId` was missing from the
+  list API response, the create form had no manager picker, and only
+  `status` was inline-editable (Manager/Stage/Start/Target-End were static
+  text) even though the PUT route already accepted all of them. Fixed:
+  added `projectManagerId` to the list response, added a Project Manager
+  select to the create form, made Manager/Stage/Start Date/Target End Date
+  inline-editable in the table. Commit `9ada7c5`.
+- **Quotations page** — had a narrower version of it. The original Spring
+  Boot app (`meghasales-backup-springboot/frontend/src/pages/Quotations.tsx`)
+  had an always-visible, editable `StatusSelect` dropdown per row; the
+  Next.js port replaced it with a static read-only badge, even though
+  `PUT /api/quotations/[id]` already accepted `status`. Fixed: restored the
+  inline-editable status select (`QUOTATION_STATUSES`: DRAFT/SENT/APPROVED/
+  REJECTED, matching the color scheme the page had already committed to).
+  Commit `f1137e1`. Note: Quotation has no manager/assignee field in the
+  schema at all (neither did the original app), so that part of the pattern
+  didn't apply here — only the missing-edit-control part did.
+
+Takeaway: when auditing a page for this pattern, check two things
+independently — (1) does the list API expose every ID field the PUT route
+accepts, and (2) is every PUT-accepted field actually reachable from a UI
+control (create form and/or inline table edit), not just `status`.
 
 ## Push procedure for this repo
 
