@@ -38,6 +38,20 @@ const INTEREST_LEVELS = [
   { value: 'LOW', label: 'Low' },
 ];
 
+const NEXT_ACTIONS = [
+  { value: 'SCHEDULE_DEMO_2', label: 'Schedule Demo 2' },
+  { value: 'SEND_QUOTATION', label: 'Send Quotation' },
+  { value: 'REQUIREMENT_GATHERING', label: 'Requirement Gathering' },
+  { value: 'FOLLOW_UP', label: 'Follow Up Later' },
+];
+
+// Interest level and next action only apply once a demo has actually taken place
+const isOutcomeApplicable = (status: string, hasExistingValue: boolean) =>
+  ['IN_PROGRESS', 'COMPLETED'].includes(status) || hasExistingValue;
+
+// Rescheduling only makes sense for demos that haven't already concluded
+const isReschedulable = (status: string) => ['SCHEDULED', 'RESCHEDULED'].includes(status);
+
 interface Demo {
   id: number;
   leadId: number;
@@ -48,6 +62,7 @@ interface Demo {
   scheduledDate: string | null;
   actualDate: string | null;
   status: string;
+  assignedToId: number | null;
   assignedToName: string | null;
   attendees: string | null;
   modulesDemonstrated: string | null;
@@ -64,6 +79,11 @@ interface Lead {
   contactPerson: string;
 }
 
+interface UserOption {
+  id: number;
+  fullName: string;
+}
+
 async function fetchDemos(params: Record<string, string>) {
   const query = new URLSearchParams(params).toString();
   const res = await fetch(`/api/demos?${query}`);
@@ -76,6 +96,13 @@ async function fetchLeads(): Promise<Lead[]> {
   if (!res.ok) throw new Error('Failed to fetch leads');
   const data = await res.json();
   return data.content;
+}
+
+async function fetchUsers(): Promise<UserOption[]> {
+  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
 }
 
 export default function DemosPage() {
@@ -117,11 +144,18 @@ export default function DemosPage() {
     queryFn: fetchLeads,
   });
 
+  // Fetch users for the Assigned To dropdown
+  const { data: users = [] } = useQuery<UserOption[]>({
+    queryKey: ['users-for-demo'],
+    queryFn: fetchUsers,
+  });
+
   // Create demo form
   const [form, setForm] = useState({
     leadId: '',
     demoType: '',
     scheduledDate: '',
+    assignedToId: '',
     attendees: '',
     modulesDemonstrated: '',
   });
@@ -139,20 +173,33 @@ export default function DemosPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['demos'] });
       toast.success('Demo scheduled successfully!');
-      setForm({ leadId: '', demoType: '', scheduledDate: '', attendees: '', modulesDemonstrated: '' });
+      setForm({ leadId: '', demoType: '', scheduledDate: '', assignedToId: '', attendees: '', modulesDemonstrated: '' });
       setDrawerOpen(false);
     },
     onError: () => toast.error('Failed to schedule demo'),
   });
 
-  const updateStatus = async (id: number, status: string) => {
-    await fetch(`/api/demos/${id}`, {
+  const updateDemo = async (id: number, patch: Record<string, any>, successMsg: string) => {
+    const res = await fetch(`/api/demos/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(patch),
     });
+    if (!res.ok) {
+      toast.error('Failed to update demo');
+      return;
+    }
     queryClient.invalidateQueries({ queryKey: ['demos'] });
-    toast.success('Status updated');
+    toast.success(successMsg);
+  };
+
+  const updateStatus = (id: number, status: string) => updateDemo(id, { status }, 'Status updated');
+  const assignTo = (id: number, assignedToId: string) => updateDemo(id, { assignedToId: assignedToId || null }, 'Assigned to updated');
+  const updateInterest = (id: number, customerInterestLevel: string) => updateDemo(id, { customerInterestLevel: customerInterestLevel || null }, 'Interest level updated');
+  const updateNextAction = (id: number, nextAction: string) => updateDemo(id, { nextAction: nextAction || null }, 'Next action updated');
+  const rescheduleDemo = (id: number, scheduledDate: string) => {
+    if (!scheduledDate) return;
+    updateDemo(id, { scheduledDate: new Date(scheduledDate).toISOString(), status: 'RESCHEDULED' }, 'Demo rescheduled');
   };
 
   const handleSort = (col: string) => {
@@ -302,7 +349,16 @@ export default function DemosPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        {demo.scheduledDate ? dayjs(demo.scheduledDate).format('DD MMM YYYY, h:mm A') : '—'}
+                        {isReschedulable(demo.status) ? (
+                          <input
+                            type="datetime-local"
+                            value={demo.scheduledDate ? dayjs(demo.scheduledDate).format('YYYY-MM-DDTHH:mm') : ''}
+                            onChange={(e) => rescheduleDemo(demo.id, e.target.value)}
+                            className="px-2 py-1 border border-slate-200 rounded text-xs text-slate-700 focus:ring-2 focus:ring-amber-500"
+                          />
+                        ) : (
+                          demo.scheduledDate ? dayjs(demo.scheduledDate).format('DD MMM YYYY, h:mm A') : '—'
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <select
@@ -313,19 +369,45 @@ export default function DemosPage() {
                           {DEMO_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{demo.assignedToName || '—'}</td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <select
+                          value={demo.assignedToId || ''}
+                          onChange={(e) => assignTo(demo.id, e.target.value)}
+                          className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="">Unassigned</option>
+                          {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                        </select>
+                      </td>
                       <td className="px-4 py-3 hidden xl:table-cell">
-                        {demo.customerInterestLevel ? (
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            demo.customerInterestLevel === 'HIGH' ? 'bg-green-100 text-green-700' :
-                            demo.customerInterestLevel === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                            {demo.customerInterestLevel}
-                          </span>
+                        {isOutcomeApplicable(demo.status, !!demo.customerInterestLevel) ? (
+                          <select
+                            value={demo.customerInterestLevel || ''}
+                            onChange={(e) => updateInterest(demo.id, e.target.value)}
+                            className={`px-2 py-1 rounded text-xs font-medium border-0 ${
+                              demo.customerInterestLevel === 'HIGH' ? 'bg-green-100 text-green-700' :
+                              demo.customerInterestLevel === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
+                              demo.customerInterestLevel === 'LOW' ? 'bg-red-100 text-red-700' :
+                              'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            <option value="">Select</option>
+                            {INTEREST_LEVELS.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
+                          </select>
                         ) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{demo.nextAction || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">
+                        {isOutcomeApplicable(demo.status, !!demo.nextAction) ? (
+                          <select
+                            value={demo.nextAction || ''}
+                            onChange={(e) => updateNextAction(demo.id, e.target.value)}
+                            className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
+                          >
+                            <option value="">Select</option>
+                            {NEXT_ACTIONS.map(n => <option key={n.value} value={n.value}>{n.label}</option>)}
+                          </select>
+                        ) : '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -410,6 +492,19 @@ export default function DemosPage() {
                               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
                             />
                           </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
+                          <select
+                            value={form.assignedToId}
+                            onChange={(e) => setForm(f => ({ ...f, assignedToId: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                          >
+                            <option value="">Unassigned</option>
+                            {users.map((u) => (
+                              <option key={u.id} value={u.id}>{u.fullName}</option>
+                            ))}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Attendees</label>

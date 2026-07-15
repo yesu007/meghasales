@@ -66,6 +66,7 @@ export async function GET(request: NextRequest) {
       scheduledDate: demo.scheduledDate,
       actualDate: demo.actualDate,
       status: demo.status,
+      assignedToId: demo.assignedToId,
       assignedToName: demo.assignedTo ? `${demo.assignedTo.firstName} ${demo.assignedTo.lastName}` : null,
       attendees: demo.attendees,
       modulesDemonstrated: demo.modulesDemonstrated,
