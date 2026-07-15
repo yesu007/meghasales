@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { TEKFILO_LOGO } from '@/lib/logo';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -35,8 +36,9 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       <div className="w-full max-w-md p-8 bg-white rounded-2xl shadow-2xl">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-slate-800">Tekfilo</h1>
-          <p className="text-slate-500 mt-2">MeghaJewels CRM</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={TEKFILO_LOGO} alt="Tekfilo" className="h-9 w-auto mx-auto" />
+          <p className="text-slate-500 mt-3">MeghaSales CRM</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">

@@ -15,7 +15,7 @@ export async function GET() {
       profile = await prisma.companyProfile.create({
         data: {
           companyName: 'Tekfilo',
-          tagline: 'MeghaJewels CRM',
+          tagline: 'MeghaSales CRM',
           isActive: true,
         },
       });

@@ -250,7 +250,7 @@ export function generateInvoicePDF(data: InvoiceData) {
   doc.setFontSize(8);
   doc.setFont(FONT, 'normal');
   doc.setTextColor(...SLATE_400);
-  doc.text('Tekfilo - MeghaJewels CRM  |  www.tekfilo.com', pageWidth / 2, footerY + 6, { align: 'center' });
+  doc.text('Tekfilo - MeghaSales CRM  |  www.tekfilo.com', pageWidth / 2, footerY + 6, { align: 'center' });
 
   doc.save(data.fileName);
 }

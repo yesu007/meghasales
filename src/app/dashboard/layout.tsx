@@ -16,6 +16,7 @@ import {
   BellIcon,
   ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
+import { TEKFILO_LOGO } from '@/lib/logo';
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
@@ -53,8 +54,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col">
         <div className="p-6 border-b border-slate-700">
-          <h1 className="text-xl font-bold text-amber-400">Tekfilo</h1>
-          <p className="text-xs text-slate-400 mt-1">MeghaJewels CRM</p>
+          <div className="bg-white rounded-lg px-3 py-2 inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={TEKFILO_LOGO} alt="Tekfilo" className="h-6 w-auto" />
+          </div>
+          <p className="text-xs text-slate-400 mt-2">MeghaSales CRM</p>
         </div>
 
         <nav className="flex-1 py-4">

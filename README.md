@@ -1,4 +1,4 @@
-# MeghaJewels CRM - Next.js Full-Stack
+# MeghaSales CRM - Next.js Full-Stack
 
 > **Tech:** Next.js 14 (App Router) + Prisma + PostgreSQL + NextAuth.js + Tailwind CSS
 > **Deployment:** Vercel (frontend + API) + Cloud Postgres (Supabase/Neon)
