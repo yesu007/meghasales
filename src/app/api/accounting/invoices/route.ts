@@ -51,6 +51,10 @@ export async function GET(request: NextRequest) {
 
     if (status === 'OVERDUE') {
       AND.push({ status: { in: ['PENDING', 'PARTIALLY_PAID'] }, dueDate: { lt: new Date(new Date().toDateString()) } });
+    } else if (status === 'OPEN') {
+      // "Open" = still awaiting payment (used by the Pending Invoices page) —
+      // distinct from an exact status match since it spans two statuses.
+      AND.push({ status: { in: ['PENDING', 'PARTIALLY_PAID'] } });
     } else if (status) {
       AND.push({ status: status.toUpperCase() });
     }

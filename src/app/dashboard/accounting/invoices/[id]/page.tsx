@@ -1,10 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeftIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, DocumentTextIcon, BanknotesIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
+import PaymentEntryDrawer from '@/components/accounting/PaymentEntryDrawer';
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-green-100 text-green-700',
@@ -43,6 +45,7 @@ async function fetchInvoice(id: string) {
 export default function InvoiceDetailPage() {
   const params = useParams();
   const id = params.id as string;
+  const [paymentDrawerOpen, setPaymentDrawerOpen] = useState(false);
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ['accounting-invoice', id],
@@ -84,9 +87,16 @@ export default function InvoiceDetailPage() {
             <p className="text-slate-500 mt-1">{invoice.lead.companyName} — {invoice.lead.contactPerson}</p>
           </div>
         </div>
-        <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[displayStatus] || 'bg-slate-100 text-slate-700'}`}>
-          {displayStatus.replace(/_/g, ' ')}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[displayStatus] || 'bg-slate-100 text-slate-700'}`}>
+            {displayStatus.replace(/_/g, ' ')}
+          </span>
+          {invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && (
+            <button onClick={() => setPaymentDrawerOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+              <BanknotesIcon className="h-4 w-4" /> Record Payment
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -191,6 +201,15 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
       </div>
+
+      <PaymentEntryDrawer
+        isOpen={paymentDrawerOpen}
+        onClose={() => setPaymentDrawerOpen(false)}
+        invoiceId={invoice.id}
+        invoiceNumber={invoice.invoiceNumber}
+        balanceDue={Number(invoice.balanceDue)}
+        currencySymbol={sym}
+      />
     </div>
   );
 }

@@ -18,9 +18,11 @@ import {
   TrashIcon,
   EyeIcon,
   ArrowDownTrayIcon,
+  BanknotesIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import PaymentEntryDrawer from './PaymentEntryDrawer';
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-green-100 text-green-700',
@@ -127,7 +129,7 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
   if (dueDateFrom) params.dueDateFrom = dueDateFrom;
   if (dueDateTo) params.dueDateTo = dueDateTo;
   if (mode === 'paid') params.status = 'PAID';
-  else if (overdueOnly) params.status = 'OVERDUE';
+  else params.status = overdueOnly ? 'OVERDUE' : 'OPEN';
 
   const { data, isLoading } = useQuery({
     queryKey: ['accounting-invoices', mode, params],
@@ -143,6 +145,7 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
   const [form, setForm] = useState(blankForm);
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [paymentInvoice, setPaymentInvoice] = useState<InvoiceRow | null>(null);
 
   const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setLineItems([]); };
 
@@ -382,6 +385,9 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
                           </Link>
                           {mode === 'open' && (
                             <>
+                              <button onClick={() => setPaymentInvoice(inv)} className="p-1.5 rounded text-slate-400 hover:text-green-600 hover:bg-green-50" title="Record Payment">
+                                <BanknotesIcon className="h-4 w-4" />
+                              </button>
                               <button onClick={() => openEdit(inv)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
                                 <PencilIcon className="h-4 w-4" />
                               </button>
@@ -506,6 +512,17 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
           </div>
         </Dialog>
       </Transition>
+
+      {paymentInvoice && (
+        <PaymentEntryDrawer
+          isOpen={!!paymentInvoice}
+          onClose={() => setPaymentInvoice(null)}
+          invoiceId={paymentInvoice.id}
+          invoiceNumber={paymentInvoice.invoiceNumber}
+          balanceDue={Number(paymentInvoice.balanceDue)}
+          currencySymbol={paymentInvoice.currencyCode === 'INR' ? '₹' : paymentInvoice.currencyCode}
+        />
+      )}
     </div>
   );
 }
