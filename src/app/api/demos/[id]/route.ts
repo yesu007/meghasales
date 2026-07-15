@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { logAudit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +59,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       });
     }
 
+    await logAudit({ action: 'UPDATE', entityType: 'DEMO', entityId: id, oldValue: existing, newValue: demo, description: `Demo updated for lead #${demo.leadId}`, request });
+
     return NextResponse.json(demo);
   } catch (error: any) {
     return NextResponse.json({ message: error.message || 'Failed to update demo' }, { status: 400 });
@@ -66,7 +69,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await prisma.demo.delete({ where: { id: parseInt(params.id) } });
+    const id = parseInt(params.id);
+    const existing = await prisma.demo.findUnique({ where: { id } });
+    if (!existing) return NextResponse.json({ message: 'Demo not found' }, { status: 404 });
+
+    await prisma.demo.delete({ where: { id } });
+    await logAudit({ action: 'DELETE', entityType: 'DEMO', entityId: id, oldValue: existing, description: `Demo deleted for lead #${existing.leadId}`, request });
+
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return NextResponse.json({ message: 'Failed to delete demo' }, { status: 400 });

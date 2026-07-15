@@ -14,6 +14,7 @@ import {
   WrenchScrewdriverIcon,
   UserGroupIcon,
   BellIcon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 
 const NAV_ITEMS = [
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon },
   { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
   { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
+  { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon },
   { href: '/dashboard/settings', label: 'Settings', icon: Cog6ToothIcon },
 ];
 

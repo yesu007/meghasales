@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { logAudit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +52,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       },
     });
 
+    await logAudit({ action: 'UPDATE', entityType: 'QUOTATION', entityId: id, oldValue: existing, newValue: quotation, description: `Quotation ${quotation.quotationNumber} updated`, request });
+
     return NextResponse.json(quotation);
   } catch (error: any) {
     return NextResponse.json({ message: error.message || 'Failed to update quotation' }, { status: 400 });
@@ -59,7 +62,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await prisma.quotation.delete({ where: { id: parseInt(params.id) } });
+    const id = parseInt(params.id);
+    const existing = await prisma.quotation.findUnique({ where: { id } });
+    if (!existing) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
+
+    await prisma.quotation.delete({ where: { id } });
+    await logAudit({ action: 'DELETE', entityType: 'QUOTATION', entityId: id, oldValue: existing, description: `Quotation ${existing.quotationNumber} deleted`, request });
+
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return NextResponse.json({ message: 'Failed to delete quotation' }, { status: 400 });

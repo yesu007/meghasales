@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { logAudit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       },
     });
 
+    await logAudit({ action: 'UPDATE', entityType: 'IMPLEMENTATION', entityId: id, oldValue: existing, newValue: impl, description: `Implementation updated: ${impl.projectName || `#${impl.id}`}`, request });
+
     return NextResponse.json(impl);
   } catch (error: any) {
     return NextResponse.json({ message: error.message || 'Failed to update' }, { status: 400 });
@@ -49,7 +52,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await prisma.implementation.delete({ where: { id: parseInt(params.id) } });
+    const id = parseInt(params.id);
+    const existing = await prisma.implementation.findUnique({ where: { id } });
+    if (!existing) return NextResponse.json({ message: 'Implementation not found' }, { status: 404 });
+
+    await prisma.implementation.delete({ where: { id } });
+    await logAudit({ action: 'DELETE', entityType: 'IMPLEMENTATION', entityId: id, oldValue: existing, description: `Implementation deleted: ${existing.projectName || `#${existing.id}`}`, request });
+
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return NextResponse.json({ message: 'Failed to delete implementation' }, { status: 400 });

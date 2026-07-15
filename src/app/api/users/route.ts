@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { logAudit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -127,6 +128,8 @@ export async function POST(request: NextRequest) {
         role: { select: { name: true } },
       },
     });
+
+    await logAudit({ action: 'CREATE', entityType: 'USER', entityId: user.id, newValue: user, description: `User created: ${user.email}`, request });
 
     return NextResponse.json(user, { status: 201 });
   } catch (error: any) {

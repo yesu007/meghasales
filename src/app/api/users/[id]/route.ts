@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
+import { logAudit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,6 +60,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       },
     });
 
+    await logAudit({ action: 'UPDATE', entityType: 'USER', entityId: id, oldValue: existing, newValue: user, description: `User updated: ${user.email}`, request });
+
     return NextResponse.json(user);
   } catch (error: any) {
     return NextResponse.json({ message: error.message || 'Failed to update user' }, { status: 400 });
@@ -67,7 +70,16 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await prisma.user.delete({ where: { id: parseInt(params.id) } });
+    const id = parseInt(params.id);
+    const existing = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, firstName: true, lastName: true, phone: true, isActive: true, roleId: true, createdAt: true },
+    });
+    if (!existing) return NextResponse.json({ message: 'User not found' }, { status: 404 });
+
+    await prisma.user.delete({ where: { id } });
+    await logAudit({ action: 'DELETE', entityType: 'USER', entityId: id, oldValue: existing, description: `User deleted: ${existing.email}`, request });
+
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return NextResponse.json({ message: 'Failed to delete user' }, { status: 400 });

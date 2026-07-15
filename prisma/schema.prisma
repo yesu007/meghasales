@@ -65,6 +65,7 @@ model User {
   createdLeads      Lead[]          @relation("CreatedBy")
   leadActivities    LeadActivity[]
   assignedDemos     Demo[]
+  auditLogs         AuditLog[]
   implementations   Implementation[] @relation("ProjectManager")
   notifications     Notification[]
 
@@ -403,5 +404,9 @@ model AuditLog {
   description String?
   createdAt   DateTime @default(now()) @map("created_at")
 
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
   @@map("audit_logs")
 }

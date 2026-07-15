@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { logAudit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,6 +123,8 @@ export async function POST(request: NextRequest) {
         description: `${body.demoType} demo scheduled for ${demo.lead.companyName}`,
       },
     });
+
+    await logAudit({ action: 'CREATE', entityType: 'DEMO', entityId: demo.id, newValue: demo, description: `${body.demoType} demo scheduled for ${demo.lead.companyName}`, request });
 
     return NextResponse.json(demo, { status: 201 });
   } catch (error: any) {
