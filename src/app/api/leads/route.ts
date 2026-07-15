@@ -42,7 +42,15 @@ export async function GET(request: NextRequest) {
     }
 
     if (status) AND.push({ status: status.toUpperCase() });
-    if (leadSource) AND.push({ leadSource: leadSource.toUpperCase() });
+    if (leadSource) {
+      AND.push({ leadSource: leadSource.toUpperCase() });
+    } else {
+      // Quotations created without picking an existing lead auto-create one
+      // (leadSource: 'QUOTATION') purely to satisfy Quotation's required FK —
+      // it's not a real, user-facing lead source (not in the UI's source
+      // filter either), so keep it out of the default lead listing/pickers.
+      AND.push({ leadSource: { not: 'QUOTATION' } });
+    }
     if (businessVertical) AND.push({ businessVerticals: { contains: businessVertical, mode: 'insensitive' } });
     if (city) AND.push({ city: { contains: city, mode: 'insensitive' } });
     if (state) AND.push({ state: { contains: state, mode: 'insensitive' } });
