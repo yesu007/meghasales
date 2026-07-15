@@ -28,6 +28,13 @@ const COUNTRIES = [
   { code: 'AU', name: 'Australia', flag: '🇦🇺' },
 ];
 
+const QUOTATION_STATUSES = [
+  { value: 'DRAFT', label: 'Draft', color: 'bg-slate-100 text-slate-700' },
+  { value: 'SENT', label: 'Sent', color: 'bg-blue-100 text-blue-700' },
+  { value: 'APPROVED', label: 'Approved', color: 'bg-green-100 text-green-700' },
+  { value: 'REJECTED', label: 'Rejected', color: 'bg-red-100 text-red-700' },
+];
+
 const MODULE_COLORS: Record<string, string> = {
   TRADING: 'bg-blue-100 text-blue-700',
   JEWELLERY: 'bg-amber-100 text-amber-700',
@@ -147,6 +154,17 @@ export default function QuotationsPage() {
     }
   };
 
+  const updateStatus = async (id: number, status: string) => {
+    const res = await fetch(`/api/quotations/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) { toast.error('Failed to update status'); return; }
+    queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    toast.success('Status updated');
+  };
+
   const downloadPDF = () => {
     if (!pricing) return;
     const symbol = pricing.currencySymbol;
@@ -242,7 +260,15 @@ export default function QuotationsPage() {
                   <td className="px-4 py-3"><p className="font-medium text-slate-800">{q.contactPerson}</p><p className="text-xs text-slate-500">{q.companyName}</p></td>
                   <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{moduleNames.slice(0, 3).map((m: string, i: number) => <span key={i} className={`px-2 py-0.5 rounded text-xs font-medium ${MODULE_COLORS[m] || 'bg-orange-100 text-orange-700'}`}>{m.charAt(0).toUpperCase() + m.slice(1).toLowerCase()}</span>)}{moduleNames.length > 3 && <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">+{moduleNames.length - 3}</span>}</div></td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-800">{q.currencyCode || '₹'} {Number(q.totalAmount || 0).toLocaleString()}</td>
-                  <td className="px-4 py-3"><span className={`px-2 py-1 rounded text-xs font-medium ${q.status === 'DRAFT' ? 'bg-slate-100 text-slate-700' : q.status === 'SENT' ? 'bg-blue-100 text-blue-700' : q.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{q.status}</span></td>
+                  <td className="px-4 py-3">
+                    <select
+                      value={q.status}
+                      onChange={(e) => updateStatus(q.id, e.target.value)}
+                      className={`px-2 py-1 rounded text-xs font-medium border-0 ${QUOTATION_STATUSES.find(s => s.value === q.status)?.color || 'bg-slate-100 text-slate-700'}`}
+                    >
+                      {QUOTATION_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </td>
                   <td className="px-4 py-3 text-slate-500">{dayjs(q.createdAt).format('DD MMM YYYY')}</td>
                   <td className="px-4 py-3"><button onClick={() => downloadQuotationPDF(q)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download PDF"><ArrowDownTrayIcon className="h-4 w-4" /></button></td>
                 </tr>
