@@ -70,6 +70,7 @@ model User {
   notifications     Notification[]
 
   // Accounting
+  managedInvoices    Invoice[]         @relation("InvoiceAccountManager")
   createdInvoices    Invoice[]         @relation("InvoiceCreatedBy")
   updatedInvoices    Invoice[]         @relation("InvoiceUpdatedBy")
   recordedPayments   Payment[]         @relation("PaymentRecordedBy")
@@ -443,6 +444,7 @@ model Invoice {
   balanceDue         Decimal   @map("balance_due") @db.Decimal(15, 2)
   currencyCode       String    @default("INR") @map("currency_code")
   status             String    @default("PENDING") @map("status") // PENDING | PARTIALLY_PAID | PAID | CANCELLED
+  accountManagerId   Int?      @map("account_manager_id")
   notes              String?
   createdById        Int?      @map("created_by")
   updatedById        Int?      @map("updated_by")
@@ -450,17 +452,19 @@ model Invoice {
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
-  lead        Lead              @relation(fields: [leadId], references: [id])
-  quotation   Quotation?        @relation(fields: [quotationId], references: [id])
-  createdBy   User?             @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
-  updatedBy   User?             @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
-  payments    Payment[]
-  reminders   PaymentReminder[]
-  creditNotes CreditNote[]
+  lead           Lead              @relation(fields: [leadId], references: [id])
+  quotation      Quotation?        @relation(fields: [quotationId], references: [id])
+  accountManager User?             @relation("InvoiceAccountManager", fields: [accountManagerId], references: [id])
+  createdBy      User?             @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User?             @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
+  payments       Payment[]
+  reminders      PaymentReminder[]
+  creditNotes    CreditNote[]
 
   @@index([status])
   @@index([leadId])
   @@index([dueDate])
+  @@index([accountManagerId])
   @@map("invoices")
 }
 
