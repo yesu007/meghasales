@@ -14,6 +14,8 @@ import {
   ChevronDownIcon,
   ArrowsUpDownIcon,
   FunnelIcon,
+  PencilIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -116,23 +118,60 @@ export default function LeadsPage() {
     queryFn: fetchUsers,
   });
 
-  // Create lead form
-  const [form, setForm] = useState({ companyName: '', contactPerson: '', mobile: '', email: '', leadSource: '', businessVerticals: '', country: '', state: '', city: '', notes: '' });
+  // Create/edit lead form
+  const blankForm = { companyName: '', contactPerson: '', mobile: '', email: '', leadSource: '', businessVerticals: '', country: '', state: '', city: '', notes: '' };
+  const [form, setForm] = useState(blankForm);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
-  const createMutation = useMutation({
+  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); };
+
+  const saveMutation = useMutation({
     mutationFn: async (data: typeof form) => {
-      const res = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-      if (!res.ok) throw new Error('Failed to create lead');
+      const url = editingId ? `/api/leads/${editingId}` : '/api/leads';
+      const method = editingId ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error(editingId ? 'Failed to update lead' : 'Failed to create lead');
       return res.json();
     },
     onSuccess: (lead) => {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
-      toast.success(`Lead "${lead.companyName}" created!`);
-      setForm({ companyName: '', contactPerson: '', mobile: '', email: '', leadSource: '', businessVerticals: '', country: '', state: '', city: '', notes: '' });
-      setDrawerOpen(false);
+      toast.success(editingId ? 'Lead updated!' : `Lead "${lead.companyName}" created!`);
+      closeDrawer();
     },
-    onError: () => toast.error('Failed to create lead'),
+    onError: () => toast.error(editingId ? 'Failed to update lead' : 'Failed to create lead'),
   });
+
+  const openEdit = async (id: number) => {
+    const res = await fetch(`/api/leads/${id}`);
+    if (!res.ok) { toast.error('Failed to load lead'); return; }
+    const lead = await res.json();
+    let businessVerticals = '';
+    if (lead.businessVerticals) {
+      try { businessVerticals = JSON.parse(lead.businessVerticals); } catch { businessVerticals = lead.businessVerticals; }
+    }
+    setForm({
+      companyName: lead.companyName || '',
+      contactPerson: lead.contactPerson || '',
+      mobile: lead.mobile || '',
+      email: lead.email || '',
+      leadSource: lead.leadSource || '',
+      businessVerticals,
+      country: lead.country || '',
+      state: lead.state || '',
+      city: lead.city || '',
+      notes: lead.notes || '',
+    });
+    setEditingId(id);
+    setDrawerOpen(true);
+  };
+
+  const deleteLead = async (id: number, name: string) => {
+    if (!window.confirm(`Delete lead "${name}"? This cannot be undone.`)) return;
+    const res = await fetch(`/api/leads/${id}`, { method: 'DELETE' });
+    if (!res.ok) { toast.error('Failed to delete lead'); return; }
+    queryClient.invalidateQueries({ queryKey: ['leads'] });
+    toast.success('Lead deleted');
+  };
 
   const updateStatus = async (id: number, status: string) => {
     await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
@@ -172,7 +211,7 @@ export default function LeadsPage() {
           <h1 className="text-2xl font-bold text-slate-800">Leads</h1>
           <p className="text-slate-500 mt-1">Manage and track your leads pipeline</p>
         </div>
-        <button onClick={() => setDrawerOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+        <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
           <PlusIcon className="h-4 w-4" /> New Lead
         </button>
       </div>
@@ -239,6 +278,7 @@ export default function LeadsPage() {
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('status')} className="flex items-center gap-1 font-semibold text-slate-700">Status <SortIcon col="status" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden lg:table-cell">Assigned BA</th>
                     <th className="px-4 py-3 text-left hidden md:table-cell"><button onClick={() => handleSort('createdAt')} className="flex items-center gap-1 font-semibold text-slate-700">Created <SortIcon col="createdAt" /></button></th>
+                    <th className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -264,6 +304,16 @@ export default function LeadsPage() {
                         </select>
                       </td>
                       <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{dayjs(lead.createdAt).format('DD MMM YYYY')}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEdit(lead.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                            <PencilIcon className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => deleteLead(lead.id, lead.companyName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -281,9 +331,9 @@ export default function LeadsPage() {
         )}
       </div>
 
-      {/* Create Lead Drawer */}
+      {/* Create/Edit Lead Drawer */}
       <Transition appear show={drawerOpen} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={() => setDrawerOpen(false)}>
+        <Dialog as="div" className="relative z-50" onClose={closeDrawer}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
             <div className="fixed inset-0 bg-black/40" />
           </Transition.Child>
@@ -293,10 +343,10 @@ export default function LeadsPage() {
                 <Dialog.Panel className="w-screen max-w-lg">
                   <div className="flex h-full flex-col bg-white shadow-xl overflow-y-auto">
                     <div className="flex items-center justify-between px-6 py-4 border-b">
-                      <Dialog.Title className="text-lg font-semibold text-slate-800">Create New Lead</Dialog.Title>
-                      <button onClick={() => setDrawerOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded"><XMarkIcon className="h-5 w-5" /></button>
+                      <Dialog.Title className="text-lg font-semibold text-slate-800">{editingId ? 'Edit Lead' : 'Create New Lead'}</Dialog.Title>
+                      <button onClick={closeDrawer} className="p-1 text-slate-400 hover:text-slate-600 rounded"><XMarkIcon className="h-5 w-5" /></button>
                     </div>
-                    <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(form); }} className="flex-1 px-6 py-4 space-y-4">
+                    <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(form); }} className="flex-1 px-6 py-4 space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="col-span-2">
                           <label className="block text-sm font-medium text-slate-700 mb-1">Company Name *</label>
@@ -346,9 +396,9 @@ export default function LeadsPage() {
                         </div>
                       </div>
                       <div className="flex justify-end gap-3 pt-4 border-t">
-                        <button type="button" onClick={() => setDrawerOpen(false)} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-                        <button type="submit" disabled={createMutation.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-                          {createMutation.isPending ? 'Saving...' : 'Save Lead'}
+                        <button type="button" onClick={closeDrawer} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+                        <button type="submit" disabled={saveMutation.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                          {saveMutation.isPending ? 'Saving...' : editingId ? 'Save Changes' : 'Save Lead'}
                         </button>
                       </div>
                     </form>

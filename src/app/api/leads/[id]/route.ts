@@ -38,6 +38,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.city !== undefined && { city: body.city }),
         ...(body.state !== undefined && { state: body.state }),
         ...(body.country !== undefined && { country: body.country }),
+        ...(body.businessVerticals !== undefined && { businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null }),
       },
     });
 

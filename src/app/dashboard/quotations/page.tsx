@@ -11,6 +11,8 @@ import {
   CurrencyDollarIcon,
   CalculatorIcon,
   ArrowDownTrayIcon,
+  PencilIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { generateInvoicePDF } from '@/lib/generateInvoicePDF';
@@ -54,6 +56,8 @@ function fmt(amount: number, symbol: string = '₹'): string {
 export default function QuotationsPage() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<'list' | 'create'>('list');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingQuotationNumber, setEditingQuotationNumber] = useState('');
 
   // Create state
   const [clientName, setClientName] = useState('');
@@ -67,6 +71,12 @@ export default function QuotationsPage() {
   const [discountPercentage, setDiscountPercentage] = useState(0);
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
+
+  const resetCreateState = () => {
+    setEditingId(null); setEditingQuotationNumber('');
+    setSelectedModules([]); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone('');
+    setClientCountry('IN'); setClientState(''); setDiscountPercentage(0); setSelectedAddons([]); setPricing(null);
+  };
 
   // Fetch quotations from database
   const { data: quotationsData } = useQuery({
@@ -117,41 +127,67 @@ export default function QuotationsPage() {
       toast.error('Fill required fields and select at least one module'); return;
     }
     try {
-      const res = await fetch('/api/quotations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyName,
-          clientName,
-          clientEmail,
-          clientPhone,
-          softwareModules: [...selectedModules, ...customModules.filter(c => c.name).map(c => ({ name: c.name, cost: c.cost, quantity: c.quantity }))],
-          businessModule: selectedModules[0] || null,
-          clientCountry,
-          clientState: clientState || null,
-          currencyCode: pricing.currencyCode,
-          totalAmount: pricing.grandTotal + customModulesTotal,
-          implementationCost: pricing.implementationCost,
-          trainingCost: pricing.trainingCost,
-          annualMaintenance: pricing.annualMaintenanceCost,
-          customDevelopmentCost: customModulesTotal > 0 ? customModulesTotal : null,
-          discountPercentage: pricing.discountPercentage || null,
-          discountAmount: pricing.discountAmount || null,
-          taxAmount: pricing.totalTax || null,
-          taxBreakdown: pricing.taxBreakdown,
-          addons: selectedAddons,
-          pricingSnapshot: pricing,
-        }),
-      });
+      const sharedFields = {
+        softwareModules: [...selectedModules, ...customModules.filter(c => c.name).map(c => ({ name: c.name, cost: c.cost, quantity: c.quantity }))],
+        businessModule: selectedModules[0] || null,
+        clientCountry,
+        clientState: clientState || null,
+        currencyCode: pricing.currencyCode,
+        totalAmount: pricing.grandTotal + customModulesTotal,
+        implementationCost: pricing.implementationCost,
+        trainingCost: pricing.trainingCost,
+        annualMaintenance: pricing.annualMaintenanceCost,
+        customDevelopmentCost: customModulesTotal > 0 ? customModulesTotal : null,
+        discountPercentage: pricing.discountPercentage || null,
+        discountAmount: pricing.discountAmount || null,
+        taxAmount: pricing.totalTax || null,
+        taxBreakdown: pricing.taxBreakdown,
+        addons: selectedAddons,
+        pricingSnapshot: pricing,
+      };
+      // Client name/company/email/phone belong to the lead, not the quotation — only sent on create (creates a new lead)
+      const body = editingId ? sharedFields : { companyName, clientName, clientEmail, clientPhone, ...sharedFields };
+      const url = editingId ? `/api/quotations/${editingId}` : '/api/quotations';
+      const method = editingId ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed to save');
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
-      setSelectedModules([]); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone('');
-      setDiscountPercentage(0); setSelectedAddons([]); setPricing(null);
-      toast.success('Quotation saved!');
+      toast.success(editingId ? 'Quotation updated!' : 'Quotation saved!');
+      resetCreateState();
       setView('list');
     } catch {
-      toast.error('Failed to save quotation');
+      toast.error(editingId ? 'Failed to update quotation' : 'Failed to save quotation');
     }
+  };
+
+  const openEdit = async (id: number) => {
+    const res = await fetch(`/api/quotations/${id}`);
+    if (!res.ok) { toast.error('Failed to load quotation'); return; }
+    const q = await res.json();
+    const sw = Array.isArray(q.softwareModules) ? q.softwareModules : [];
+    setSelectedModules(sw.filter((m: any) => typeof m === 'string'));
+    setCustomModules(sw.filter((m: any) => m && typeof m === 'object').map((m: any, i: number) => ({
+      id: `${Date.now()}-${i}`, name: m.name || '', description: m.description || '', cost: Number(m.cost) || 0, quantity: Number(m.quantity) || 1,
+    })));
+    setClientName(q.lead?.contactPerson || '');
+    setCompanyName(q.lead?.companyName || '');
+    setClientEmail(q.lead?.email || '');
+    setClientPhone(q.lead?.mobile || '');
+    setClientCountry(q.clientCountry || 'IN');
+    setClientState(q.clientState || '');
+    setDiscountPercentage(Number(q.discountPercentage) || 0);
+    setSelectedAddons(Array.isArray(q.addons) ? q.addons : []);
+    setEditingId(q.id);
+    setEditingQuotationNumber(q.quotationNumber);
+    setView('create');
+  };
+
+  const deleteQuotation = async (id: number, quotationNumber: string) => {
+    if (!window.confirm(`Delete quotation "${quotationNumber}"? This cannot be undone.`)) return;
+    const res = await fetch(`/api/quotations/${id}`, { method: 'DELETE' });
+    if (!res.ok) { toast.error('Failed to delete quotation'); return; }
+    queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    toast.success('Quotation deleted');
   };
 
   const updateStatus = async (id: number, status: string) => {
@@ -234,7 +270,7 @@ export default function QuotationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-bold text-slate-800">Quotations</h1><p className="text-slate-500 mt-1">Manage quotations</p></div>
-        <button onClick={() => setView('create')} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"><PlusIcon className="h-4 w-4" /> New Quotation</button>
+        <button onClick={() => { resetCreateState(); setView('create'); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"><PlusIcon className="h-4 w-4" /> New Quotation</button>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         {quotations.length === 0 ? (
@@ -270,7 +306,13 @@ export default function QuotationsPage() {
                     </select>
                   </td>
                   <td className="px-4 py-3 text-slate-500">{dayjs(q.createdAt).format('DD MMM YYYY')}</td>
-                  <td className="px-4 py-3"><button onClick={() => downloadQuotationPDF(q)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download PDF"><ArrowDownTrayIcon className="h-4 w-4" /></button></td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => downloadQuotationPDF(q)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download PDF"><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                      <button onClick={() => openEdit(q.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>
+                      <button onClick={() => deleteQuotation(q.id, q.quotationNumber)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>
+                    </div>
+                  </td>
                 </tr>
               );})}
             </tbody>
@@ -284,8 +326,8 @@ export default function QuotationsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold text-slate-800">Create Quotation</h1></div>
-        <button onClick={() => setView('list')} className="text-sm text-slate-500 hover:text-slate-700">← Back to List</button>
+        <div><h1 className="text-2xl font-bold text-slate-800">{editingId ? `Edit Quotation ${editingQuotationNumber}` : 'Create Quotation'}</h1></div>
+        <button onClick={() => { resetCreateState(); setView('list'); }} className="text-sm text-slate-500 hover:text-slate-700">← Back to List</button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -293,11 +335,12 @@ export default function QuotationsPage() {
           {/* Client Info */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-lg font-semibold text-slate-800 mb-4">Client Information</h2>
+            {editingId && <p className="text-xs text-slate-400 mb-3">Client details are tied to the lead and cannot be changed from here.</p>}
             <div className="grid grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input value={clientName} onChange={e => setClientName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input disabled={!!editingId} value={clientName} onChange={e => setClientName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input disabled={!!editingId} value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input disabled={!!editingId} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input disabled={!!editingId} value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
             </div>
           </div>
 
@@ -389,7 +432,7 @@ export default function QuotationsPage() {
                 <hr />
                 <div className="flex justify-between items-center pt-1"><span className="text-lg font-bold text-slate-800">Grand Total</span><span className="text-xl font-bold text-amber-700">{fmt(pricing.grandTotal + customModulesTotal, pricing.currencySymbol)}</span></div>
                 <div className="flex gap-2 mt-4">
-                  <button onClick={saveQuotation} className="flex-1 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700">Save Quotation</button>
+                  <button onClick={saveQuotation} className="flex-1 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700">{editingId ? 'Save Changes' : 'Save Quotation'}</button>
                   <button onClick={downloadPDF} className="p-2 border border-slate-300 rounded-lg hover:bg-slate-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></button>
                 </div>
               </div>

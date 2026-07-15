@@ -13,6 +13,8 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   ArrowsUpDownIcon,
+  PencilIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -122,34 +124,49 @@ export default function ImplementationsPage() {
     queryFn: fetchUsers,
   });
 
-  const [form, setForm] = useState({
-    leadId: '',
-    projectName: '',
-    startDate: '',
-    targetEndDate: '',
-    currentStage: '',
-    projectManagerId: '',
-    notes: '',
-  });
+  const blankForm = { leadId: '', projectName: '', startDate: '', targetEndDate: '', currentStage: '', projectManagerId: '', notes: '' };
+  const [form, setForm] = useState(blankForm);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
-  const createMutation = useMutation({
+  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); };
+
+  const saveMutation = useMutation({
     mutationFn: async (data: typeof form) => {
-      const res = await fetch('/api/implementations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error('Failed to create implementation');
+      const url = editingId ? `/api/implementations/${editingId}` : '/api/implementations';
+      const method = editingId ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error(editingId ? 'Failed to update implementation' : 'Failed to create implementation');
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['implementations'] });
-      toast.success('Implementation project created!');
-      setForm({ leadId: '', projectName: '', startDate: '', targetEndDate: '', currentStage: '', projectManagerId: '', notes: '' });
-      setDrawerOpen(false);
+      toast.success(editingId ? 'Implementation updated!' : 'Implementation project created!');
+      closeDrawer();
     },
-    onError: () => toast.error('Failed to create implementation'),
+    onError: () => toast.error(editingId ? 'Failed to update implementation' : 'Failed to create implementation'),
   });
+
+  const openEdit = (impl: Implementation) => {
+    setForm({
+      leadId: String(impl.leadId),
+      projectName: impl.projectName || '',
+      startDate: impl.startDate ? dayjs(impl.startDate).format('YYYY-MM-DD') : '',
+      targetEndDate: impl.targetEndDate ? dayjs(impl.targetEndDate).format('YYYY-MM-DD') : '',
+      currentStage: impl.currentStage || '',
+      projectManagerId: impl.projectManagerId ? String(impl.projectManagerId) : '',
+      notes: impl.notes || '',
+    });
+    setEditingId(impl.id);
+    setDrawerOpen(true);
+  };
+
+  const deleteImpl = async (id: number, name: string) => {
+    if (!window.confirm(`Delete implementation "${name}"? This cannot be undone.`)) return;
+    const res = await fetch(`/api/implementations/${id}`, { method: 'DELETE' });
+    if (!res.ok) { toast.error('Failed to delete implementation'); return; }
+    queryClient.invalidateQueries({ queryKey: ['implementations'] });
+    toast.success('Implementation deleted');
+  };
 
   const updateImpl = async (id: number, patch: Record<string, any>, successMsg: string) => {
     const res = await fetch(`/api/implementations/${id}`, {
@@ -194,7 +211,7 @@ export default function ImplementationsPage() {
           <h1 className="text-2xl font-bold text-slate-800">Implementations</h1>
           <p className="text-slate-500 mt-1">Track project implementations and delivery</p>
         </div>
-        <button onClick={() => setDrawerOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+        <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
           <PlusIcon className="h-4 w-4" /> New Project
         </button>
       </div>
@@ -275,6 +292,7 @@ export default function ImplementationsPage() {
                       </button>
                     </th>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden xl:table-cell">Manager</th>
+                    <th className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -327,6 +345,16 @@ export default function ImplementationsPage() {
                           {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
                         </select>
                       </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEdit(impl)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                            <PencilIcon className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => deleteImpl(impl.id, impl.projectName || `Project #${impl.id}`)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -350,9 +378,9 @@ export default function ImplementationsPage() {
         )}
       </div>
 
-      {/* Create Implementation Drawer */}
+      {/* Create/Edit Implementation Drawer */}
       <Transition appear show={drawerOpen} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={() => setDrawerOpen(false)}>
+        <Dialog as="div" className="relative z-50" onClose={closeDrawer}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
             <div className="fixed inset-0 bg-black/40" />
           </Transition.Child>
@@ -362,20 +390,22 @@ export default function ImplementationsPage() {
                 <Dialog.Panel className="w-screen max-w-lg">
                   <div className="flex h-full flex-col bg-white shadow-xl overflow-y-auto">
                     <div className="flex items-center justify-between px-6 py-4 border-b">
-                      <Dialog.Title className="text-lg font-semibold text-slate-800">New Implementation Project</Dialog.Title>
-                      <button onClick={() => setDrawerOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded">
+                      <Dialog.Title className="text-lg font-semibold text-slate-800">{editingId ? 'Edit Implementation' : 'New Implementation Project'}</Dialog.Title>
+                      <button onClick={closeDrawer} className="p-1 text-slate-400 hover:text-slate-600 rounded">
                         <XMarkIcon className="h-5 w-5" />
                       </button>
                     </div>
-                    <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(form); }} className="flex-1 px-6 py-4 space-y-4">
+                    <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(form); }} className="flex-1 px-6 py-4 space-y-4">
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Lead / Company *</label>
                           <select
                             required
+                            disabled={!!editingId}
+                            title={editingId ? 'Lead cannot be changed after creation' : undefined}
                             value={form.leadId}
                             onChange={(e) => setForm(f => ({ ...f, leadId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
                           >
                             <option value="">Select a lead</option>
                             {leads.map((lead: Lead) => (
@@ -449,11 +479,11 @@ export default function ImplementationsPage() {
                         </div>
                       </div>
                       <div className="flex justify-end gap-3 pt-4 border-t">
-                        <button type="button" onClick={() => setDrawerOpen(false)} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">
+                        <button type="button" onClick={closeDrawer} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">
                           Cancel
                         </button>
-                        <button type="submit" disabled={createMutation.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-                          {createMutation.isPending ? 'Creating...' : 'Create Project'}
+                        <button type="submit" disabled={saveMutation.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                          {saveMutation.isPending ? 'Saving...' : editingId ? 'Save Changes' : 'Create Project'}
                         </button>
                       </div>
                     </form>
