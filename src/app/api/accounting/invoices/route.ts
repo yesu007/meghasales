@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
+import { invoiceFieldsFromQuotation } from '@/lib/invoiceFromQuotation';
 
 export const dynamic = 'force-dynamic';
 
@@ -131,40 +132,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Builds invoice line items + totals from an approved Quotation's stored
-// pricing, mirroring the same parsing logic already used for the
-// Quotation PDF download (src/app/dashboard/quotations/page.tsx downloadQuotationPDF).
-function lineItemsFromQuotation(quotation: any) {
-  const snapshot = quotation.pricingSnapshot as any;
-  const modulesList = Array.isArray(quotation.softwareModules) ? quotation.softwareModules : [];
-
-  const lineItems = snapshot?.modules?.length > 0
-    ? snapshot.modules.map((m: any) => ({ description: m.moduleName, quantity: 1, unitPrice: Number(m.basePrice), total: Number(m.basePrice) }))
-    : modulesList.map((m: any) => {
-        const description = typeof m === 'string' ? m : m.name || m.moduleCode || '';
-        const unitPrice = typeof m === 'object' && m.cost ? Number(m.cost) : 0;
-        const quantity = typeof m === 'object' && m.quantity ? Number(m.quantity) : 1;
-        return { description, quantity, unitPrice, total: unitPrice * quantity };
-      });
-
-  const extra: { label: string; cost: any }[] = [
-    { label: 'Implementation & Setup', cost: quotation.implementationCost },
-    { label: 'Training', cost: quotation.trainingCost },
-    { label: 'Annual Maintenance (AMC)', cost: quotation.annualMaintenance },
-    { label: 'Custom Development', cost: quotation.customDevelopmentCost },
-  ];
-  for (const e of extra) {
-    const cost = Number(e.cost) || 0;
-    if (cost > 0) lineItems.push({ description: e.label, quantity: 1, unitPrice: cost, total: cost });
-  }
-
-  const subtotal = snapshot?.subtotal !== undefined
-    ? Number(snapshot.subtotal)
-    : lineItems.reduce((sum: number, li: any) => sum + li.total, 0);
-
-  return { lineItems, subtotal };
-}
-
 export async function POST(request: NextRequest) {
   const denied = await requirePermission('manage_invoices');
   if (denied) return denied;
@@ -188,18 +155,31 @@ export async function POST(request: NextRequest) {
     let currencyCode = body.currencyCode || 'INR';
 
     if (body.quotationId) {
-      const quotation = await prisma.quotation.findUnique({ where: { id: parseInt(body.quotationId) } });
+      const quotationId = parseInt(body.quotationId);
+      const quotation = await prisma.quotation.findUnique({ where: { id: quotationId } });
       if (!quotation) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
 
-      const derived = lineItemsFromQuotation(quotation);
+      // A quotation should only ever back one invoice — this route is also
+      // hit automatically when a quotation is approved (see
+      // src/app/api/quotations/[id]/route.ts), so a manual "Generate
+      // Invoice" click afterwards must not create a duplicate.
+      const existingInvoice = await prisma.invoice.findFirst({ where: { quotationId, deletedAt: null } });
+      if (existingInvoice) {
+        return NextResponse.json(
+          { message: `Invoice ${existingInvoice.invoiceNumber} already exists for this quotation`, invoiceId: existingInvoice.id },
+          { status: 409 }
+        );
+      }
+
+      const derived = invoiceFieldsFromQuotation(quotation);
       lineItems = derived.lineItems;
       subtotal = derived.subtotal;
-      discountPercentage = quotation.discountPercentage;
-      discountAmount = quotation.discountAmount;
-      taxBreakdown = quotation.taxBreakdown;
-      taxAmount = quotation.taxAmount;
-      totalAmount = quotation.totalAmount;
-      currencyCode = quotation.currencyCode || 'INR';
+      discountPercentage = derived.discountPercentage;
+      discountAmount = derived.discountAmount;
+      taxBreakdown = derived.taxBreakdown;
+      taxAmount = derived.taxAmount;
+      totalAmount = derived.totalAmount;
+      currencyCode = derived.currencyCode;
     }
 
     if (!lineItems || !Array.isArray(lineItems) || lineItems.length === 0) {

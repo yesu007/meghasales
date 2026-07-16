@@ -31,6 +31,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (status) AND.push({ status: status.toUpperCase() });
+    // Used by the invoice-creation quotation picker — since approval now
+    // auto-generates an invoice, only quotations still missing one (e.g.
+    // approved before that existed) should show up as pickable there.
+    if (searchParams.get('withoutInvoice') === 'true') AND.push({ invoices: { none: { deletedAt: null } } });
 
     if (AND.length > 0) where.AND = AND;
 

@@ -93,7 +93,7 @@ async function fetchUsers(): Promise<UserOption[]> {
 }
 
 async function fetchApprovedQuotations(): Promise<QuotationOption[]> {
-  const res = await fetch('/api/quotations?status=APPROVED&size=100');
+  const res = await fetch('/api/quotations?status=APPROVED&withoutInvoice=true&size=100');
   if (!res.ok) return [];
   const data = await res.json();
   return data.content.map((q: any) => ({ id: q.id, quotationNumber: q.quotationNumber, businessModule: q.businessModule, leadId: q.leadId }));

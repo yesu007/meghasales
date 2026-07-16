@@ -1,8 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server';
+import dayjs from 'dayjs';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
+import { invoiceFieldsFromQuotation } from '@/lib/invoiceFromQuotation';
 
 export const dynamic = 'force-dynamic';
+
+// Approving a quotation should immediately produce an invoice so it shows up
+// under Accounting > Pending Invoices without a separate manual step. Kept
+// idempotent (checked by caller) since this also runs alongside the manual
+// "Generate Invoice" button on the Quotations page, which stays as a
+// fallback for quotations approved before this existed.
+async function generateInvoiceForQuotation(quotation: any, request: NextRequest) {
+  const derived = invoiceFieldsFromQuotation(quotation);
+  const count = await prisma.invoice.count();
+  const invoiceNumber = `INV-${String(count + 1).padStart(5, '0')}`;
+
+  const invoice = await prisma.invoice.create({
+    data: {
+      invoiceNumber,
+      leadId: quotation.leadId,
+      quotationId: quotation.id,
+      invoiceDate: new Date(),
+      dueDate: dayjs().add(30, 'day').toDate(),
+      lineItems: derived.lineItems,
+      subtotal: derived.subtotal,
+      discountPercentage: derived.discountPercentage,
+      discountAmount: derived.discountAmount,
+      taxBreakdown: derived.taxBreakdown,
+      taxAmount: derived.taxAmount,
+      totalAmount: derived.totalAmount,
+      amountPaid: 0,
+      balanceDue: derived.totalAmount,
+      currencyCode: derived.currencyCode,
+    },
+    include: { lead: { select: { companyName: true } } },
+  });
+
+  await logAudit({
+    action: 'CREATE',
+    entityType: 'INVOICE',
+    entityId: invoice.id,
+    newValue: invoice,
+    description: `Invoice ${invoice.invoiceNumber} auto-generated for ${invoice.lead.companyName} on approval of quotation ${quotation.quotationNumber}`,
+    request,
+  });
+
+  return invoice;
+}
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -54,7 +99,15 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     await logAudit({ action: 'UPDATE', entityType: 'QUOTATION', entityId: id, oldValue: existing, newValue: quotation, description: `Quotation ${quotation.quotationNumber} updated`, request });
 
-    return NextResponse.json(quotation);
+    let generatedInvoice = null;
+    if (body.status === 'APPROVED' && existing.status !== 'APPROVED') {
+      const existingInvoice = await prisma.invoice.findFirst({ where: { quotationId: id, deletedAt: null } });
+      if (!existingInvoice) {
+        generatedInvoice = await generateInvoiceForQuotation(quotation, request);
+      }
+    }
+
+    return NextResponse.json({ ...quotation, generatedInvoice });
   } catch (error: any) {
     return NextResponse.json({ message: error.message || 'Failed to update quotation' }, { status: 400 });
   }

@@ -201,9 +201,19 @@ export default function QuotationsPage() {
     });
     if (!res.ok) { toast.error('Failed to update status'); return; }
     queryClient.invalidateQueries({ queryKey: ['quotations'] });
-    toast.success('Status updated');
+    queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
+    const updated = await res.json();
+    if (updated.generatedInvoice) {
+      toast.success(`Quotation approved — Invoice ${updated.generatedInvoice.invoiceNumber} created in Pending Invoices`);
+    } else {
+      toast.success('Status updated');
+    }
   };
 
+  // Auto-generated when a quotation is approved (see updateStatus above) —
+  // this button stays as a manual fallback for quotations that were already
+  // APPROVED before that existed. The API dedupes, so a click here after an
+  // invoice already exists just jumps to it instead of erroring.
   const generateInvoice = async (q: any) => {
     if (!window.confirm(`Generate an invoice from quotation ${q.quotationNumber}?`)) return;
     const dueDate = dayjs().add(30, 'day').format('YYYY-MM-DD');
@@ -212,6 +222,12 @@ export default function QuotationsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ leadId: q.leadId, quotationId: q.id, dueDate }),
     });
+    if (res.status === 409) {
+      const err = await res.json();
+      toast.success('Invoice already exists for this quotation');
+      if (err.invoiceId) router.push(`/dashboard/accounting/invoices/${err.invoiceId}`);
+      return;
+    }
     if (!res.ok) {
       const err = await res.json();
       toast.error(err.message || 'Failed to generate invoice');
