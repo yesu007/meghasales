@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
         take: size,
         include: {
           assignedBa: { select: { firstName: true, lastName: true } },
+          countryRef: { select: { isoCode: true, countryName: true, flagEmoji: true } },
         },
       }),
       prisma.lead.count({ where }),
@@ -91,6 +92,8 @@ export async function GET(request: NextRequest) {
       leadSource: lead.leadSource,
       assignedBaId: lead.assignedBaId,
       assignedBaName: lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : null,
+      country: lead.countryRef,
+      state: lead.state,
       createdAt: lead.createdAt,
       updatedAt: lead.updatedAt,
     }));

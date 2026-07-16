@@ -153,6 +153,7 @@ export async function POST(request: NextRequest) {
     let taxAmount = body.taxAmount ?? null;
     let totalAmount = body.totalAmount;
     let currencyCode = body.currencyCode || 'INR';
+    let exchangeRate = body.exchangeRate || 1;
 
     if (body.quotationId) {
       const quotationId = parseInt(body.quotationId);
@@ -180,6 +181,7 @@ export async function POST(request: NextRequest) {
       taxAmount = derived.taxAmount;
       totalAmount = derived.totalAmount;
       currencyCode = derived.currencyCode;
+      exchangeRate = derived.exchangeRate;
     }
 
     if (!lineItems || !Array.isArray(lineItems) || lineItems.length === 0) {
@@ -208,6 +210,7 @@ export async function POST(request: NextRequest) {
         amountPaid: 0,
         balanceDue: totalAmount,
         currencyCode,
+        exchangeRate,
         accountManagerId: body.accountManagerId ? parseInt(body.accountManagerId) : null,
         notes: body.notes || null,
         createdById: body.createdById ? parseInt(body.createdById) : null,

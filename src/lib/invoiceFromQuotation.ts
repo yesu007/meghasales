@@ -60,5 +60,6 @@ export function invoiceFieldsFromQuotation(quotation: any) {
     taxAmount: quotation.taxAmount,
     totalAmount: quotation.totalAmount,
     currencyCode: quotation.currencyCode || 'INR',
+    exchangeRate: quotation.exchangeRate || 1,
   };
 }

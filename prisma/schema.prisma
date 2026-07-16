@@ -475,6 +475,7 @@ model Invoice {
   amountPaid         Decimal   @default(0) @map("amount_paid") @db.Decimal(15, 2)
   balanceDue         Decimal   @map("balance_due") @db.Decimal(15, 2)
   currencyCode       String    @default("INR") @map("currency_code")
+  exchangeRate       Decimal?  @default(1) @map("exchange_rate") @db.Decimal(15, 6)
   status             String    @default("PENDING") @map("status") // PENDING | PARTIALLY_PAID | PAID | CANCELLED
   accountManagerId   Int?      @map("account_manager_id")
   notes              String?

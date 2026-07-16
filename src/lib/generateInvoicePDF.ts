@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { TEKFILO_LOGO } from './logo';
 import { INTER_REGULAR_TTF, INTER_BOLD_TTF } from './invoiceFont';
+import { localeForCurrency } from './currency';
 
 const FONT = 'Inter';
 
@@ -37,8 +38,15 @@ interface InvoiceData {
   fileName: string;
 }
 
-function fmt(amount: number, symbol: string): string {
-  return `${symbol} ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Kept as "symbol amount" (always a space) to match the PDF's existing
+// visual convention exactly — only the digit grouping was ever hardcoded to
+// en-IN regardless of currency; that's the one thing this fixes.
+function fmt(amount: number, symbol: string, currencyCode: string): string {
+  const formattedNumber = new Intl.NumberFormat(localeForCurrency(currencyCode), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  return `${symbol} ${formattedNumber}`;
 }
 
 export function generateInvoicePDF(data: InvoiceData) {
@@ -136,8 +144,8 @@ export function generateInvoicePDF(data: InvoiceData) {
     tableBody.push([
       { content: name + (description ? `\n${description}` : ''), styles: { fontStyle: 'bold' } },
       { content: String(qty).padStart(2, '0'), styles: { halign: 'center' } },
-      { content: fmt(unitPrice, sym), styles: { halign: 'right' } },
-      { content: fmt(total, sym), styles: { halign: 'right', fontStyle: 'bold' } },
+      { content: fmt(unitPrice, sym, data.currencyCode), styles: { halign: 'right' } },
+      { content: fmt(total, sym, data.currencyCode), styles: { halign: 'right', fontStyle: 'bold' } },
     ]);
   };
 
@@ -191,12 +199,12 @@ export function generateInvoicePDF(data: InvoiceData) {
   doc.setTextColor(...SLATE_700);
 
   doc.text('Sub Total', labelsX, ty);
-  doc.text(fmt(data.subtotal, sym), totalsX, ty, { align: 'right' });
+  doc.text(fmt(data.subtotal, sym, data.currencyCode), totalsX, ty, { align: 'right' });
   ty += 7;
 
   data.taxBreakdown.forEach(t => {
     doc.text(`${t.taxName} (${t.rate}%)`, labelsX, ty);
-    doc.text(fmt(t.amount, sym), totalsX, ty, { align: 'right' });
+    doc.text(fmt(t.amount, sym, data.currencyCode), totalsX, ty, { align: 'right' });
     ty += 7;
   });
 
@@ -204,7 +212,7 @@ export function generateInvoicePDF(data: InvoiceData) {
     doc.setTextColor(...SLATE_700);
     doc.text(`Discount (${data.discountPercentage}%)`, labelsX, ty);
     doc.setTextColor(21, 128, 61);
-    doc.text(`-${fmt(data.discountAmount, sym)}`, totalsX, ty, { align: 'right' });
+    doc.text(`-${fmt(data.discountAmount, sym, data.currencyCode)}`, totalsX, ty, { align: 'right' });
     ty += 7;
   }
 
@@ -219,7 +227,7 @@ export function generateInvoicePDF(data: InvoiceData) {
   doc.setFont(FONT, 'bold');
   doc.setTextColor(...SLATE_900);
   doc.text('Grand Total', labelsX, ty + 2);
-  doc.text(fmt(data.grandTotal, sym), totalsX, ty + 2, { align: 'right' });
+  doc.text(fmt(data.grandTotal, sym, data.currencyCode), totalsX, ty + 2, { align: 'right' });
 
   // === TERMS ===
   ty += 24;

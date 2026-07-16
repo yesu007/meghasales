@@ -93,6 +93,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'leadId or companyName is required' }, { status: 400 });
     }
 
+    // Country/currency for the quotation always comes from the Country
+    // master, resolved server-side, never trusted verbatim from the client —
+    // this is what makes "quotations generated from a lead automatically use
+    // the lead's currency" actually hold even if a stale/mismatched
+    // pricingSnapshot gets submitted alongside it.
+    const countryRow = body.clientCountry
+      ? await prisma.country.findUnique({ where: { isoCode: String(body.clientCountry).toUpperCase() } })
+      : null;
+
     // If no leadId, create a lead first
     let leadId = body.leadId ? parseInt(body.leadId) : null;
     if (!leadId && body.companyName) {
@@ -104,9 +113,31 @@ export async function POST(request: NextRequest) {
           mobile: body.clientPhone || null,
           leadSource: 'QUOTATION',
           status: 'QUALIFIED',
+          ...(countryRow && {
+            country: countryRow.countryName,
+            countryId: countryRow.id,
+            currencyCode: countryRow.currencyCode,
+            currencySymbol: countryRow.currencySymbol,
+            taxType: countryRow.defaultTaxType,
+          }),
         },
       });
       leadId = lead.id;
+    }
+
+    // When quoting an existing lead, the lead's own country/currency wins
+    // over anything the client sent — the quote can't drift onto a
+    // different currency than the lead it belongs to.
+    let clientCountry = countryRow?.isoCode || body.clientCountry || null;
+    let clientState = body.clientState || null;
+    let currencyCode = countryRow?.currencyCode || body.currencyCode || 'INR';
+    if (body.leadId) {
+      const lead = await prisma.lead.findUnique({ where: { id: leadId! }, include: { countryRef: true } });
+      if (lead?.countryRef) {
+        clientCountry = lead.countryRef.isoCode;
+        currencyCode = lead.countryRef.currencyCode;
+      }
+      clientState = clientState || lead?.state || null;
     }
 
     // Generate quotation number
@@ -128,9 +159,10 @@ export async function POST(request: NextRequest) {
         taxPercentage: body.taxPercentage || null,
         taxAmount: body.taxAmount || null,
         totalAmount: body.totalAmount || null,
-        clientCountry: body.clientCountry || null,
-        clientState: body.clientState || null,
-        currencyCode: body.currencyCode || 'INR',
+        clientCountry,
+        clientState,
+        currencyCode,
+        exchangeRate: body.exchangeRate || 1,
         taxBreakdown: body.taxBreakdown || null,
         addons: body.addons || null,
         pricingSnapshot: body.pricingSnapshot || null,

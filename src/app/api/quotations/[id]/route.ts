@@ -39,6 +39,7 @@ async function generateInvoiceForQuotation(tx: Prisma.TransactionClient, quotati
       amountPaid: 0,
       balanceDue: totalAmount,
       currencyCode: derived.currencyCode,
+      exchangeRate: derived.exchangeRate,
     },
     include: { lead: { select: { companyName: true } } },
   });
@@ -89,6 +90,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           ...(body.clientCountry !== undefined && { clientCountry: body.clientCountry }),
           ...(body.clientState !== undefined && { clientState: body.clientState }),
           ...(body.currencyCode !== undefined && { currencyCode: body.currencyCode }),
+          ...(body.exchangeRate !== undefined && { exchangeRate: body.exchangeRate }),
           ...(body.addons !== undefined && { addons: body.addons }),
           ...(body.pricingSnapshot !== undefined && { pricingSnapshot: body.pricingSnapshot }),
           ...(body.notes !== undefined && { notes: body.notes }),

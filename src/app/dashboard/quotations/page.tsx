@@ -18,19 +18,9 @@ import {
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import { generateInvoicePDF } from '@/lib/generateInvoicePDF';
+import { formatCurrency } from '@/lib/currency';
+import CountrySelect, { type Country } from '@/components/CountrySelect';
 import dayjs from 'dayjs';
-
-const COUNTRIES = [
-  { code: 'IN', name: 'India', flag: '🇮🇳' },
-  { code: 'US', name: 'United States', flag: '🇺🇸' },
-  { code: 'AE', name: 'Dubai (UAE)', flag: '🇦🇪' },
-  { code: 'TH', name: 'Thailand', flag: '🇹🇭' },
-  { code: 'CN', name: 'China', flag: '🇨🇳' },
-  { code: 'HK', name: 'Hong Kong', flag: '🇭🇰' },
-  { code: 'GB', name: 'United Kingdom', flag: '🇬🇧' },
-  { code: 'SG', name: 'Singapore', flag: '🇸🇬' },
-  { code: 'AU', name: 'Australia', flag: '🇦🇺' },
-];
 
 const QUOTATION_STATUSES = [
   { value: 'DRAFT', label: 'Draft', color: 'bg-slate-100 text-slate-700' },
@@ -47,13 +37,25 @@ const MODULE_COLORS: Record<string, string> = {
 };
 
 interface ModuleConfig { id: number; moduleCode: string; moduleName: string; description: string; baseLicenseCost: number; additionalUserCost: number; additionalBranchCost: number; }
-interface ExistingLead { id: number; companyName: string; contactPerson: string; email: string | null; mobile: string | null; }
+interface ExistingLead { id: number; companyName: string; contactPerson: string; email: string | null; mobile: string | null; country: { isoCode: string; countryName: string; flagEmoji: string | null } | null; state: string | null; }
 interface AddonConfig { id: number; addonCode: string; addonName: string; description: string; price: number; }
-interface PricingResponse { currencyCode: string; currencySymbol: string; modules: { moduleCode: string; moduleName: string; basePrice: number }[]; modulesSubtotal: number; implementationCost: number; trainingCost: number; cloudHostingCost: number; annualMaintenanceCost: number; supportCharges: number; addonsCost: number; subtotal: number; discountPercentage: number; discountAmount: number; taxBreakdown: { taxName: string; rate: number; amount: number }[]; totalTax: number; grandTotal: number; addons: { addonCode: string; addonName: string; price: number }[]; }
+interface PricingResponse { currencyCode: string; currencySymbol: string; exchangeRate: number; modules: { moduleCode: string; moduleName: string; basePrice: number }[]; modulesSubtotal: number; implementationCost: number; trainingCost: number; cloudHostingCost: number; annualMaintenanceCost: number; supportCharges: number; addonsCost: number; subtotal: number; discountPercentage: number; discountAmount: number; taxBreakdown: { taxName: string; rate: number; amount: number }[]; totalTax: number; grandTotal: number; addons: { addonCode: string; addonName: string; price: number }[]; }
 interface CustomModule { id: string; name: string; description: string; cost: number; quantity: number; }
+interface CurrencyOption { currencyCode: string; currencySymbol: string; }
 
-function fmt(amount: number, symbol: string = '₹'): string {
-  return `${symbol}${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmt(amount: number, symbol: string, currencyCode: string): string {
+  return formatCurrency(amount, currencyCode, { symbol });
+}
+
+// Catalog costs (module base license / addon price) are always stored in
+// INR. Once pricing has been computed for a selected currency, any
+// catalog price shown alongside it — including for modules/addons NOT yet
+// selected — must be converted too, or it displays the raw INR number
+// mislabeled with the client's currency symbol (e.g. "AED 350,000.00"
+// instead of the actual ~AED 15,400 equivalent).
+function catalogPriceInPricingCurrency(inrAmount: number, pricing: PricingResponse): number {
+  if (pricing.currencyCode === 'INR') return inrAmount;
+  return Math.round((inrAmount / pricing.exchangeRate) * 100) / 100;
 }
 
 export default function QuotationsPage() {
@@ -110,6 +112,19 @@ export default function QuotationsPage() {
     queryKey: ['leads-for-quotation'],
     queryFn: async () => { const r = await fetch('/api/leads?size=100&sortBy=companyName&sortDir=asc'); if (!r.ok) return []; const data = await r.json(); return data.content; },
   });
+  // Shared with CountrySelect's own internal fetch (same query key), so this
+  // doesn't cost an extra request — needed here to resolve clientCountry
+  // (an ISO code, the format the calculate API and Quotation.clientCountry
+  // use) to/from the numeric Country id CountrySelect's `value` prop expects.
+  const { data: countryList = [] } = useQuery<Country[]>({
+    queryKey: ['countries'],
+    queryFn: async () => { const r = await fetch('/api/countries?activeOnly=true'); if (!r.ok) return []; return r.json(); },
+  });
+  const { data: currencyList = [] } = useQuery<CurrencyOption[]>({
+    queryKey: ['currencies'],
+    queryFn: async () => { const r = await fetch('/api/currencies?activeOnly=true'); if (!r.ok) return []; return r.json(); },
+  });
+  const symbolForCurrency = (code: string) => currencyList.find(c => c.currencyCode === code)?.currencySymbol || code;
 
   const selectExistingLead = (id: string) => {
     setSelectedLeadId(id);
@@ -118,7 +133,16 @@ export default function QuotationsPage() {
     setCompanyName(lead?.companyName || '');
     setClientEmail(lead?.email || '');
     setClientPhone(lead?.mobile || '');
+    // Currency/tax must follow the lead — country isn't independently
+    // re-picked once an existing client is selected (see countryLocked).
+    setClientCountry(lead?.country?.isoCode || 'IN');
+    setClientState(lead?.state || '');
   };
+
+  // Quoting an existing lead (or editing an already-saved quotation, whose
+  // client is likewise locked) means currency must follow that lead/quote's
+  // own country rather than being re-picked here.
+  const countryLocked = !!editingId || clientMode === 'existing';
 
   // Auto-calculate pricing
   const calcMutation = useMutation({
@@ -156,6 +180,7 @@ export default function QuotationsPage() {
         clientCountry,
         clientState: clientState || null,
         currencyCode: pricing.currencyCode,
+        exchangeRate: pricing.exchangeRate,
         totalAmount: pricing.grandTotal + customModulesTotal,
         implementationCost: pricing.implementationCost,
         trainingCost: pricing.trainingCost,
@@ -362,7 +387,7 @@ export default function QuotationsPage() {
                   <td className="px-4 py-3 font-medium text-slate-800">{q.quotationNumber}</td>
                   <td className="px-4 py-3"><p className="font-medium text-slate-800">{q.contactPerson}</p><p className="text-xs text-slate-500">{q.companyName}</p></td>
                   <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{moduleNames.slice(0, 3).map((m: string, i: number) => <span key={i} className={`px-2 py-0.5 rounded text-xs font-medium ${MODULE_COLORS[m] || 'bg-orange-100 text-orange-700'}`}>{m.charAt(0).toUpperCase() + m.slice(1).toLowerCase()}</span>)}{moduleNames.length > 3 && <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">+{moduleNames.length - 3}</span>}</div></td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-800">{q.currencyCode || '₹'} {Number(q.totalAmount || 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmt(Number(q.totalAmount || 0), symbolForCurrency(q.currencyCode || 'INR'), q.currencyCode || 'INR')}</td>
                   <td className="px-4 py-3">
                     <select
                       value={q.status}
@@ -445,7 +470,11 @@ export default function QuotationsPage() {
                 <button key={mod.moduleCode} onClick={() => toggleModule(mod.moduleCode)} className={`p-4 rounded-lg border-2 text-left transition-all ${selectedModules.includes(mod.moduleCode) ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-200' : 'border-slate-200 hover:border-amber-300'}`}>
                   <div className="flex items-center justify-between"><h3 className="font-semibold text-slate-800">{mod.moduleName}</h3>{selectedModules.includes(mod.moduleCode) && <CheckCircleIcon className="h-5 w-5 text-amber-600" />}</div>
                   <p className="text-xs text-slate-500 mt-1">{mod.description}</p>
-                  <p className="text-sm font-bold text-amber-700 mt-2">₹{mod.baseLicenseCost.toLocaleString()}</p>
+                  <p className="text-sm font-bold text-amber-700 mt-2">
+                    {pricing
+                      ? fmt(pricing.modules.find(m => m.moduleCode === mod.moduleCode)?.basePrice ?? catalogPriceInPricingCurrency(mod.baseLicenseCost, pricing), pricing.currencySymbol, pricing.currencyCode)
+                      : fmt(mod.baseLicenseCost, '₹', 'INR')}
+                  </p>
                 </button>
               ))}
               <button onClick={addCustomModule} className="p-4 rounded-lg border-2 border-dashed border-slate-300 text-left hover:border-amber-400 hover:bg-amber-50">
@@ -459,7 +488,7 @@ export default function QuotationsPage() {
                   <div className="flex justify-between"><span className="text-xs font-medium text-orange-700">Custom Module</span><button onClick={() => removeCustomModule(cm.id)} className="text-red-400 hover:text-red-600"><XMarkIcon className="h-4 w-4" /></button></div>
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className="text-xs font-medium text-slate-600">Name *</label><input value={cm.name} onChange={e => updateCustomModule(cm.id, 'name', e.target.value)} placeholder="AI Integration" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 mt-1" /></div>
-                    <div className="flex gap-2"><div className="flex-1"><label className="text-xs font-medium text-slate-600">Cost (₹) *</label><input type="number" value={cm.cost} onChange={e => updateCustomModule(cm.id, 'cost', Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 mt-1" /></div><div className="w-16"><label className="text-xs font-medium text-slate-600">Qty</label><input type="number" min={1} value={cm.quantity} onChange={e => updateCustomModule(cm.id, 'quantity', Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 mt-1" /></div></div>
+                    <div className="flex gap-2"><div className="flex-1"><label className="text-xs font-medium text-slate-600">Cost ({pricing?.currencySymbol || '₹'}) *</label><input type="number" value={cm.cost} onChange={e => updateCustomModule(cm.id, 'cost', Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 mt-1" /></div><div className="w-16"><label className="text-xs font-medium text-slate-600">Qty</label><input type="number" min={1} value={cm.quantity} onChange={e => updateCustomModule(cm.id, 'quantity', Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 mt-1" /></div></div>
                   </div>
                   <div><label className="text-xs font-medium text-slate-600">Description *</label><textarea rows={2} value={cm.description} onChange={e => updateCustomModule(cm.id, 'description', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 mt-1" /></div>
                 </div>
@@ -471,7 +500,14 @@ export default function QuotationsPage() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2"><GlobeAltIcon className="h-5 w-5 text-amber-600" /> Client Location *</h2>
             <div className="grid grid-cols-3 gap-4">
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Country</label><select value={clientCountry} onChange={e => { setClientCountry(e.target.value); setClientState(''); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">{COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Country</label>
+                <CountrySelect
+                  value={countryList.find(c => c.isoCode === clientCountry)?.id ?? null}
+                  onChange={(c) => { setClientCountry(c.isoCode); setClientState(''); }}
+                  disabled={countryLocked}
+                />
+              </div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">State</label><select value={clientState} onChange={e => setClientState(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"><option value="">Select</option>{states.map(s => <option key={s.stateCode} value={s.stateCode}>{s.stateName}</option>)}</select></div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Discount %</label><input type="number" min={0} max={50} value={discountPercentage} onChange={e => setDiscountPercentage(Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></div>
             </div>
@@ -484,7 +520,11 @@ export default function QuotationsPage() {
               {addons.map(addon => (
                 <button key={addon.addonCode} onClick={() => toggleAddon(addon.addonCode)} className={`p-3 rounded-lg border text-left text-xs transition-all ${selectedAddons.includes(addon.addonCode) ? 'border-amber-500 bg-amber-50' : 'border-slate-200 hover:border-slate-300'}`}>
                   <div className="flex items-center justify-between"><span className="font-medium text-slate-700">{addon.addonName}</span>{selectedAddons.includes(addon.addonCode) && <CheckCircleIcon className="h-3.5 w-3.5 text-amber-600" />}</div>
-                  <p className="text-amber-700 font-semibold mt-1">₹{addon.price.toLocaleString()}</p>
+                  <p className="text-amber-700 font-semibold mt-1">
+                    {pricing
+                      ? fmt(pricing.addons.find(a => a.addonCode === addon.addonCode)?.price ?? catalogPriceInPricingCurrency(addon.price, pricing), pricing.currencySymbol, pricing.currencyCode)
+                      : fmt(addon.price, '₹', 'INR')}
+                  </p>
                 </button>
               ))}
             </div>
@@ -502,23 +542,23 @@ export default function QuotationsPage() {
                 <div className="flex justify-between text-sm"><span className="text-slate-600">Currency:</span><span className="font-semibold">{pricing.currencySymbol} {pricing.currencyCode}</span></div>
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium text-slate-500 uppercase">Modules</p>
-                  {pricing.modules.map(m => <div key={m.moduleCode} className="flex justify-between text-sm"><span className="text-slate-600">{m.moduleName}</span><span>{fmt(m.basePrice, pricing.currencySymbol)}</span></div>)}
-                  {customModules.filter(c => c.name && c.cost > 0).map(c => <div key={c.id} className="flex justify-between text-sm"><span className="text-orange-700">{c.name}</span><span>{fmt(c.cost * c.quantity, pricing.currencySymbol)}</span></div>)}
-                  <div className="flex justify-between text-sm font-medium border-t pt-1"><span>Modules Total</span><span>{fmt(pricing.modulesSubtotal + customModulesTotal, pricing.currencySymbol)}</span></div>
+                  {pricing.modules.map(m => <div key={m.moduleCode} className="flex justify-between text-sm"><span className="text-slate-600">{m.moduleName}</span><span>{fmt(m.basePrice, pricing.currencySymbol, pricing.currencyCode)}</span></div>)}
+                  {customModules.filter(c => c.name && c.cost > 0).map(c => <div key={c.id} className="flex justify-between text-sm"><span className="text-orange-700">{c.name}</span><span>{fmt(c.cost * c.quantity, pricing.currencySymbol, pricing.currencyCode)}</span></div>)}
+                  <div className="flex justify-between text-sm font-medium border-t pt-1"><span>Modules Total</span><span>{fmt(pricing.modulesSubtotal + customModulesTotal, pricing.currencySymbol, pricing.currencyCode)}</span></div>
                 </div>
                 <div className="space-y-1 text-sm">
-                  {pricing.implementationCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Implementation</span><span>{fmt(pricing.implementationCost, pricing.currencySymbol)}</span></div>}
-                  {pricing.trainingCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Training</span><span>{fmt(pricing.trainingCost, pricing.currencySymbol)}</span></div>}
-                  {pricing.cloudHostingCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Cloud Hosting</span><span>{fmt(pricing.cloudHostingCost, pricing.currencySymbol)}</span></div>}
-                  {pricing.annualMaintenanceCost > 0 && <div className="flex justify-between"><span className="text-slate-600">AMC</span><span>{fmt(pricing.annualMaintenanceCost, pricing.currencySymbol)}</span></div>}
-                  {pricing.addonsCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Add-ons</span><span>{fmt(pricing.addonsCost, pricing.currencySymbol)}</span></div>}
+                  {pricing.implementationCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Implementation</span><span>{fmt(pricing.implementationCost, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
+                  {pricing.trainingCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Training</span><span>{fmt(pricing.trainingCost, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
+                  {pricing.cloudHostingCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Cloud Hosting</span><span>{fmt(pricing.cloudHostingCost, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
+                  {pricing.annualMaintenanceCost > 0 && <div className="flex justify-between"><span className="text-slate-600">AMC</span><span>{fmt(pricing.annualMaintenanceCost, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
+                  {pricing.addonsCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Add-ons</span><span>{fmt(pricing.addonsCost, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
                 </div>
                 <hr />
-                <div className="flex justify-between font-medium text-sm"><span>Subtotal</span><span>{fmt(pricing.subtotal + customModulesTotal, pricing.currencySymbol)}</span></div>
-                {pricing.discountAmount > 0 && <div className="flex justify-between text-sm text-green-600"><span>Discount ({pricing.discountPercentage}%)</span><span>-{fmt(pricing.discountAmount, pricing.currencySymbol)}</span></div>}
-                {pricing.taxBreakdown.length > 0 && <div className="space-y-1"><p className="text-xs font-medium text-slate-500 uppercase">Taxes</p>{pricing.taxBreakdown.map((t, i) => <div key={i} className="flex justify-between text-sm text-slate-600"><span>{t.taxName} ({t.rate}%)</span><span>{fmt(t.amount, pricing.currencySymbol)}</span></div>)}</div>}
+                <div className="flex justify-between font-medium text-sm"><span>Subtotal</span><span>{fmt(pricing.subtotal + customModulesTotal, pricing.currencySymbol, pricing.currencyCode)}</span></div>
+                {pricing.discountAmount > 0 && <div className="flex justify-between text-sm text-green-600"><span>Discount ({pricing.discountPercentage}%)</span><span>-{fmt(pricing.discountAmount, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
+                {pricing.taxBreakdown.length > 0 && <div className="space-y-1"><p className="text-xs font-medium text-slate-500 uppercase">Taxes</p>{pricing.taxBreakdown.map((t, i) => <div key={i} className="flex justify-between text-sm text-slate-600"><span>{t.taxName} ({t.rate}%)</span><span>{fmt(t.amount, pricing.currencySymbol, pricing.currencyCode)}</span></div>)}</div>}
                 <hr />
-                <div className="flex justify-between items-center pt-1"><span className="text-lg font-bold text-slate-800">Grand Total</span><span className="text-xl font-bold text-amber-700">{fmt(pricing.grandTotal + customModulesTotal, pricing.currencySymbol)}</span></div>
+                <div className="flex justify-between items-center pt-1"><span className="text-lg font-bold text-slate-800">Grand Total</span><span className="text-xl font-bold text-amber-700">{fmt(pricing.grandTotal + customModulesTotal, pricing.currencySymbol, pricing.currencyCode)}</span></div>
                 <div className="flex gap-2 mt-4">
                   <button onClick={saveQuotation} className="flex-1 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700">{editingId ? 'Save Changes' : 'Save Quotation'}</button>
                   <button onClick={downloadPDF} className="p-2 border border-slate-300 rounded-lg hover:bg-slate-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></button>
