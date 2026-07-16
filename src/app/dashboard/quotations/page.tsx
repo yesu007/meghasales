@@ -47,6 +47,7 @@ const MODULE_COLORS: Record<string, string> = {
 };
 
 interface ModuleConfig { id: number; moduleCode: string; moduleName: string; description: string; baseLicenseCost: number; additionalUserCost: number; additionalBranchCost: number; }
+interface ExistingLead { id: number; companyName: string; contactPerson: string; email: string | null; mobile: string | null; }
 interface AddonConfig { id: number; addonCode: string; addonName: string; description: string; price: number; }
 interface PricingResponse { currencyCode: string; currencySymbol: string; modules: { moduleCode: string; moduleName: string; basePrice: number }[]; modulesSubtotal: number; implementationCost: number; trainingCost: number; cloudHostingCost: number; annualMaintenanceCost: number; supportCharges: number; addonsCost: number; subtotal: number; discountPercentage: number; discountAmount: number; taxBreakdown: { taxName: string; rate: number; amount: number }[]; totalTax: number; grandTotal: number; addons: { addonCode: string; addonName: string; price: number }[]; }
 interface CustomModule { id: string; name: string; description: string; cost: number; quantity: number; }
@@ -63,6 +64,8 @@ export default function QuotationsPage() {
   const [editingQuotationNumber, setEditingQuotationNumber] = useState('');
 
   // Create state
+  const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
+  const [selectedLeadId, setSelectedLeadId] = useState('');
   const [clientName, setClientName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
@@ -79,6 +82,7 @@ export default function QuotationsPage() {
     setEditingId(null); setEditingQuotationNumber('');
     setSelectedModules([]); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone('');
     setClientCountry('IN'); setClientState(''); setDiscountPercentage(0); setSelectedAddons([]); setPricing(null);
+    setClientMode('existing'); setSelectedLeadId('');
   };
 
   // Fetch quotations from database
@@ -102,6 +106,19 @@ export default function QuotationsPage() {
     queryFn: async () => { const r = await fetch(`/api/quotation-config/taxes?type=states&country=${clientCountry}`); return r.json(); },
     enabled: !!clientCountry,
   });
+  const { data: existingLeads = [] } = useQuery<ExistingLead[]>({
+    queryKey: ['leads-for-quotation'],
+    queryFn: async () => { const r = await fetch('/api/leads?size=100&sortBy=companyName&sortDir=asc'); if (!r.ok) return []; const data = await r.json(); return data.content; },
+  });
+
+  const selectExistingLead = (id: string) => {
+    setSelectedLeadId(id);
+    const lead = existingLeads.find(l => String(l.id) === id);
+    setClientName(lead?.contactPerson || '');
+    setCompanyName(lead?.companyName || '');
+    setClientEmail(lead?.email || '');
+    setClientPhone(lead?.mobile || '');
+  };
 
   // Auto-calculate pricing
   const calcMutation = useMutation({
@@ -127,8 +144,10 @@ export default function QuotationsPage() {
   const customModulesTotal = customModules.reduce((sum, m) => sum + (m.cost * m.quantity), 0);
 
   const saveQuotation = async () => {
-    if (!pricing || !clientName || !companyName || (selectedModules.length === 0 && customModules.filter(c => c.name && c.cost > 0).length === 0)) {
-      toast.error('Fill required fields and select at least one module'); return;
+    const clientValid = editingId || (clientMode === 'existing' ? !!selectedLeadId : !!(clientName && companyName));
+    if (!pricing || !clientValid || (selectedModules.length === 0 && customModules.filter(c => c.name && c.cost > 0).length === 0)) {
+      toast.error(clientMode === 'existing' && !editingId ? 'Select a client and at least one module' : 'Fill required fields and select at least one module');
+      return;
     }
     try {
       const sharedFields = {
@@ -149,8 +168,14 @@ export default function QuotationsPage() {
         addons: selectedAddons,
         pricingSnapshot: pricing,
       };
-      // Client name/company/email/phone belong to the lead, not the quotation — only sent on create (creates a new lead)
-      const body = editingId ? sharedFields : { companyName, clientName, clientEmail, clientPhone, ...sharedFields };
+      // On create: existing-client mode links to the picked lead via leadId;
+      // new-client mode sends company/contact fields so the API creates a
+      // fresh lead. Neither applies once editing (client is locked to the lead).
+      const body = editingId
+        ? sharedFields
+        : clientMode === 'existing'
+          ? { leadId: selectedLeadId, ...sharedFields }
+          : { companyName, clientName, clientEmail, clientPhone, ...sharedFields };
       const url = editingId ? `/api/quotations/${editingId}` : '/api/quotations';
       const method = editingId ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -380,13 +405,31 @@ export default function QuotationsPage() {
           {/* Client Info */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-lg font-semibold text-slate-800 mb-4">Client Information</h2>
-            {editingId && <p className="text-xs text-slate-400 mb-3">Client details are tied to the lead and cannot be changed from here.</p>}
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input disabled={!!editingId} value={clientName} onChange={e => setClientName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input disabled={!!editingId} value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input disabled={!!editingId} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input disabled={!!editingId} value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
-            </div>
+            {editingId ? (
+              <p className="text-xs text-slate-400 mb-3">Client details are tied to the lead and cannot be changed from here.</p>
+            ) : (
+              <div className="flex gap-2 mb-4">
+                <button onClick={() => { setClientMode('existing'); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'existing' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>Existing Client</button>
+                <button onClick={() => { setClientMode('new'); setSelectedLeadId(''); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'new' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>New Client</button>
+              </div>
+            )}
+            {!editingId && clientMode === 'existing' ? (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
+                <select value={selectedLeadId} onChange={e => selectExistingLead(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                  <option value="">Select a client</option>
+                  {existingLeads.map(l => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}{l.email ? ` (${l.email})` : ''}</option>)}
+                </select>
+                {existingLeads.length === 0 && <p className="text-xs text-slate-400 mt-1">No existing clients yet — switch to "New Client" to add one.</p>}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input disabled={!!editingId} value={clientName} onChange={e => setClientName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input disabled={!!editingId} value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input disabled={!!editingId} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input disabled={!!editingId} value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
+              </div>
+            )}
           </div>
 
           {/* Module Selection */}
