@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildReport, ReportType } from '@/lib/accountingReports';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 const VALID_TYPES: ReportType[] = ['outstanding', 'aging', 'collection', 'payment-history', 'overdue', 'monthly-collection'];
 
 export async function GET(request: NextRequest) {
+  const denied = await requirePermission('view_accounting');
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as ReportType;

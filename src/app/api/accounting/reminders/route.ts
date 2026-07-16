@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { generateDueReminders } from '@/lib/reminderGeneration';
+import { requirePermission } from '@/lib/rbac';
 import dayjs from 'dayjs';
 
 export const dynamic = 'force-dynamic';
@@ -25,6 +26,8 @@ function nextReminderDate(reminderType: string, dueDate: Date): string | null {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await requirePermission('view_accounting');
+  if (denied) return denied;
   try {
     // Backfill any reminder thresholds newly crossed since the last visit —
     // keeps this page useful even before the Phase 7 cron job exists, and

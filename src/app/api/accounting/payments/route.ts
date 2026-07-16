@@ -3,12 +3,15 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { applyPayment, OverpaymentError } from '@/lib/accounting';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 class NotFoundError extends Error {}
 
 export async function GET(request: NextRequest) {
+  const denied = await requirePermission('view_accounting');
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '0');
@@ -83,6 +86,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requirePermission('manage_payments');
+  if (denied) return denied;
   try {
     const body = await request.json();
 

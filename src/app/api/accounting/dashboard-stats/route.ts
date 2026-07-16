@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import dayjs from 'dayjs';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  const denied = await requirePermission('view_accounting');
+  if (denied) return denied;
   try {
     const today = dayjs().startOf('day').toDate();
     const weekEnd = dayjs().add(7, 'day').endOf('day').toDate();

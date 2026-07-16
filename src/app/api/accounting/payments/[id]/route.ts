@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { reversePayment } from '@/lib/accounting';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('view_accounting');
+  if (denied) return denied;
   try {
     const payment = await prisma.payment.findUnique({
       where: { id: parseInt(params.id) },
@@ -25,6 +28,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // silently desync the invoice balance without going through applyPayment(),
 // so amount corrections must be done via delete + re-record instead.
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_payments');
+  if (denied) return denied;
   try {
     const body = await request.json();
     const id = parseInt(params.id);
@@ -57,6 +62,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_payments');
+  if (denied) return denied;
   try {
     const id = parseInt(params.id);
 

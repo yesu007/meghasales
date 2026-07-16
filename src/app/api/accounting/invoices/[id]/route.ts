@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('view_accounting');
+  if (denied) return denied;
   try {
     const invoice = await prisma.invoice.findUnique({
       where: { id: parseInt(params.id) },
@@ -25,6 +28,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_invoices');
+  if (denied) return denied;
   try {
     const body = await request.json();
     const id = parseInt(params.id);
@@ -67,6 +72,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_invoices');
+  if (denied) return denied;
   try {
     const id = parseInt(params.id);
     const existing = await prisma.invoice.findUnique({ where: { id }, include: { payments: { where: { deletedAt: null } } } });

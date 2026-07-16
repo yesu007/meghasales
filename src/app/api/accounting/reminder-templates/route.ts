@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  const denied = await requirePermission('view_accounting');
+  if (denied) return denied;
   try {
     const templates = await prisma.reminderTemplate.findMany({ orderBy: [{ reminderType: 'asc' }, { channel: 'asc' }] });
     return NextResponse.json(templates);
@@ -14,6 +17,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requirePermission('manage_invoices');
+  if (denied) return denied;
   try {
     const body = await request.json();
     if (!body.name || !body.reminderType || !body.channel || !body.body) {

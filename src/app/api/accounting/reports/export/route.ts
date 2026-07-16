@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildReport, ReportType } from '@/lib/accountingReports';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,8 @@ function csvEscape(value: unknown): string {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await requirePermission('view_accounting');
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as ReportType;

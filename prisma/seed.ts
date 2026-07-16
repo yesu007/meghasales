@@ -131,10 +131,28 @@ async function main() {
     { name: 'manage_invoices', description: 'Create/edit/delete invoices', module: 'ACCOUNTING' },
     { name: 'manage_payments', description: 'Record/edit/delete payments', module: 'ACCOUNTING' },
   ];
-  for (const p of accountingPermissions) {
-    await prisma.permission.upsert({ where: { name: p.name }, update: {}, create: p });
-  }
+  const createdPermissions = await Promise.all(
+    accountingPermissions.map((p) => prisma.permission.upsert({ where: { name: p.name }, update: {}, create: p }))
+  );
   console.log('  ✓ Accounting permissions seeded');
+
+  // Grant accounting permissions to the roles that should have them —
+  // RolePermission had zero rows for ANY module before this (the RBAC
+  // schema existed but was never actually used anywhere in the app), so
+  // this is the first real grant, not a re-grant. ADMIN/MANAGEMENT/FINANCE
+  // get full accounting access; other roles (BA, Demo Team, DevOps) don't,
+  // by design — they have no reason to touch invoicing.
+  const accountingRoles = [roles[0], roles[1], roles[4]]; // ADMIN, MANAGEMENT, FINANCE
+  for (const role of accountingRoles) {
+    for (const permission of createdPermissions) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+        update: {},
+        create: { roleId: role.id, permissionId: permission.id },
+      });
+    }
+  }
+  console.log('  ✓ Accounting permissions granted to ADMIN, MANAGEMENT, FINANCE roles');
 
   // Default reminder templates (one per threshold, email + WhatsApp variants)
   const reminderThresholds = [
