@@ -119,5 +119,19 @@ describe('resolveTaxRates', () => {
       });
       expect(rates).toEqual([{ taxName: 'CA Sales Tax', taxType: 'SALES_TAX', rate: 7.25 }]);
     });
+
+    it('handles a non-India GST country the same generic way as VAT (Singapore, seeded at 9%)', () => {
+      // Confirms the non-IN branch doesn't special-case the tax *name* —
+      // GST outside India (Singapore) flows through identically to VAT
+      // (UAE/Thailand/UK/Saudi Arabia) or Sales Tax (US).
+      const rates = resolveTaxRates({
+        countryCode: 'SG',
+        isSameState: false,
+        hasStateCode: false,
+        stateTaxRows: [],
+        countryTaxRows: [{ taxName: 'GST', taxType: 'GST', rate: 9 }],
+      });
+      expect(rates).toEqual([{ taxName: 'GST', taxType: 'GST', rate: 9 }]);
+    });
   });
 });

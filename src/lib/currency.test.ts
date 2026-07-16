@@ -34,6 +34,19 @@ describe('symbolForCurrency', () => {
   it('falls back to the currency code itself for an unknown currency', () => {
     expect(symbolForCurrency('XYZ')).toBe('XYZ');
   });
+
+  it('has a real symbol for every currency seeded in prisma/seed.ts', () => {
+    // Keep in sync with the `currencies` array in prisma/seed.ts — a
+    // newly-seeded currency missing an entry here would silently fall
+    // back to rendering its own 3-letter code instead of a symbol.
+    expect(symbolForCurrency('INR')).toBe('₹');
+    expect(symbolForCurrency('USD')).toBe('$');
+    expect(symbolForCurrency('GBP')).toBe('£');
+    expect(symbolForCurrency('AED')).toBe('AED');
+    expect(symbolForCurrency('THB')).toBe('฿');
+    expect(symbolForCurrency('SGD')).toBe('SGD');
+    expect(symbolForCurrency('SAR')).toBe('SAR');
+  });
 });
 
 describe('formatCurrency', () => {
