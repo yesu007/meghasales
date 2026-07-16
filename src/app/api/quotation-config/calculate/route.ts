@@ -11,8 +11,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { moduleCodes, clientCountry, clientState, discountPercentage = 0, addonCodes = [] } = body;
 
-    if (!moduleCodes || moduleCodes.length === 0) {
-      return NextResponse.json({ message: 'At least one module required' }, { status: 400 });
+    if (!Array.isArray(moduleCodes)) {
+      return NextResponse.json({ message: 'moduleCodes must be an array' }, { status: 400 });
     }
     if (!clientCountry) {
       return NextResponse.json({ message: 'Client country required' }, { status: 400 });

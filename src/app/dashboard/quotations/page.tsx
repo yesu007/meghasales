@@ -109,14 +109,15 @@ export default function QuotationsPage() {
     onSuccess: (data) => setPricing(data),
   });
 
+  const hasCustomModules = customModules.some(c => c.name && c.cost > 0);
   useEffect(() => {
-    if (selectedModules.length > 0 && clientCountry) {
+    if ((selectedModules.length > 0 || hasCustomModules) && clientCountry) {
       const t = setTimeout(() => {
         calcMutation.mutate({ moduleCodes: selectedModules, clientCountry, clientState: clientState || undefined, discountPercentage: discountPercentage || undefined, addonCodes: selectedAddons.length > 0 ? selectedAddons : undefined });
       }, 300);
       return () => clearTimeout(t);
     } else { setPricing(null); }
-  }, [selectedModules, clientCountry, clientState, discountPercentage, selectedAddons]);
+  }, [selectedModules, hasCustomModules, clientCountry, clientState, discountPercentage, selectedAddons]);
 
   const toggleModule = (code: string) => setSelectedModules(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   const toggleAddon = (code: string) => setSelectedAddons(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
