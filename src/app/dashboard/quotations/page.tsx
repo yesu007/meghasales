@@ -73,6 +73,7 @@ export default function QuotationsPage() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
+  const [moduleOverrides, setModuleOverrides] = useState<Record<string, number>>({});
   const [customModules, setCustomModules] = useState<CustomModule[]>([]);
   const [clientCountry, setClientCountry] = useState('IN');
   const [clientState, setClientState] = useState('');
@@ -82,7 +83,7 @@ export default function QuotationsPage() {
 
   const resetCreateState = () => {
     setEditingId(null); setEditingQuotationNumber('');
-    setSelectedModules([]); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone('');
+    setSelectedModules([]); setModuleOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone('');
     setClientCountry('IN'); setClientState(''); setDiscountPercentage(0); setSelectedAddons([]); setPricing(null);
     setClientMode('existing'); setSelectedLeadId('');
   };
@@ -154,13 +155,18 @@ export default function QuotationsPage() {
   useEffect(() => {
     if ((selectedModules.length > 0 || hasCustomModules) && clientCountry) {
       const t = setTimeout(() => {
-        calcMutation.mutate({ moduleCodes: selectedModules, clientCountry, clientState: clientState || undefined, discountPercentage: discountPercentage || undefined, addonCodes: selectedAddons.length > 0 ? selectedAddons : undefined });
+        calcMutation.mutate({ moduleCodes: selectedModules, clientCountry, clientState: clientState || undefined, discountPercentage: discountPercentage || undefined, addonCodes: selectedAddons.length > 0 ? selectedAddons : undefined, moduleOverrides: Object.keys(moduleOverrides).length > 0 ? moduleOverrides : undefined });
       }, 300);
       return () => clearTimeout(t);
     } else { setPricing(null); }
-  }, [selectedModules, hasCustomModules, clientCountry, clientState, discountPercentage, selectedAddons]);
+  }, [selectedModules, hasCustomModules, clientCountry, clientState, discountPercentage, selectedAddons, moduleOverrides]);
 
-  const toggleModule = (code: string) => setSelectedModules(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
+  const toggleModule = (code: string) => {
+    const isSelected = selectedModules.includes(code);
+    setSelectedModules(prev => isSelected ? prev.filter(c => c !== code) : [...prev, code]);
+    if (isSelected) setModuleOverrides(prev => { const { [code]: _drop, ...rest } = prev; return rest; });
+  };
+  const updateModuleOverride = (code: string, value: number) => setModuleOverrides(prev => ({ ...prev, [code]: value }));
   const toggleAddon = (code: string) => setSelectedAddons(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   const addCustomModule = () => setCustomModules(prev => [...prev, { id: Date.now().toString(), name: '', description: '', cost: 0, quantity: 1 }]);
   const removeCustomModule = (id: string) => setCustomModules(prev => prev.filter(m => m.id !== id));
@@ -223,6 +229,17 @@ export default function QuotationsPage() {
     setCustomModules(sw.filter((m: any) => m && typeof m === 'object').map((m: any, i: number) => ({
       id: `${Date.now()}-${i}`, name: m.name || '', description: m.description || '', cost: Number(m.cost) || 0, quantity: Number(m.quantity) || 1,
     })));
+    // Restore the exact per-module amounts this quotation was quoted at
+    // (which may have been overridden from catalog price), rather than
+    // letting the calc effect silently replace them with today's catalog
+    // price/exchange rate.
+    const snapshotModules = q.pricingSnapshot?.modules;
+    setModuleOverrides(Array.isArray(snapshotModules)
+      ? snapshotModules.reduce((acc: Record<string, number>, m: any) => {
+          if (m?.moduleCode) acc[m.moduleCode] = Number(m.basePrice);
+          return acc;
+        }, {})
+      : {});
     setClientName(q.lead?.contactPerson || '');
     setCompanyName(q.lead?.companyName || '');
     setClientEmail(q.lead?.email || '');
@@ -482,6 +499,29 @@ export default function QuotationsPage() {
                 <p className="text-xs text-slate-500 mt-1">Add custom module with your own pricing</p>
               </button>
             </div>
+            {selectedModules.length > 0 && pricing && (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-medium text-slate-500 uppercase">Module amount (editable)</p>
+                {selectedModules.map(code => {
+                  const mod = modules.find(m => m.moduleCode === code);
+                  const calcPrice = pricing.modules.find(m => m.moduleCode === code)?.basePrice ?? 0;
+                  return (
+                    <div key={code} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50">
+                      <span className="text-sm font-medium text-slate-700">{mod?.moduleName || code}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-slate-500">{pricing.currencySymbol}</span>
+                        <input
+                          type="number"
+                          value={moduleOverrides[code] ?? calcPrice}
+                          onChange={e => updateModuleOverride(code, Number(e.target.value))}
+                          className="w-28 px-2 py-1 border border-slate-300 rounded text-sm text-right text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             {customModules.length > 0 && (
               <div className="mt-4 space-y-3">{customModules.map(cm => (
                 <div key={cm.id} className="p-4 rounded-lg border border-orange-200 bg-orange-50 space-y-3">

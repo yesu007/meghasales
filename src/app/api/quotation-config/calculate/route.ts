@@ -10,7 +10,7 @@ const DEFAULT_SUPPLIER_STATE = 'TN';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { moduleCodes, clientCountry, clientState, discountPercentage = 0, addonCodes = [] } = body;
+    const { moduleCodes, clientCountry, clientState, discountPercentage = 0, addonCodes = [], moduleOverrides } = body;
 
     if (!Array.isArray(moduleCodes)) {
       return NextResponse.json({ message: 'moduleCodes must be an array' }, { status: 400 });
@@ -34,13 +34,18 @@ export async function POST(request: NextRequest) {
     const exchangeRate = currency ? Number(currency.exchangeRateToInr) : 1;
     const isInr = currencyCode === 'INR';
 
-    // Module line items
+    // Module line items. A sales rep can override a module's quoted price
+    // (moduleOverrides, keyed by moduleCode, already expressed in the
+    // client's currency) instead of using the catalog price converted at
+    // the current exchange rate — e.g. to match a negotiated deal.
     const modules = moduleConfigs.map((m) => {
       const price = Number(m.baseLicenseCost);
+      const catalogPrice = isInr ? price : round(price / exchangeRate);
+      const override = moduleOverrides?.[m.moduleCode];
       return {
         moduleCode: m.moduleCode,
         moduleName: m.moduleName,
-        basePrice: isInr ? price : round(price / exchangeRate),
+        basePrice: typeof override === 'number' ? override : catalogPrice,
       };
     });
     const modulesSubtotal = modules.reduce((sum, m) => sum + m.basePrice, 0);
