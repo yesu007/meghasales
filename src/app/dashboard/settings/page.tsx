@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import CountrySelect, { type Country } from '@/components/CountrySelect';
 
 async function fetchProfile() {
   const res = await fetch('/api/settings/profile');
@@ -10,7 +12,160 @@ async function fetchProfile() {
   return res.json();
 }
 
+interface CurrencyOption {
+  currencyCode: string;
+  currencyName: string;
+  currencySymbol: string;
+}
+
+interface CountryRow extends Country {}
+
+function CountryMasterManager() {
+  const queryClient = useQueryClient();
+  const { data: countries = [], isLoading } = useQuery<CountryRow[]>({
+    queryKey: ['countries', 'all'],
+    queryFn: async () => {
+      const res = await fetch('/api/countries?activeOnly=false');
+      if (!res.ok) throw new Error('Failed to load countries');
+      return res.json();
+    },
+  });
+  const { data: currencies = [] } = useQuery<CurrencyOption[]>({
+    queryKey: ['currencies', 'all'],
+    queryFn: async () => {
+      const res = await fetch('/api/currencies?activeOnly=false');
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const blankCountryForm = { countryName: '', isoCode: '', currencyCode: '', defaultTaxType: 'GST', defaultTaxPercentage: 0, flagEmoji: '' };
+  const [countryForm, setCountryForm] = useState(blankCountryForm);
+  const [editingCountryId, setEditingCountryId] = useState<number | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  const saveCountryMutation = useMutation({
+    mutationFn: async (data: typeof countryForm) => {
+      const url = editingCountryId ? `/api/countries/${editingCountryId}` : '/api/countries';
+      const method = editingCountryId ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || 'Failed to save country'); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['countries'] });
+      toast.success(editingCountryId ? 'Country updated' : 'Country added');
+      setShowForm(false); setEditingCountryId(null); setCountryForm(blankCountryForm);
+    },
+    onError: (e: any) => toast.error(e.message || 'Failed to save country'),
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const res = await fetch(`/api/countries/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive }) });
+      if (!res.ok) throw new Error('Failed to update country');
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['countries'] }); toast.success('Country updated'); },
+    onError: () => toast.error('Failed to update country'),
+  });
+
+  const openEditCountry = (c: CountryRow) => {
+    setCountryForm({ countryName: c.countryName, isoCode: c.isoCode, currencyCode: c.currencyCode, defaultTaxType: c.defaultTaxType, defaultTaxPercentage: Number(c.defaultTaxPercentage), flagEmoji: c.flagEmoji || '' });
+    setEditingCountryId(c.id);
+    setShowForm(true);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700">Manage Countries</h3>
+        <button type="button" onClick={() => { setCountryForm(blankCountryForm); setEditingCountryId(null); setShowForm(s => !s); }} className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700">
+          {showForm ? 'Cancel' : '+ Add Country'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="grid grid-cols-2 gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Country Name</label>
+            <input value={countryForm.countryName} onChange={(e) => setCountryForm(f => ({ ...f, countryName: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">ISO Code</label>
+            <input value={countryForm.isoCode} onChange={(e) => setCountryForm(f => ({ ...f, isoCode: e.target.value.toUpperCase() }))} maxLength={2} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
+            <select value={countryForm.currencyCode} onChange={(e) => setCountryForm(f => ({ ...f, currencyCode: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+              <option value="">Select</option>
+              {currencies.map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode} — {c.currencyName}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Flag Emoji</label>
+            <input value={countryForm.flagEmoji} onChange={(e) => setCountryForm(f => ({ ...f, flagEmoji: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Tax Type</label>
+            <select value={countryForm.defaultTaxType} onChange={(e) => setCountryForm(f => ({ ...f, defaultTaxType: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+              <option value="GST">GST</option>
+              <option value="VAT">VAT</option>
+              <option value="NONE">None</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Tax Percentage</label>
+            <input type="number" step="0.01" value={countryForm.defaultTaxPercentage} onChange={(e) => setCountryForm(f => ({ ...f, defaultTaxPercentage: parseFloat(e.target.value) || 0 }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+          </div>
+          <div className="col-span-2 flex justify-end">
+            <button type="button" onClick={() => saveCountryMutation.mutate(countryForm)} disabled={saveCountryMutation.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+              {saveCountryMutation.isPending ? 'Saving...' : editingCountryId ? 'Save Changes' : 'Add Country'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">Country</th>
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">ISO</th>
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">Currency</th>
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">Tax</th>
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">Status</th>
+              <th className="px-3 py-2 text-right font-semibold text-slate-700">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {isLoading ? (
+              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Loading...</td></tr>
+            ) : countries.map((c) => (
+              <tr key={c.id}>
+                <td className="px-3 py-2">{c.flagEmoji} {c.countryName}</td>
+                <td className="px-3 py-2">{c.isoCode}</td>
+                <td className="px-3 py-2">{c.currencyCode} ({c.currencySymbol})</td>
+                <td className="px-3 py-2">{c.defaultTaxType}{Number(c.defaultTaxPercentage) > 0 ? ` ${c.defaultTaxPercentage}%` : ''}</td>
+                <td className="px-3 py-2">
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{c.isActive ? 'Active' : 'Inactive'}</span>
+                </td>
+                <td className="px-3 py-2 text-right space-x-2">
+                  <button type="button" onClick={() => openEditCountry(c)} className="text-amber-600 hover:text-amber-700 text-xs font-medium">Edit</button>
+                  <button type="button" onClick={() => toggleActiveMutation.mutate({ id: c.id, isActive: !c.isActive })} className="text-slate-500 hover:text-slate-700 text-xs font-medium">{c.isActive ? 'Deactivate' : 'Activate'}</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === 'ADMIN';
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('company');
 
@@ -43,6 +198,7 @@ export default function SettingsPage() {
     termsAndConditions: '',
     paymentTerms: '',
     warrantyTerms: '',
+    defaultCountryId: null as number | null,
   });
 
   useEffect(() => {
@@ -71,6 +227,7 @@ export default function SettingsPage() {
         termsAndConditions: profile.termsAndConditions || '',
         paymentTerms: profile.paymentTerms || '',
         warrantyTerms: profile.warrantyTerms || '',
+        defaultCountryId: profile.defaultCountryId || null,
       });
     }
   }, [profile]);
@@ -98,6 +255,7 @@ export default function SettingsPage() {
     { id: 'finance', label: 'Finance' },
     { id: 'branding', label: 'Branding' },
     { id: 'terms', label: 'Terms & Policies' },
+    ...(isAdmin ? [{ id: 'regional', label: 'Regional' }] : []),
   ];
 
   if (isLoading) {
@@ -396,6 +554,25 @@ export default function SettingsPage() {
                     placeholder="Enter warranty/AMC terms..."
                   />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'regional' && isAdmin && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-800 mb-4">Regional</h2>
+                <div className="max-w-sm">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Default Country</label>
+                  <CountrySelect
+                    value={form.defaultCountryId}
+                    onChange={(c: Country) => setForm(f => ({ ...f, defaultCountryId: c.id }))}
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Used to default a new lead&apos;s country when none is otherwise implied.</p>
+                </div>
+              </div>
+              <div className="border-t pt-6">
+                <CountryMasterManager />
               </div>
             </div>
           )}

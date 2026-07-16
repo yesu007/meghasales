@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
+import { resolveLeadCountryFields } from '@/lib/leadCountry';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +28,17 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.lead.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Lead not found' }, { status: 404 });
 
+    let countryFields: Awaited<ReturnType<typeof resolveLeadCountryFields>> | null = null;
+    if (body.countryId !== undefined) {
+      const session = await getServerSession(authOptions);
+      const isAdmin = (session?.user as any)?.role === 'ADMIN';
+      try {
+        countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { isAdmin, overrideCurrencyCode: body.currencyCode });
+      } catch (e: any) {
+        return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
+      }
+    }
+
     const lead = await prisma.lead.update({
       where: { id },
       data: {
@@ -38,7 +52,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.city !== undefined && { city: body.city }),
         ...(body.state !== undefined && { state: body.state }),
-        ...(body.country !== undefined && { country: body.country }),
+        ...(countryFields && {
+          country: countryFields.country,
+          countryId: countryFields.countryId,
+          currencyCode: countryFields.currencyCode,
+          currencySymbol: countryFields.currencySymbol,
+          taxType: countryFields.taxType,
+        }),
         ...(body.businessVerticals !== undefined && { businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null }),
       },
     });

@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
+import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, Transition } from '@headlessui/react';
+import CountrySelect, { type Country } from '@/components/CountrySelect';
 import {
   PlusIcon,
   MagnifyingGlassIcon,
@@ -77,7 +79,15 @@ async function fetchUsers(): Promise<UserOption[]> {
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
 }
 
+interface CurrencyOption {
+  currencyCode: string;
+  currencyName: string;
+  currencySymbol: string;
+}
+
 export default function LeadsPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === 'ADMIN';
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -119,11 +129,38 @@ export default function LeadsPage() {
   });
 
   // Create/edit lead form
-  const blankForm = { companyName: '', contactPerson: '', mobile: '', email: '', leadSource: '', businessVerticals: '', country: '', state: '', city: '', notes: '' };
+  const blankForm = {
+    companyName: '', contactPerson: '', mobile: '', email: '', leadSource: '', businessVerticals: '',
+    countryId: null as number | null, currencyCode: '', currencySymbol: '', taxType: '', taxPercentage: 0 as number | string,
+    state: '', city: '', notes: '',
+  };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
 
+  // Only Administrators can override the currency a country implies —
+  // this list is only fetched/rendered for ADMIN sessions.
+  const { data: currencies = [] } = useQuery<CurrencyOption[]>({
+    queryKey: ['currencies'],
+    queryFn: async () => {
+      const res = await fetch('/api/currencies?activeOnly=true');
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isAdmin,
+  });
+
   const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); };
+
+  const handleCountryChange = (country: Country) => {
+    setForm((f) => ({
+      ...f,
+      countryId: country.id,
+      currencyCode: country.currencyCode,
+      currencySymbol: country.currencySymbol,
+      taxType: country.defaultTaxType,
+      taxPercentage: country.defaultTaxPercentage,
+    }));
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (data: typeof form) => {
@@ -156,7 +193,11 @@ export default function LeadsPage() {
       email: lead.email || '',
       leadSource: lead.leadSource || '',
       businessVerticals,
-      country: lead.country || '',
+      countryId: lead.countryId || null,
+      currencyCode: lead.currencyCode || '',
+      currencySymbol: lead.currencySymbol || '',
+      taxType: lead.taxType || '',
+      taxPercentage: 0,
       state: lead.state || '',
       city: lead.city || '',
       notes: lead.notes || '',
@@ -346,7 +387,11 @@ export default function LeadsPage() {
                       <Dialog.Title className="text-lg font-semibold text-slate-800">{editingId ? 'Edit Lead' : 'Create New Lead'}</Dialog.Title>
                       <button onClick={closeDrawer} className="p-1 text-slate-400 hover:text-slate-600 rounded"><XMarkIcon className="h-5 w-5" /></button>
                     </div>
-                    <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(form); }} className="flex-1 px-6 py-4 space-y-4">
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!form.countryId) { toast.error('Country is required'); return; }
+                      saveMutation.mutate(form);
+                    }} className="flex-1 px-6 py-4 space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="col-span-2">
                           <label className="block text-sm font-medium text-slate-700 mb-1">Company Name *</label>
@@ -378,9 +423,30 @@ export default function LeadsPage() {
                             {VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
                           </select>
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Country</label>
-                          <input value={form.country} onChange={(e) => setForm(f => ({...f, country: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                        <div className="col-span-2">
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Country *</label>
+                          <CountrySelect value={form.countryId} onChange={handleCountryChange} />
+                          {form.currencyCode && (
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                              <span>Currency: <strong>{form.currencyCode} ({form.currencySymbol})</strong></span>
+                              <span>Tax: <strong>{form.taxType}</strong></span>
+                            </div>
+                          )}
+                          {isAdmin && form.countryId && (
+                            <div className="mt-2">
+                              <label className="block text-xs font-medium text-slate-500 mb-1">Override currency (Administrator only)</label>
+                              <select
+                                value={form.currencyCode}
+                                onChange={(e) => {
+                                  const c = currencies.find((cur) => cur.currencyCode === e.target.value);
+                                  if (c) setForm(f => ({ ...f, currencyCode: c.currencyCode, currencySymbol: c.currencySymbol }));
+                                }}
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                              >
+                                {currencies.map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode} — {c.currencyName}</option>)}
+                              </select>
+                            </div>
+                          )}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">State</label>

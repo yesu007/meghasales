@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
+import { resolveLeadCountryFields } from '@/lib/leadCountry';
 
 export const dynamic = 'force-dynamic';
 
@@ -110,13 +113,30 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    if (!body.countryId) {
+      return NextResponse.json({ message: 'Country is required' }, { status: 400 });
+    }
+
+    const session = await getServerSession(authOptions);
+    const isAdmin = (session?.user as any)?.role === 'ADMIN';
+    let countryFields;
+    try {
+      countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { isAdmin, overrideCurrencyCode: body.currencyCode });
+    } catch (e: any) {
+      return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
+    }
+
     const lead = await prisma.lead.create({
       data: {
         companyName: body.companyName,
         contactPerson: body.contactPerson,
         mobile: body.mobile || null,
         email: body.email || null,
-        country: body.country || null,
+        country: countryFields.country,
+        countryId: countryFields.countryId,
+        currencyCode: countryFields.currencyCode,
+        currencySymbol: countryFields.currencySymbol,
+        taxType: countryFields.taxType,
         state: body.state || null,
         city: body.city || null,
         leadSource: body.leadSource,

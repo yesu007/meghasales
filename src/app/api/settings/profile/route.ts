@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,17 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
+
+    // The rest of this route has no RBAC (Settings has never been
+    // permission-gated), but changing the default country is explicitly
+    // an Administrator-only action per the multi-currency requirements —
+    // gate just this one field rather than the whole route, so existing
+    // non-admin users editing other company-profile fields aren't locked
+    // out by a scope change they didn't ask for.
+    if (body.defaultCountryId !== undefined) {
+      const denied = await requirePermission('manage_countries');
+      if (denied) return denied;
+    }
 
     // Find or create profile
     let profile = await prisma.companyProfile.findFirst({
@@ -72,6 +84,7 @@ export async function PUT(request: NextRequest) {
         ...(body.termsAndConditions !== undefined && { termsAndConditions: body.termsAndConditions }),
         ...(body.paymentTerms !== undefined && { paymentTerms: body.paymentTerms }),
         ...(body.warrantyTerms !== undefined && { warrantyTerms: body.warrantyTerms }),
+        ...(body.defaultCountryId !== undefined && { defaultCountryId: body.defaultCountryId ? parseInt(body.defaultCountryId) : null }),
       },
     });
 

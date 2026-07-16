@@ -93,6 +93,10 @@ model Lead {
   country              String?
   state                String?
   city                 String?
+  countryId            Int?      @map("country_id")
+  currencyCode         String?   @map("currency_code")
+  currencySymbol       String?   @map("currency_symbol")
+  taxType              String?   @map("tax_type")
   jewelleryBusinessType String?  @map("jewellery_business_type")
   numberOfBranches     Int?      @map("number_of_branches")
   existingErp          String?   @map("existing_erp")
@@ -107,6 +111,7 @@ model Lead {
 
   assignedBa   User?   @relation("AssignedBA", fields: [assignedBaId], references: [id])
   createdBy    User?   @relation("CreatedBy", fields: [createdById], references: [id])
+  countryRef   Country? @relation(fields: [countryId], references: [id])
   activities   LeadActivity[]
   demos        Demo[]
   quotations   Quotation[]
@@ -326,6 +331,30 @@ model CurrencyMaster {
   @@map("currency_master")
 }
 
+// Canonical country picklist + default currency/tax for UI dropdowns and
+// quick display. Not a replacement for CountryTaxMaster/StateTaxMaster,
+// which continue to drive the actual GST/VAT calculation math — this table
+// only supplies defaults (e.g. what a new Lead/Quotation starts with).
+model Country {
+  id                   Int      @id @default(autoincrement())
+  countryName          String   @map("country_name")
+  isoCode              String   @unique @map("iso_code")
+  currencyCode         String   @map("currency_code")
+  currencyName         String   @map("currency_name")
+  currencySymbol       String   @map("currency_symbol")
+  defaultTaxType       String   @map("default_tax_type") // GST | VAT | NONE
+  defaultTaxPercentage Decimal  @default(0) @map("default_tax_percentage") @db.Decimal(5, 2)
+  flagEmoji            String?  @map("flag_emoji")
+  isActive             Boolean  @default(true) @map("is_active")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  leads           Lead[]
+  companyProfiles CompanyProfile[]
+
+  @@map("countries")
+}
+
 // ============================================================
 // COMPANY PROFILE
 // ============================================================
@@ -360,9 +389,12 @@ model CompanyProfile {
   exclusions            String?
   confidentialityNotice String?  @map("confidentiality_notice")
   supplierStateCode     String?  @default("TN") @map("supplier_state_code")
+  defaultCountryId      Int?     @map("default_country_id")
   isActive              Boolean  @default(true) @map("is_active")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
+
+  defaultCountry        Country? @relation(fields: [defaultCountryId], references: [id])
 
   @@map("company_profile")
 }

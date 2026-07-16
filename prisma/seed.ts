@@ -66,6 +66,7 @@ async function main() {
     { currencyCode: 'AED', currencyName: 'UAE Dirham', currencySymbol: 'AED', exchangeRateToInr: 22.73 },
     { currencyCode: 'THB', currencyName: 'Thai Baht', currencySymbol: '฿', exchangeRateToInr: 2.35 },
     { currencyCode: 'SGD', currencyName: 'Singapore Dollar', currencySymbol: 'SGD', exchangeRateToInr: 62 },
+    { currencyCode: 'SAR', currencyName: 'Saudi Riyal', currencySymbol: 'SAR', exchangeRateToInr: 22.27 },
   ];
   for (const c of currencies) {
     await prisma.currencyMaster.upsert({ where: { currencyCode: c.currencyCode }, update: {}, create: c });
@@ -83,6 +84,7 @@ async function main() {
     { countryCode: 'TH', countryName: 'Thailand', taxName: 'VAT', taxType: 'VAT', defaultRate: 7, currencyCode: 'THB' },
     { countryCode: 'GB', countryName: 'United Kingdom', taxName: 'VAT', taxType: 'VAT', defaultRate: 20, currencyCode: 'GBP' },
     { countryCode: 'SG', countryName: 'Singapore', taxName: 'GST', taxType: 'GST', defaultRate: 9, currencyCode: 'SGD' },
+    { countryCode: 'SA', countryName: 'Saudi Arabia', taxName: 'VAT', taxType: 'VAT', defaultRate: 15, currencyCode: 'SAR' },
   ];
   for (const t of countryTaxes) {
     await prisma.countryTaxMaster.upsert({
@@ -107,8 +109,29 @@ async function main() {
   }
   console.log('  ✓ State taxes seeded');
 
+  // Countries — canonical picklist/defaults, backed 1:1 by the currency and
+  // country-tax rows seeded above. Deliberately does NOT include every
+  // country previously referenced by the old hardcoded quotations-page
+  // list (CN/HK/AU/CA/DE/FR/IT) since those never had matching currency/tax
+  // data — admins can add them properly via the Country Master UI once
+  // real rates are known, rather than seeding guessed values here.
+  const countries = [
+    { countryName: 'India', isoCode: 'IN', currencyCode: 'INR', currencyName: 'Indian Rupee', currencySymbol: '₹', defaultTaxType: 'GST', defaultTaxPercentage: 18, flagEmoji: '🇮🇳' },
+    { countryName: 'United States', isoCode: 'US', currencyCode: 'USD', currencyName: 'US Dollar', currencySymbol: '$', defaultTaxType: 'NONE', defaultTaxPercentage: 0, flagEmoji: '🇺🇸' },
+    { countryName: 'United Arab Emirates', isoCode: 'AE', currencyCode: 'AED', currencyName: 'UAE Dirham', currencySymbol: 'AED', defaultTaxType: 'VAT', defaultTaxPercentage: 5, flagEmoji: '🇦🇪' },
+    { countryName: 'Thailand', isoCode: 'TH', currencyCode: 'THB', currencyName: 'Thai Baht', currencySymbol: '฿', defaultTaxType: 'VAT', defaultTaxPercentage: 7, flagEmoji: '🇹🇭' },
+    { countryName: 'United Kingdom', isoCode: 'GB', currencyCode: 'GBP', currencyName: 'British Pound', currencySymbol: '£', defaultTaxType: 'VAT', defaultTaxPercentage: 20, flagEmoji: '🇬🇧' },
+    { countryName: 'Singapore', isoCode: 'SG', currencyCode: 'SGD', currencyName: 'Singapore Dollar', currencySymbol: 'SGD', defaultTaxType: 'GST', defaultTaxPercentage: 9, flagEmoji: '🇸🇬' },
+    { countryName: 'Saudi Arabia', isoCode: 'SA', currencyCode: 'SAR', currencyName: 'Saudi Riyal', currencySymbol: 'SAR', defaultTaxType: 'VAT', defaultTaxPercentage: 15, flagEmoji: '🇸🇦' },
+  ];
+  const createdCountries = await Promise.all(
+    countries.map((c) => prisma.country.upsert({ where: { isoCode: c.isoCode }, update: {}, create: c }))
+  );
+  console.log(`  ✓ ${createdCountries.length} countries seeded`);
+  const indiaCountry = createdCountries.find((c) => c.isoCode === 'IN')!;
+
   // Company Profile
-  await prisma.companyProfile.upsert({
+  const companyProfile = await prisma.companyProfile.upsert({
     where: { id: 1 },
     update: {},
     create: {
@@ -121,8 +144,12 @@ async function main() {
       paymentTerms: '50% Advance upon confirmation\n30% upon UAT completion\n20% upon Go-Live',
       warrantyTerms: '90 days warranty from Go-Live date',
       supplierStateCode: 'TN',
+      defaultCountryId: indiaCountry.id,
     },
   });
+  if (!companyProfile.defaultCountryId) {
+    await prisma.companyProfile.update({ where: { id: companyProfile.id }, data: { defaultCountryId: indiaCountry.id } });
+  }
   console.log('  ✓ Company profile seeded');
 
   // Accounting permissions
@@ -153,6 +180,21 @@ async function main() {
     }
   }
   console.log('  ✓ Accounting permissions granted to ADMIN, MANAGEMENT, FINANCE roles');
+
+  // Country Master / settings permission — ADMIN gets it explicitly here as
+  // a belt-and-suspenders grant alongside requirePermission()'s implicit
+  // ADMIN bypass, matching how accounting permissions above are handled.
+  const manageCountriesPermission = await prisma.permission.upsert({
+    where: { name: 'manage_countries' },
+    update: {},
+    create: { name: 'manage_countries', description: 'Add/edit countries and default currency/tax mapping', module: 'SETTINGS' },
+  });
+  await prisma.rolePermission.upsert({
+    where: { roleId_permissionId: { roleId: roles[0].id, permissionId: manageCountriesPermission.id } },
+    update: {},
+    create: { roleId: roles[0].id, permissionId: manageCountriesPermission.id },
+  });
+  console.log('  ✓ manage_countries permission seeded and granted to ADMIN');
 
   // Default reminder templates (one per threshold, email + WhatsApp variants)
   const reminderThresholds = [
