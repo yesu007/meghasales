@@ -420,7 +420,7 @@ export default function QuotationsPage() {
                   <option value="">Select a client</option>
                   {existingLeads.map(l => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}{l.email ? ` (${l.email})` : ''}</option>)}
                 </select>
-                {existingLeads.length === 0 && <p className="text-xs text-slate-400 mt-1">No existing clients yet — switch to "New Client" to add one.</p>}
+                {existingLeads.length === 0 && <p className="text-xs text-slate-400 mt-1">No existing clients yet — switch to &ldquo;New Client&rdquo; to add one.</p>}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-4">
