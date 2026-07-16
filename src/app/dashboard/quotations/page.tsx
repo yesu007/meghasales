@@ -199,7 +199,11 @@ export default function QuotationsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
-    if (!res.ok) { toast.error('Failed to update status'); return; }
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      toast.error(err?.message || 'Failed to update status');
+      return;
+    }
     queryClient.invalidateQueries({ queryKey: ['quotations'] });
     queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
     const updated = await res.json();

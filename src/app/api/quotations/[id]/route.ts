@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { invoiceFieldsFromQuotation } from '@/lib/invoiceFromQuotation';
+import { invoiceFieldsFromQuotation, nextInvoiceNumber } from '@/lib/invoiceFromQuotation';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,8 +20,7 @@ export const dynamic = 'force-dynamic';
 async function generateInvoiceForQuotation(tx: Prisma.TransactionClient, quotation: any) {
   const derived = invoiceFieldsFromQuotation(quotation);
   const totalAmount = derived.totalAmount ?? derived.subtotal;
-  const count = await tx.invoice.count();
-  const invoiceNumber = `INV-${String(count + 1).padStart(5, '0')}`;
+  const invoiceNumber = await nextInvoiceNumber(tx);
 
   return tx.invoice.create({
     data: {

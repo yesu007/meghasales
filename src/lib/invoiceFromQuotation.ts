@@ -1,3 +1,15 @@
+// Atomic invoice number generator, backed by the `invoice_number_seq`
+// Postgres sequence (see prisma/migrations/20260716120000_add_invoice_number_sequence).
+// A count()-based scheme like `INV-${count+1}` races under concurrent
+// creation — e.g. two quotations approved close together can both read the
+// same count and collide on the invoice_number unique constraint, rolling
+// back the whole approval transaction. nextval() is atomic across concurrent
+// transactions, so it can't collide.
+export async function nextInvoiceNumber(client: { $queryRaw: <T = unknown>(query: TemplateStringsArray, ...values: any[]) => Promise<T> }) {
+  const [{ nextval }] = await client.$queryRaw<{ nextval: bigint }[]>`SELECT nextval('invoice_number_seq') AS nextval`;
+  return `INV-${String(nextval).padStart(5, '0')}`;
+}
+
 // Derives Invoice line items and totals from an approved Quotation's stored
 // pricing. Shared between manual invoice generation (POST /api/accounting/invoices)
 // and automatic invoice generation on quotation approval (PUT /api/quotations/[id]),

@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
-import { invoiceFieldsFromQuotation } from '@/lib/invoiceFromQuotation';
+import { invoiceFieldsFromQuotation, nextInvoiceNumber } from '@/lib/invoiceFromQuotation';
 
 export const dynamic = 'force-dynamic';
 
@@ -189,8 +189,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'subtotal and totalAmount are required' }, { status: 400 });
     }
 
-    const count = await prisma.invoice.count();
-    const invoiceNumber = `INV-${String(count + 1).padStart(5, '0')}`;
+    const invoiceNumber = await nextInvoiceNumber(prisma);
 
     const invoice = await prisma.invoice.create({
       data: {
