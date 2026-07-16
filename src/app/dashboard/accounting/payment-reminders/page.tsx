@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { BellAlertIcon, CheckCircleIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { formatCurrency } from '@/lib/currency';
 
 const REMINDER_LABELS: Record<string, string> = {
   UPCOMING_7D: 'Due in 7 Days',
@@ -24,8 +25,8 @@ const REMINDER_COLORS: Record<string, string> = {
   OVERDUE_30D: 'bg-red-200 text-red-800',
 };
 
-function fmt(amount: string | number, symbol = '₹'): string {
-  return `${symbol} ${Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmt(amount: string | number, currencyCode = 'INR'): string {
+  return formatCurrency(amount, currencyCode);
 }
 
 async function fetchReminders(status: string) {
@@ -122,7 +123,7 @@ function RemindersTab() {
                   <tr key={r.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium text-slate-800">{r.invoiceNumber}</td>
                     <td className="px-4 py-3 text-slate-600">{r.companyName}</td>
-                    <td className="px-4 py-3 text-right text-slate-700">{fmt(r.balanceDue, r.currencyCode === 'INR' ? '₹' : r.currencyCode)}</td>
+                    <td className="px-4 py-3 text-right text-slate-700">{fmt(r.balanceDue, r.currencyCode)}</td>
                     <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{dayjs(r.dueDate).format('DD MMM YYYY')}</td>
                     <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${REMINDER_COLORS[r.reminderType] || 'bg-slate-100 text-slate-700'}`}>{REMINDER_LABELS[r.reminderType] || r.reminderType}</span></td>
                     <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{dayjs(r.createdAt).format('DD MMM YYYY')}</td>

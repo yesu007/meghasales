@@ -10,76 +10,52 @@ export async function GET() {
   if (denied) return denied;
   try {
     const today = dayjs().startOf('day').toDate();
+    const tomorrow = dayjs(today).add(1, 'day').toDate();
     const weekEnd = dayjs().add(7, 'day').endOf('day').toDate();
     const sixMonthsAgo = dayjs().subtract(5, 'month').startOf('month').toDate();
     const thirtyDaysAgo = dayjs().subtract(29, 'day').startOf('day').toDate();
 
-    const [
-      totalInvoicesAgg,
-      openInvoices,
-      overdueAgg,
-      dueTodayAgg,
-      dueThisWeekAgg,
-      statusCounts,
-      outstandingByCustomer,
-      monthlyPayments,
-      dailyPayments,
-    ] = await Promise.all([
-      // Total Invoices / Total Invoice Value / Amount Received
-      prisma.invoice.aggregate({
+    const [invoices, statusCounts, monthlyPayments, dailyPayments] = await Promise.all([
+      // Fetched once and reduced in JS below (grouped by currency) rather
+      // than five separate Prisma aggregate() calls — a customer's/company's
+      // invoices in more than one currency must never be summed into one
+      // meaningless blended KPI number.
+      prisma.invoice.findMany({
         where: { deletedAt: null },
-        _count: true,
-        _sum: { totalAmount: true, amountPaid: true },
+        select: { currencyCode: true, totalAmount: true, amountPaid: true, balanceDue: true, status: true, dueDate: true, leadId: true },
       }),
-      // Outstanding Amount = balance across everything not cancelled
-      prisma.invoice.aggregate({
-        where: { deletedAt: null, status: { not: 'CANCELLED' } },
-        _sum: { balanceDue: true },
-      }),
-      // Overdue Amount
-      prisma.invoice.aggregate({
-        where: { deletedAt: null, status: { in: ['PENDING', 'PARTIALLY_PAID'] }, dueDate: { lt: today } },
-        _sum: { balanceDue: true },
-      }),
-      // Due Today
-      prisma.invoice.aggregate({
-        where: { deletedAt: null, status: { in: ['PENDING', 'PARTIALLY_PAID'] }, dueDate: { gte: today, lt: dayjs(today).add(1, 'day').toDate() } },
-        _sum: { balanceDue: true },
-      }),
-      // Due This Week (next 7 days, inclusive of today)
-      prisma.invoice.aggregate({
-        where: { deletedAt: null, status: { in: ['PENDING', 'PARTIALLY_PAID'] }, dueDate: { gte: today, lte: weekEnd } },
-        _sum: { balanceDue: true },
-      }),
-      // Invoice Status Distribution
+      // Invoice Status Distribution (counts only, currency-independent)
       prisma.invoice.groupBy({ by: ['status'], where: { deletedAt: null }, _count: true }),
-      // Outstanding by Customer (top 10)
-      prisma.invoice.groupBy({
-        by: ['leadId'],
-        where: { deletedAt: null, status: { in: ['PENDING', 'PARTIALLY_PAID'] } },
-        _sum: { balanceDue: true },
-        orderBy: { _sum: { balanceDue: 'desc' } },
-        take: 10,
-      }),
       // Monthly Collections (last 6 months)
       prisma.payment.findMany({
         where: { deletedAt: null, paymentDate: { gte: sixMonthsAgo } },
-        select: { amount: true, paymentDate: true },
+        select: { amount: true, paymentDate: true, invoice: { select: { currencyCode: true } } },
       }),
       // Payment Trend (last 30 days)
       prisma.payment.findMany({
         where: { deletedAt: null, paymentDate: { gte: thirtyDaysAgo } },
-        select: { amount: true, paymentDate: true },
+        select: { amount: true, paymentDate: true, invoice: { select: { currencyCode: true } } },
       }),
     ]);
 
-    const totalInvoiceValue = Number(totalInvoicesAgg._sum.totalAmount) || 0;
-    const amountReceived = Number(totalInvoicesAgg._sum.amountPaid) || 0;
-    const outstandingAmount = Number(openInvoices._sum.balanceDue) || 0;
-    const overdueAmount = Number(overdueAgg._sum.balanceDue) || 0;
-    const dueToday = Number(dueTodayAgg._sum.balanceDue) || 0;
-    const dueThisWeek = Number(dueThisWeekAgg._sum.balanceDue) || 0;
-    const collectionPercentage = totalInvoiceValue > 0 ? (amountReceived / totalInvoiceValue) * 100 : 0;
+    const currencyCodes = Array.from(new Set(invoices.map((i) => i.currencyCode || 'INR')));
+    const kpisByCurrency = currencyCodes.map((currencyCode) => {
+      const rows = invoices.filter((i) => (i.currencyCode || 'INR') === currencyCode);
+      const openRows = rows.filter((i) => i.status === 'PENDING' || i.status === 'PARTIALLY_PAID');
+      const totalInvoiceValue = rows.reduce((s, i) => s + Number(i.totalAmount), 0);
+      const amountReceived = rows.reduce((s, i) => s + Number(i.amountPaid), 0);
+      return {
+        currencyCode,
+        totalInvoices: rows.length,
+        totalInvoiceValue,
+        amountReceived,
+        outstandingAmount: rows.filter((i) => i.status !== 'CANCELLED').reduce((s, i) => s + Number(i.balanceDue), 0),
+        overdueAmount: openRows.filter((i) => i.dueDate < today).reduce((s, i) => s + Number(i.balanceDue), 0),
+        dueToday: openRows.filter((i) => i.dueDate >= today && i.dueDate < tomorrow).reduce((s, i) => s + Number(i.balanceDue), 0),
+        dueThisWeek: openRows.filter((i) => i.dueDate >= today && i.dueDate <= weekEnd).reduce((s, i) => s + Number(i.balanceDue), 0),
+        collectionPercentage: totalInvoiceValue > 0 ? (amountReceived / totalInvoiceValue) * 100 : 0,
+      };
+    }).sort((a, b) => b.totalInvoiceValue - a.totalInvoiceValue);
 
     // Overdue is computed, not stored, so split the PENDING/PARTIALLY_PAID
     // buckets from groupBy into their overdue vs not-yet-due portions.
@@ -95,15 +71,36 @@ export async function GET() {
     if (pendingRemaining - overdueCount > 0) statusDistribution.push({ status: 'PENDING', count: pendingRemaining - overdueCount });
     if (overdueCount > 0) statusDistribution.push({ status: 'OVERDUE', count: overdueCount });
 
-    const leadIds = outstandingByCustomer.map((r) => r.leadId);
+    // Outstanding by Customer (top 10) — grouped by (customer, currency) so
+    // a customer with open invoices in more than one currency shows as
+    // separate bars instead of one blended total.
+    const openInvoices = invoices.filter((i) => i.status === 'PENDING' || i.status === 'PARTIALLY_PAID');
+    const byCustomerCurrency: Record<string, { leadId: number; currencyCode: string; outstanding: number }> = {};
+    for (const inv of openInvoices) {
+      const currencyCode = inv.currencyCode || 'INR';
+      const k = `${inv.leadId} ${currencyCode}`;
+      if (!byCustomerCurrency[k]) byCustomerCurrency[k] = { leadId: inv.leadId, currencyCode, outstanding: 0 };
+      byCustomerCurrency[k].outstanding += Number(inv.balanceDue);
+    }
+    const topOutstanding = Object.values(byCustomerCurrency).sort((a, b) => b.outstanding - a.outstanding).slice(0, 10);
+    const leadIds = topOutstanding.map((r) => r.leadId);
     const leads = leadIds.length > 0 ? await prisma.lead.findMany({ where: { id: { in: leadIds } }, select: { id: true, companyName: true } }) : [];
     const leadNameById = new Map(leads.map((l) => [l.id, l.companyName]));
-    const outstandingByCustomerChart = outstandingByCustomer.map((r) => ({
+    const outstandingByCustomerChart = topOutstanding.map((r) => ({
       customer: leadNameById.get(r.leadId) || `Lead #${r.leadId}`,
-      outstanding: Number(r._sum.balanceDue) || 0,
+      currencyCode: r.currencyCode,
+      outstanding: r.outstanding,
     }));
 
-    // Bucket payments by month for the last 6 months
+    // Monthly Collections / Payment Trend: true multi-currency time-series
+    // charting (grouped/stacked bars per currency) is out of scope for this
+    // cleanup — these two trend charts keep summing across currencies as
+    // they always did, but now format using the dashboard's dominant
+    // currency (by total invoice value) instead of a hardcoded ₹, so at
+    // least the common single-currency case (all data today) renders
+    // correctly instead of mislabeling non-INR amounts.
+    const primaryCurrencyCode = kpisByCurrency[0]?.currencyCode || 'INR';
+
     const monthBuckets: Record<string, number> = {};
     for (let i = 5; i >= 0; i--) monthBuckets[dayjs().subtract(i, 'month').format('MMM YYYY')] = 0;
     for (const p of monthlyPayments) {
@@ -112,7 +109,6 @@ export async function GET() {
     }
     const monthlyCollections = Object.entries(monthBuckets).map(([month, amount]) => ({ month, amount }));
 
-    // Bucket payments by day for the last 30 days
     const dayBuckets: Record<string, number> = {};
     for (let i = 29; i >= 0; i--) dayBuckets[dayjs().subtract(i, 'day').format('DD MMM')] = 0;
     for (const p of dailyPayments) {
@@ -122,16 +118,8 @@ export async function GET() {
     const paymentTrend = Object.entries(dayBuckets).map(([date, amount]) => ({ date, amount }));
 
     return NextResponse.json({
-      kpis: {
-        totalInvoices: totalInvoicesAgg._count,
-        totalInvoiceValue,
-        amountReceived,
-        outstandingAmount,
-        overdueAmount,
-        dueToday,
-        dueThisWeek,
-        collectionPercentage,
-      },
+      kpisByCurrency,
+      primaryCurrencyCode,
       charts: {
         monthlyCollections,
         outstandingByCustomer: outstandingByCustomerChart,

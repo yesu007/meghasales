@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownTrayIcon, PrinterIcon, DocumentChartBarIcon } from '@heroicons/react/24/outline';
 import { generateReportPDF } from '@/lib/generateReportPDF';
+import { formatCurrency } from '@/lib/currency';
 
 const REPORT_TYPES = [
   { value: 'outstanding', label: 'Outstanding' },
@@ -30,8 +31,8 @@ async function fetchLeads(): Promise<Lead[]> {
   return data.content;
 }
 
-function fmtCell(value: any, type?: string): string {
-  if (type === 'currency' && typeof value === 'number') return `₹ ${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmtCell(value: any, type: string | undefined, currencyCode: string): string {
+  if (type === 'currency' && typeof value === 'number') return formatCurrency(value, currencyCode);
   if (type === 'number' && typeof value === 'number') return value.toLocaleString('en-IN');
   return String(value ?? '—');
 }
@@ -140,7 +141,7 @@ export default function AccountingReportsPage() {
                 {report.rows.map((row: any, i: number) => (
                   <tr key={i} className="hover:bg-slate-50">
                     {report.columns.map((c: any) => (
-                      <td key={c.key} className={`px-4 py-3 text-slate-700 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{fmtCell(row[c.key], c.type)}</td>
+                      <td key={c.key} className={`px-4 py-3 text-slate-700 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{fmtCell(row[c.key], c.type, row.currencyCode || 'INR')}</td>
                     ))}
                   </tr>
                 ))}

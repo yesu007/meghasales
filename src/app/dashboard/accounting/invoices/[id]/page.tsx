@@ -7,6 +7,7 @@ import { useParams } from 'next/navigation';
 import { ArrowLeftIcon, DocumentTextIcon, BanknotesIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import PaymentEntryDrawer from '@/components/accounting/PaymentEntryDrawer';
+import { formatCurrency } from '@/lib/currency';
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-green-100 text-green-700',
@@ -25,8 +26,8 @@ const REMINDER_LABELS: Record<string, string> = {
   OVERDUE_30D: 'Overdue 30+ Days',
 };
 
-function fmt(amount: string | number, symbol = '₹'): string {
-  return `${symbol} ${Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmt(amount: string | number, currencyCode = 'INR'): string {
+  return formatCurrency(amount, currencyCode);
 }
 
 function computeDisplayStatus(status: string, dueDate: string): string {
@@ -73,7 +74,7 @@ export default function InvoiceDetailPage() {
 
   const displayStatus = computeDisplayStatus(invoice.status, invoice.dueDate);
   const lineItems = Array.isArray(invoice.lineItems) ? invoice.lineItems : [];
-  const sym = invoice.currencyCode === 'INR' ? '₹' : invoice.currencyCode;
+  const currencyCode = invoice.currencyCode || 'INR';
 
   return (
     <div className="space-y-6">
@@ -118,19 +119,19 @@ export default function InvoiceDetailPage() {
                   <tr key={i}>
                     <td className="py-2 text-slate-800">{li.description}</td>
                     <td className="py-2 text-center text-slate-600">{li.quantity}</td>
-                    <td className="py-2 text-right text-slate-600">{fmt(li.unitPrice, sym)}</td>
-                    <td className="py-2 text-right font-medium text-slate-800">{fmt(li.total, sym)}</td>
+                    <td className="py-2 text-right text-slate-600">{fmt(li.unitPrice, currencyCode)}</td>
+                    <td className="py-2 text-right font-medium text-slate-800">{fmt(li.total, currencyCode)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <div className="mt-4 pt-4 border-t border-slate-200 space-y-1.5 text-sm">
-              <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="text-slate-700">{fmt(invoice.subtotal, sym)}</span></div>
-              {Number(invoice.discountAmount) > 0 && <div className="flex justify-between text-green-600"><span>Discount ({invoice.discountPercentage}%)</span><span>-{fmt(invoice.discountAmount, sym)}</span></div>}
-              {Number(invoice.taxAmount) > 0 && <div className="flex justify-between"><span className="text-slate-500">Tax</span><span className="text-slate-700">{fmt(invoice.taxAmount, sym)}</span></div>}
-              <div className="flex justify-between text-base font-bold pt-1.5 border-t border-slate-200"><span className="text-slate-800">Total</span><span className="text-amber-700">{fmt(invoice.totalAmount, sym)}</span></div>
-              <div className="flex justify-between text-green-600"><span>Paid</span><span>{fmt(invoice.amountPaid, sym)}</span></div>
-              <div className="flex justify-between font-semibold"><span className="text-slate-800">Balance Due</span><span className="text-slate-800">{fmt(invoice.balanceDue, sym)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="text-slate-700">{fmt(invoice.subtotal, currencyCode)}</span></div>
+              {Number(invoice.discountAmount) > 0 && <div className="flex justify-between text-green-600"><span>Discount ({invoice.discountPercentage}%)</span><span>-{fmt(invoice.discountAmount, currencyCode)}</span></div>}
+              {Number(invoice.taxAmount) > 0 && <div className="flex justify-between"><span className="text-slate-500">Tax</span><span className="text-slate-700">{fmt(invoice.taxAmount, currencyCode)}</span></div>}
+              <div className="flex justify-between text-base font-bold pt-1.5 border-t border-slate-200"><span className="text-slate-800">Total</span><span className="text-amber-700">{fmt(invoice.totalAmount, currencyCode)}</span></div>
+              <div className="flex justify-between text-green-600"><span>Paid</span><span>{fmt(invoice.amountPaid, currencyCode)}</span></div>
+              <div className="flex justify-between font-semibold"><span className="text-slate-800">Balance Due</span><span className="text-slate-800">{fmt(invoice.balanceDue, currencyCode)}</span></div>
             </div>
           </div>
 
@@ -155,7 +156,7 @@ export default function InvoiceDetailPage() {
                       <td className="py-2 text-slate-600">{dayjs(p.paymentDate).format('DD MMM YYYY')}</td>
                       <td className="py-2 text-slate-600">{p.paymentMethod}</td>
                       <td className="py-2 text-slate-600">{p.referenceNumber || '—'}</td>
-                      <td className="py-2 text-right font-medium text-slate-800">{fmt(p.amount, sym)}</td>
+                      <td className="py-2 text-right font-medium text-slate-800">{fmt(p.amount, currencyCode)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -208,7 +209,7 @@ export default function InvoiceDetailPage() {
         invoiceId={invoice.id}
         invoiceNumber={invoice.invoiceNumber}
         balanceDue={Number(invoice.balanceDue)}
-        currencySymbol={sym}
+        currencyCode={currencyCode}
       />
     </div>
   );

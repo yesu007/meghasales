@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import dayjs from 'dayjs';
 import { INTER_REGULAR_TTF, INTER_BOLD_TTF } from './invoiceFont';
+import { formatCurrency } from './currency';
 
 const FONT = 'Inter';
 const SLATE_900 = [15, 23, 42] as const;
@@ -32,16 +33,16 @@ export function generateReportPDF(title: string, columns: ReportPDFColumn[], row
   doc.setTextColor(...SLATE_500);
   doc.text(`Generated ${dayjs().format('DD MMM YYYY, h:mm A')}`, marginX, 25);
 
-  const formatCell = (value: any, type?: string): string => {
+  const formatCell = (value: any, type: string | undefined, currencyCode: string): string => {
     if (typeof value !== 'number') return String(value ?? '');
-    if (type === 'currency') return `₹ ${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (type === 'currency') return formatCurrency(value, currencyCode);
     return value.toLocaleString('en-IN');
   };
 
   autoTable(doc, {
     startY: 32,
     head: [columns.map((c) => c.label)],
-    body: rows.map((row) => columns.map((c) => formatCell(row[c.key], c.type))),
+    body: rows.map((row) => columns.map((c) => formatCell(row[c.key], c.type, row.currencyCode || 'INR'))),
     theme: 'plain',
     styles: { font: FONT, lineColor: SLATE_200 as unknown as [number, number, number], lineWidth: 0.2, fontSize: 9 },
     headStyles: { fillColor: SLATE_900 as unknown as [number, number, number], textColor: WHITE as unknown as [number, number, number], fontStyle: 'bold', cellPadding: 5 },

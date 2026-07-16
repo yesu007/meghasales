@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownTrayIcon, BookOpenIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
+import { formatCurrency } from '@/lib/currency';
 
 interface Lead { id: number; companyName: string }
 
@@ -14,8 +15,8 @@ const TYPE_STYLES: Record<string, string> = {
   CREDIT_NOTE: 'bg-amber-100 text-amber-700',
 };
 
-function fmt(amount: number): string {
-  return `₹ ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmt(amount: number, currencyCode = 'INR'): string {
+  return formatCurrency(amount, currencyCode);
 }
 
 async function fetchLeads(): Promise<Lead[]> {
@@ -112,11 +113,11 @@ export default function CustomerLedgerPage() {
           <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
             <div>
               <p className="text-sm font-semibold text-slate-800">{ledger.companyName}</p>
-              <p className="text-xs text-slate-500">Opening Balance: {fmt(ledger.openingBalance)}</p>
+              <p className="text-xs text-slate-500">Opening Balance: {fmt(ledger.openingBalance, ledger.currencyCode)}</p>
             </div>
             <div className="text-right">
               <p className="text-xs text-slate-500">Closing Balance</p>
-              <p className="text-lg font-bold text-slate-800">{fmt(ledger.closingBalance)}</p>
+              <p className="text-lg font-bold text-slate-800">{fmt(ledger.closingBalance, ledger.currencyCode)}</p>
             </div>
           </div>
           {ledger.transactions.length === 0 ? (
@@ -139,9 +140,9 @@ export default function CustomerLedgerPage() {
                     <td className="px-4 py-3 text-slate-600">{dayjs(t.date).format('DD MMM YYYY')}</td>
                     <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${TYPE_STYLES[t.type] || 'bg-slate-100 text-slate-700'}`}>{TYPE_LABELS[t.type] || t.type}</span></td>
                     <td className="px-4 py-3 text-slate-600">{t.reference}</td>
-                    <td className="px-4 py-3 text-right text-slate-700">{t.debit > 0 ? fmt(t.debit) : '—'}</td>
-                    <td className="px-4 py-3 text-right text-green-700">{t.credit > 0 ? fmt(t.credit) : '—'}</td>
-                    <td className="px-4 py-3 text-right font-medium text-slate-800">{fmt(t.balance)}</td>
+                    <td className="px-4 py-3 text-right text-slate-700">{t.debit > 0 ? fmt(t.debit, ledger.currencyCode) : '—'}</td>
+                    <td className="px-4 py-3 text-right text-green-700">{t.credit > 0 ? fmt(t.credit, ledger.currencyCode) : '—'}</td>
+                    <td className="px-4 py-3 text-right font-medium text-slate-800">{fmt(t.balance, ledger.currencyCode)}</td>
                   </tr>
                 ))}
               </tbody>

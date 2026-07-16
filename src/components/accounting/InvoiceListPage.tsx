@@ -23,6 +23,7 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import PaymentEntryDrawer from './PaymentEntryDrawer';
+import { formatCurrency } from '@/lib/currency';
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-green-100 text-green-700',
@@ -99,8 +100,8 @@ async function fetchApprovedQuotations(): Promise<QuotationOption[]> {
   return data.content.map((q: any) => ({ id: q.id, quotationNumber: q.quotationNumber, businessModule: q.businessModule, leadId: q.leadId }));
 }
 
-function fmt(amount: string | number, symbol = '₹'): string {
-  return `${symbol} ${Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmt(amount: string | number, currencyCode = 'INR'): string {
+  return formatCurrency(amount, currencyCode);
 }
 
 export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
@@ -361,10 +362,10 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
                         <p className="text-xs text-slate-500">{inv.contactPerson}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{inv.project || '—'}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmt(inv.totalAmount)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmt(inv.totalAmount, inv.currencyCode)}</td>
                       {mode === 'open' ? (
                         <>
-                          <td className="px-4 py-3 text-right text-slate-600 hidden lg:table-cell">{fmt(inv.balanceDue)}</td>
+                          <td className="px-4 py-3 text-right text-slate-600 hidden lg:table-cell">{fmt(inv.balanceDue, inv.currencyCode)}</td>
                           <td className="px-4 py-3 text-slate-600">{dayjs(inv.dueDate).format('DD MMM YYYY')}</td>
                           <td className="px-4 py-3 text-center hidden lg:table-cell">{inv.daysOverdue > 0 ? <span className="text-red-600 font-medium">{inv.daysOverdue}</span> : '—'}</td>
                           <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[inv.displayStatus] || 'bg-slate-100 text-slate-700'}`}>{STATUS_LABELS[inv.displayStatus] || inv.displayStatus}</span></td>
@@ -372,7 +373,7 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
                         </>
                       ) : (
                         <>
-                          <td className="px-4 py-3 text-right text-green-700 font-medium hidden md:table-cell">{fmt(inv.amountPaid)}</td>
+                          <td className="px-4 py-3 text-right text-green-700 font-medium hidden md:table-cell">{fmt(inv.amountPaid, inv.currencyCode)}</td>
                           <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{inv.latestPaymentDate ? dayjs(inv.latestPaymentDate).format('DD MMM YYYY') : '—'}</td>
                           <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{inv.latestPaymentMethod || '—'}</td>
                           <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{inv.latestPaymentReference || '—'}</td>
@@ -472,8 +473,8 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
                               <input type="number" min={0} value={form.taxAmount} onChange={(e) => setForm((f) => ({ ...f, taxAmount: e.target.value }))} className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm mt-1" />
                             </div>
                             <div className="text-right self-end">
-                              <p className="text-xs text-slate-500">Subtotal: {fmt(manualSubtotal)}</p>
-                              <p className="text-sm font-semibold text-slate-800">Total: {fmt(manualTotal)}</p>
+                              <p className="text-xs text-slate-500">Subtotal: {fmt(manualSubtotal, 'INR')}</p>
+                              <p className="text-sm font-semibold text-slate-800">Total: {fmt(manualTotal, 'INR')}</p>
                             </div>
                           </div>
                         </div>
@@ -520,7 +521,7 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
           invoiceId={paymentInvoice.id}
           invoiceNumber={paymentInvoice.invoiceNumber}
           balanceDue={Number(paymentInvoice.balanceDue)}
-          currencySymbol={paymentInvoice.currencyCode === 'INR' ? '₹' : paymentInvoice.currencyCode}
+          currencyCode={paymentInvoice.currencyCode}
         />
       )}
     </div>

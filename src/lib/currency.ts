@@ -20,6 +20,25 @@ export function localeForCurrency(currencyCode: string): string {
   return LOCALE_BY_CURRENCY[currencyCode?.toUpperCase()] || 'en-US';
 }
 
+// Default symbols for every currently-seeded CurrencyMaster row, used when
+// a caller doesn't pass one explicitly (e.g. anywhere formatting a raw
+// currencyCode field straight from the database, without a joined
+// CurrencyMaster/Country row on hand). Kept in sync with prisma/seed.ts's
+// `currencies` list. Unknown codes fall back to the code itself.
+const SYMBOL_BY_CURRENCY: Record<string, string> = {
+  INR: '₹',
+  USD: '$',
+  GBP: '£',
+  AED: 'AED',
+  THB: '฿',
+  SGD: 'SGD',
+  SAR: 'SAR',
+};
+
+export function symbolForCurrency(currencyCode: string): string {
+  return SYMBOL_BY_CURRENCY[currencyCode?.toUpperCase()] || currencyCode || '';
+}
+
 export interface FormatCurrencyOptions {
   symbol?: string;
   decimalPlaces?: number;
@@ -38,7 +57,7 @@ export function formatCurrency(amount: number | string | Decimal, currencyCode: 
     maximumFractionDigits: decimalPlaces,
   }).format(value);
 
-  const symbol = opts.symbol ?? currencyCode ?? '';
+  const symbol = opts.symbol ?? symbolForCurrency(currencyCode);
   const separator = symbol.length > 1 ? ' ' : '';
   return `${symbol}${separator}${formattedNumber}`;
 }

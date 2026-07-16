@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
     if (!leadId) return NextResponse.json({ message: 'leadId is required' }, { status: 400 });
 
-    const lead = await prisma.lead.findUnique({ where: { id: parseInt(leadId) }, select: { id: true, companyName: true } });
+    const lead = await prisma.lead.findUnique({ where: { id: parseInt(leadId) }, select: { id: true, companyName: true, currencyCode: true } });
     if (!lead) return NextResponse.json({ message: 'Lead not found' }, { status: 404 });
 
     const fromDate = from ? new Date(from) : null;
@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       leadId: lead.id,
       companyName: lead.companyName,
+      currencyCode: lead.currencyCode || 'INR',
       openingBalance,
       transactions,
       closingBalance: runningBalance,

@@ -6,6 +6,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { formatCurrency } from '@/lib/currency';
 
 const PAYMENT_METHODS = [
   { value: 'CASH', label: 'Cash' },
@@ -16,8 +17,8 @@ const PAYMENT_METHODS = [
   { value: 'OTHER', label: 'Other' },
 ];
 
-function fmt(amount: number, symbol = '₹'): string {
-  return `${symbol} ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmt(amount: number, currencyCode = 'INR'): string {
+  return formatCurrency(amount, currencyCode);
 }
 
 interface PaymentEntryDrawerProps {
@@ -26,10 +27,10 @@ interface PaymentEntryDrawerProps {
   invoiceId: number;
   invoiceNumber: string;
   balanceDue: number;
-  currencySymbol?: string;
+  currencyCode?: string;
 }
 
-export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoiceNumber, balanceDue, currencySymbol = '₹' }: PaymentEntryDrawerProps) {
+export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoiceNumber, balanceDue, currencyCode = 'INR' }: PaymentEntryDrawerProps) {
   const queryClient = useQueryClient();
   const blankForm = { amount: '', paymentDate: dayjs().format('YYYY-MM-DD'), paymentMethod: '', referenceNumber: '', notes: '' };
   const [form, setForm] = useState(blankForm);
@@ -43,7 +44,7 @@ export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoice
     mutationFn: async () => {
       const amount = Number(form.amount);
       if (!amount || amount <= 0) throw new Error('Enter a valid payment amount');
-      if (amount > balanceDue) throw new Error(`Payment cannot exceed the outstanding balance of ${fmt(balanceDue, currencySymbol)}`);
+      if (amount > balanceDue) throw new Error(`Payment cannot exceed the outstanding balance of ${fmt(balanceDue, currencyCode)}`);
 
       let attachmentUrl: string | undefined;
       let attachmentName: string | undefined;
@@ -106,14 +107,14 @@ export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoice
                   <div className="flex items-center justify-between px-6 py-4 border-b">
                     <div>
                       <Dialog.Title className="text-lg font-semibold text-slate-800">Record Payment</Dialog.Title>
-                      <p className="text-xs text-slate-500 mt-0.5">{invoiceNumber} · Balance: {fmt(balanceDue, currencySymbol)}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{invoiceNumber} · Balance: {fmt(balanceDue, currencyCode)}</p>
                     </div>
                     <button onClick={close} className="p-1 text-slate-400 hover:text-slate-600 rounded"><XMarkIcon className="h-5 w-5" /></button>
                   </div>
                   <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="flex-1 px-6 py-4 space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Payment Amount *</label>
-                      <input required type="number" min={0.01} max={balanceDue} step="0.01" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" placeholder={`Up to ${fmt(balanceDue, currencySymbol)}`} />
+                      <input required type="number" min={0.01} max={balanceDue} step="0.01" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" placeholder={`Up to ${fmt(balanceDue, currencyCode)}`} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
