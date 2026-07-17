@@ -3,11 +3,12 @@
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
 import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
-import { leadStatusColor, leadStatusLabel } from '@/lib/leadStatus';
+import toast from 'react-hot-toast';
+import { LEAD_STATUSES, leadStatusColor } from '@/lib/leadStatus';
 import EventsTab from '@/components/leads/EventsTab';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
 
@@ -44,6 +45,7 @@ export default function LeadDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const { data: session } = useSession();
+  const queryClient = useQueryClient();
   const role = (session?.user as any)?.role;
   const permissions: string[] = (session?.user as any)?.permissions || [];
   const canManage = role === 'ADMIN' || permissions.includes('manage_lead_events');
@@ -53,6 +55,24 @@ export default function LeadDetailPage() {
   const { data: lead, isLoading } = useQuery({
     queryKey: ['lead', id],
     queryFn: () => fetchLead(id),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: async (status: string) => {
+      const res = await fetch(`/api/leads/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead', id] });
+      queryClient.invalidateQueries({ queryKey: ['lead-activities', Number(id)] });
+      toast.success('Status updated');
+    },
+    onError: () => toast.error('Failed to update status'),
   });
 
   if (isLoading) {
@@ -88,9 +108,14 @@ export default function LeadDetailPage() {
             <p className="text-slate-500 mt-1">{lead.contactPerson}{lead.email ? ` — ${lead.email}` : ''}</p>
           </div>
         </div>
-        <span className={`px-3 py-1 rounded-full text-sm font-medium ${leadStatusColor(lead.status)} self-start sm:self-auto`}>
-          {leadStatusLabel(lead.status)}
-        </span>
+        <select
+          value={lead.status}
+          disabled={statusMutation.isPending}
+          onChange={(e) => statusMutation.mutate(e.target.value)}
+          className={`self-start sm:self-auto px-3 py-1.5 rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
+        >
+          {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
       </div>
 
       <Tab.Group>
