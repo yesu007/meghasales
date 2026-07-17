@@ -15,6 +15,7 @@ async function main() {
     prisma.role.upsert({ where: { name: 'DEMO_TEAM' }, update: {}, create: { name: 'DEMO_TEAM', description: 'Demo execution' } }),
     prisma.role.upsert({ where: { name: 'FINANCE' }, update: {}, create: { name: 'FINANCE', description: 'Financial operations' } }),
     prisma.role.upsert({ where: { name: 'DEVOPS' }, update: {}, create: { name: 'DEVOPS', description: 'Infrastructure' } }),
+    prisma.role.upsert({ where: { name: 'SALES' }, update: {}, create: { name: 'SALES', description: 'Sales execution — view events, add discussions' } }),
   ]);
   console.log(`  ✓ ${roles.length} roles`);
 
@@ -29,6 +30,11 @@ async function main() {
     where: { email: 'ba@tekfilo.com' },
     update: {},
     create: { email: 'ba@tekfilo.com', password: hashedPassword, firstName: 'BA', lastName: 'User', roleId: roles[2].id },
+  });
+  await prisma.user.upsert({
+    where: { email: 'sales@tekfilo.com' },
+    update: {},
+    create: { email: 'sales@tekfilo.com', password: hashedPassword, firstName: 'Sales', lastName: 'User', roleId: roles[6].id },
   });
   console.log('  ✓ Users seeded');
 
@@ -195,6 +201,37 @@ async function main() {
     create: { roleId: roles[0].id, permissionId: manageCountriesPermission.id },
   });
   console.log('  ✓ manage_countries permission seeded and granted to ADMIN');
+
+  // Lead Events permissions — Event Management feature (Events/Documents/
+  // Discussions on a CONFIRMED lead). ADMIN gets all three explicitly
+  // (belt-and-suspenders alongside requirePermission()'s ADMIN bypass);
+  // BUSINESS_ANALYST gets full manage access; SALES (new role) gets
+  // view + add-discussion only; MANAGEMENT gets read-only view.
+  const eventPermissions = [
+    { name: 'view_lead_events', description: 'View events, documents, and discussions on a lead', module: 'LEAD_EVENTS' },
+    { name: 'manage_lead_events', description: 'Create/edit/delete events, documents, and discussions on a lead', module: 'LEAD_EVENTS' },
+    { name: 'add_lead_discussion', description: "Add discussions to a lead's events (without event/document CRUD)", module: 'LEAD_EVENTS' },
+  ];
+  const createdEventPermissions = await Promise.all(
+    eventPermissions.map((p) => prisma.permission.upsert({ where: { name: p.name }, update: {}, create: p }))
+  );
+  const byName = (name: string) => createdEventPermissions.find((p) => p.name === name)!;
+  const eventGrants: Array<[typeof roles[number], typeof createdEventPermissions]> = [
+    [roles[0], createdEventPermissions], // ADMIN — all
+    [roles[2], [byName('view_lead_events'), byName('manage_lead_events')]], // BUSINESS_ANALYST
+    [roles[6], [byName('view_lead_events'), byName('add_lead_discussion')]], // SALES
+    [roles[1], [byName('view_lead_events')]], // MANAGEMENT — read-only
+  ];
+  for (const [role, perms] of eventGrants) {
+    for (const permission of perms) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+        update: {},
+        create: { roleId: role.id, permissionId: permission.id },
+      });
+    }
+  }
+  console.log('  ✓ Lead Events permissions granted to ADMIN, BUSINESS_ANALYST, SALES, MANAGEMENT');
 
   // Default reminder templates (one per threshold, email + WhatsApp variants)
   const reminderThresholds = [

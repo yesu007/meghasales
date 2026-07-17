@@ -4,6 +4,7 @@ import { useState, useEffect, Fragment } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, Transition } from '@headlessui/react';
+import Link from 'next/link';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import {
   PlusIcon,
@@ -18,9 +19,11 @@ import {
   FunnelIcon,
   PencilIcon,
   TrashIcon,
+  EyeIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { LEAD_STATUSES } from '@/lib/leadStatus';
 
 const SOURCES = [
   { value: 'WEBSITE', label: 'Website' },
@@ -32,12 +35,7 @@ const SOURCES = [
   { value: 'SALES_EXECUTIVE', label: 'Sales Executive' },
 ];
 
-const STATUSES = [
-  { value: 'NEW', label: 'New', color: 'bg-blue-100 text-blue-700' },
-  { value: 'CONTACTED', label: 'Contacted', color: 'bg-amber-100 text-amber-700' },
-  { value: 'QUALIFIED', label: 'Qualified', color: 'bg-green-100 text-green-700' },
-  { value: 'DISQUALIFIED', label: 'Disqualified', color: 'bg-red-100 text-red-700' },
-];
+const STATUSES = LEAD_STATUSES;
 
 const VERTICALS = [
   { value: 'TRADING', label: 'Trading' },
@@ -325,7 +323,9 @@ export default function LeadsPage() {
                 <tbody className="divide-y divide-slate-100">
                   {leads.map((lead) => (
                     <tr key={lead.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-slate-800">{lead.companyName}</td>
+                      <td className="px-4 py-3 font-medium text-slate-800">
+                        <Link href={`/dashboard/leads/${lead.id}`} className="hover:text-amber-600 hover:underline">{lead.companyName}</Link>
+                      </td>
                       <td className="px-4 py-3 text-slate-600">{lead.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.mobile || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase()}</td>
@@ -347,6 +347,9 @@ export default function LeadsPage() {
                       <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{dayjs(lead.createdAt).format('DD MMM YYYY')}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
+                          <Link href={`/dashboard/leads/${lead.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-block" title="View">
+                            <EyeIcon className="h-4 w-4" />
+                          </Link>
                           <button onClick={() => openEdit(lead.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
                             <PencilIcon className="h-4 w-4" />
                           </button>

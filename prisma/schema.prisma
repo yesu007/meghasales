@@ -69,6 +69,13 @@ model User {
   implementations   Implementation[] @relation("ProjectManager")
   notifications     Notification[]
 
+  // Event Management
+  createdEvents            Event[]                @relation("EventCreatedBy")
+  uploadedEventDocuments   EventDocument[]         @relation("EventDocumentUploadedBy")
+  uploadedEventDocVersions EventDocumentVersion[]  @relation("EventDocumentVersionUploadedBy")
+  authoredDiscussions      EventDiscussion[]       @relation("EventDiscussionAuthor")
+  assignedDiscussions      EventDiscussion[]       @relation("EventDiscussionAssignedTo")
+
   // Accounting
   managedInvoices    Invoice[]         @relation("InvoiceAccountManager")
   createdInvoices    Invoice[]         @relation("InvoiceCreatedBy")
@@ -118,6 +125,7 @@ model Lead {
   implementations Implementation[]
   invoices     Invoice[]
   creditNotes  CreditNote[]
+  events       Event[]
 
   @@map("leads")
 }
@@ -160,6 +168,109 @@ model Demo {
   assignedTo User? @relation(fields: [assignedToId], references: [id])
 
   @@map("demos")
+}
+
+// ============================================================
+// EVENT MANAGEMENT (available once a Lead is CONFIRMED)
+// ============================================================
+
+model Event {
+  id            Int       @id @default(autoincrement())
+  leadId        Int       @map("lead_id")
+  title         String
+  eventType     String    @map("event_type")
+  // MEETING | PHONE_CALL | VIDEO_CALL | CLIENT_VISIT | INTERNAL_DISCUSSION |
+  // FOLLOW_UP | REQUIREMENT_GATHERING | DOCUMENT_REVIEW | DEMO | OTHER
+  eventDateTime DateTime  @map("event_date_time")
+  duration      Int?      // minutes
+  participants  String?   // free-text, mirrors Demo.attendees
+  location      String?
+  meetingLink   String?   @map("meeting_link")
+  description   String?
+  nextAction    String?   @map("next_action")
+  followUpDate  DateTime? @map("follow_up_date")
+  status        String    @default("SCHEDULED") // SCHEDULED | COMPLETED | CANCELLED
+  createdById   Int?      @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  lead        Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdBy   User?             @relation("EventCreatedBy", fields: [createdById], references: [id])
+  documents   EventDocument[]
+  discussions EventDiscussion[]
+
+  @@index([leadId])
+  @@index([status])
+  @@index([eventDateTime])
+  @@map("events")
+}
+
+// One row per logical document "slot"; EventDocumentVersion holds the
+// append-only upload history so "replace" never loses older files.
+// eventId XOR discussionId is set — enforced at the route layer since no
+// existing model in this schema uses a DB CHECK constraint.
+model EventDocument {
+  id           Int      @id @default(autoincrement())
+  eventId      Int?     @map("event_id")
+  discussionId Int?     @map("discussion_id")
+  fileName     String   @map("file_name")   // kept in sync with latest version
+  description  String?
+  mimeType     String?  @map("mime_type")
+  uploadedById Int?     @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  event      Event?           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  discussion EventDiscussion? @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  uploadedBy User?            @relation("EventDocumentUploadedBy", fields: [uploadedById], references: [id])
+  versions   EventDocumentVersion[]
+
+  @@index([eventId])
+  @@index([discussionId])
+  @@map("event_documents")
+}
+
+model EventDocumentVersion {
+  id              Int      @id @default(autoincrement())
+  eventDocumentId Int      @map("event_document_id")
+  versionNumber   Int      @map("version_number")
+  fileUrl         String   @map("file_url")  // Vercel Blob URL for this version
+  fileName        String   @map("file_name")
+  fileType        String?  @map("file_type") // extension, e.g. "pdf"
+  mimeType        String?  @map("mime_type")
+  fileSize        Int?     @map("file_size") // bytes
+  uploadedById    Int?     @map("uploaded_by")
+  uploadedAt      DateTime @default(now()) @map("uploaded_at")
+
+  eventDocument EventDocument @relation(fields: [eventDocumentId], references: [id], onDelete: Cascade)
+  uploadedBy    User?         @relation("EventDocumentVersionUploadedBy", fields: [uploadedById], references: [id])
+
+  @@unique([eventDocumentId, versionNumber])
+  @@index([eventDocumentId])
+  @@map("event_document_versions")
+}
+
+model EventDiscussion {
+  id               Int       @id @default(autoincrement())
+  eventId          Int       @map("event_id")
+  authorId         Int?      @map("author_id")
+  notes            String
+  decisionsTaken   String?   @map("decisions_taken")
+  actionItems      String?   @map("action_items")
+  assignedToId     Int?      @map("assigned_to")
+  targetDate       DateTime? @map("target_date")
+  completionStatus String    @default("OPEN") @map("completion_status") // OPEN | IN_PROGRESS | COMPLETED
+  createdAt        DateTime  @default(now()) @map("created_at") // = discussion date/time
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  event       Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  author      User?           @relation("EventDiscussionAuthor", fields: [authorId], references: [id])
+  assignedTo  User?           @relation("EventDiscussionAssignedTo", fields: [assignedToId], references: [id])
+  attachments EventDocument[]
+
+  @@index([eventId])
+  @@index([createdAt])
+  @@map("event_discussions")
 }
 
 // ============================================================

@@ -32,3 +32,22 @@ export async function requirePermission(permission: string): Promise<NextRespons
 
   return NextResponse.json({ message: `Forbidden — requires the "${permission}" permission` }, { status: 403 });
 }
+
+// Same as requirePermission, but passes if the session holds ANY of the
+// listed permissions — e.g. discussion-create is allowed for either the
+// full manage_lead_events grant or the narrower add_lead_discussion grant.
+export async function requireAnyPermission(permissions: string[]): Promise<NextResponse | null> {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
+
+  const role = (session.user as any)?.role;
+  const granted: string[] = (session.user as any)?.permissions || [];
+
+  if (role === 'ADMIN' || permissions.some((p) => granted.includes(p))) {
+    return null;
+  }
+
+  return NextResponse.json({ message: `Forbidden — requires one of: ${permissions.join(', ')}` }, { status: 403 });
+}

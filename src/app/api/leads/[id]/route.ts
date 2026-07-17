@@ -28,6 +28,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.lead.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Lead not found' }, { status: 404 });
 
+    const statusChangedToConfirmed = body.status === 'CONFIRMED' && existing.status !== 'CONFIRMED';
+
     let countryFields: Awaited<ReturnType<typeof resolveLeadCountryFields>> | null = null;
     if (body.countryId !== undefined) {
       const session = await getServerSession(authOptions);
@@ -62,6 +64,16 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.businessVerticals !== undefined && { businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null }),
       },
     });
+
+    if (statusChangedToConfirmed) {
+      await prisma.leadActivity.create({
+        data: {
+          leadId: id,
+          activityType: 'LEAD_CONFIRMED',
+          description: `Lead confirmed: ${lead.companyName}`,
+        },
+      });
+    }
 
     await logAudit({ action: 'UPDATE', entityType: 'LEAD', entityId: id, oldValue: existing, newValue: lead, description: `Lead updated: ${lead.companyName}`, request });
 
