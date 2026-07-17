@@ -31,6 +31,7 @@ interface InvoiceData {
   subtotal: number;
   discountPercentage: number;
   discountAmount: number;
+  taxInclusive?: boolean;
   taxBreakdown: { taxName: string; rate: number; amount: number }[];
   grandTotal: number;
   currencySymbol: string;
@@ -198,15 +199,21 @@ export function generateInvoicePDF(data: InvoiceData) {
   doc.setFont(FONT, 'normal');
   doc.setTextColor(...SLATE_700);
 
-  doc.text('Sub Total', labelsX, ty);
+  doc.text(data.taxInclusive ? 'Sub Total (incl. tax)' : 'Sub Total', labelsX, ty);
   doc.text(fmt(data.subtotal, sym, data.currencyCode), totalsX, ty, { align: 'right' });
   ty += 7;
 
-  data.taxBreakdown.forEach(t => {
-    doc.text(`${t.taxName} (${t.rate}%)`, labelsX, ty);
-    doc.text(fmt(t.amount, sym, data.currencyCode), totalsX, ty, { align: 'right' });
-    ty += 7;
-  });
+  // Exclusive tax is added on top of the subtotal, so it's shown as its own
+  // running-total line here. Inclusive tax is already baked into the
+  // subtotal above — showing it again as an addition would double-count it,
+  // so it's surfaced as a non-additive note under the Grand Total instead.
+  if (!data.taxInclusive) {
+    data.taxBreakdown.forEach(t => {
+      doc.text(`${t.taxName} (${t.rate}%)`, labelsX, ty);
+      doc.text(fmt(t.amount, sym, data.currencyCode), totalsX, ty, { align: 'right' });
+      ty += 7;
+    });
+  }
 
   if (data.discountAmount > 0) {
     doc.setTextColor(...SLATE_700);
@@ -228,9 +235,19 @@ export function generateInvoicePDF(data: InvoiceData) {
   doc.setTextColor(...SLATE_900);
   doc.text('Grand Total', labelsX, ty + 2);
   doc.text(fmt(data.grandTotal, sym, data.currencyCode), totalsX, ty + 2, { align: 'right' });
+  ty += 13;
+
+  if (data.taxInclusive && data.taxBreakdown.length > 0) {
+    doc.setFontSize(7.5);
+    doc.setFont(FONT, 'normal');
+    doc.setTextColor(...SLATE_500);
+    const parts = data.taxBreakdown.map(t => `${t.taxName} (${t.rate}%) ${fmt(t.amount, sym, data.currencyCode)}`).join('   |   ');
+    doc.text(`Inclusive of: ${parts}`, totalsX, ty, { align: 'right' });
+    ty += 6;
+  }
 
   // === TERMS ===
-  ty += 24;
+  ty += 11;
   if (ty < 235) {
     doc.setFontSize(9);
     doc.setFont(FONT, 'bold');

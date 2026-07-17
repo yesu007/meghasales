@@ -39,7 +39,8 @@ const MODULE_COLORS: Record<string, string> = {
 interface ModuleConfig { id: number; moduleCode: string; moduleName: string; description: string; baseLicenseCost: number; additionalUserCost: number; additionalBranchCost: number; }
 interface ExistingLead { id: number; companyName: string; contactPerson: string; email: string | null; mobile: string | null; country: { isoCode: string; countryName: string; flagEmoji: string | null } | null; state: string | null; }
 interface AddonConfig { id: number; addonCode: string; addonName: string; description: string; price: number; }
-interface PricingResponse { currencyCode: string; currencySymbol: string; exchangeRate: number; modules: { moduleCode: string; moduleName: string; basePrice: number }[]; modulesSubtotal: number; implementationCost: number; trainingCost: number; cloudHostingCost: number; annualMaintenanceCost: number; supportCharges: number; addonsCost: number; subtotal: number; discountPercentage: number; discountAmount: number; taxBreakdown: { taxName: string; rate: number; amount: number }[]; totalTax: number; grandTotal: number; addons: { addonCode: string; addonName: string; price: number }[]; }
+interface PricingResponse { currencyCode: string; currencySymbol: string; exchangeRate: number; modules: { moduleCode: string; moduleName: string; basePrice: number }[]; modulesSubtotal: number; implementationCost: number; trainingCost: number; cloudHostingCost: number; annualMaintenanceCost: number; supportCharges: number; addonsCost: number; subtotal: number; discountPercentage: number; discountAmount: number; taxInclusive: boolean; taxBreakdown: { taxName: string; rate: number; amount: number }[]; totalTax: number; grandTotal: number; addons: { addonCode: string; addonName: string; price: number }[]; }
+interface ServiceOverrides { implementationCost?: number; trainingCost?: number; annualMaintenanceCost?: number; }
 interface CustomModule { id: string; name: string; description: string; cost: number; quantity: number; }
 interface CurrencyOption { currencyCode: string; currencySymbol: string; }
 
@@ -74,17 +75,19 @@ export default function QuotationsPage() {
   const [clientPhone, setClientPhone] = useState('');
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
   const [moduleOverrides, setModuleOverrides] = useState<Record<string, number>>({});
+  const [serviceOverrides, setServiceOverrides] = useState<ServiceOverrides>({});
   const [customModules, setCustomModules] = useState<CustomModule[]>([]);
   const [clientCountry, setClientCountry] = useState('IN');
   const [clientState, setClientState] = useState('');
   const [discountPercentage, setDiscountPercentage] = useState(0);
+  const [taxInclusive, setTaxInclusive] = useState(false);
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
 
   const resetCreateState = () => {
     setEditingId(null); setEditingQuotationNumber('');
-    setSelectedModules([]); setModuleOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone('');
-    setClientCountry('IN'); setClientState(''); setDiscountPercentage(0); setSelectedAddons([]); setPricing(null);
+    setSelectedModules([]); setModuleOverrides({}); setServiceOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone('');
+    setClientCountry('IN'); setClientState(''); setDiscountPercentage(0); setTaxInclusive(false); setSelectedAddons([]); setPricing(null);
     setClientMode('existing'); setSelectedLeadId('');
   };
 
@@ -155,11 +158,11 @@ export default function QuotationsPage() {
   useEffect(() => {
     if ((selectedModules.length > 0 || hasCustomModules) && clientCountry) {
       const t = setTimeout(() => {
-        calcMutation.mutate({ moduleCodes: selectedModules, clientCountry, clientState: clientState || undefined, discountPercentage: discountPercentage || undefined, addonCodes: selectedAddons.length > 0 ? selectedAddons : undefined, moduleOverrides: Object.keys(moduleOverrides).length > 0 ? moduleOverrides : undefined });
+        calcMutation.mutate({ moduleCodes: selectedModules, clientCountry, clientState: clientState || undefined, discountPercentage: discountPercentage || undefined, addonCodes: selectedAddons.length > 0 ? selectedAddons : undefined, moduleOverrides: Object.keys(moduleOverrides).length > 0 ? moduleOverrides : undefined, serviceOverrides: Object.keys(serviceOverrides).length > 0 ? serviceOverrides : undefined, taxInclusive });
       }, 300);
       return () => clearTimeout(t);
     } else { setPricing(null); }
-  }, [selectedModules, hasCustomModules, clientCountry, clientState, discountPercentage, selectedAddons, moduleOverrides]);
+  }, [selectedModules, hasCustomModules, clientCountry, clientState, discountPercentage, selectedAddons, moduleOverrides, serviceOverrides, taxInclusive]);
 
   const toggleModule = (code: string) => {
     const isSelected = selectedModules.includes(code);
@@ -167,6 +170,7 @@ export default function QuotationsPage() {
     if (isSelected) setModuleOverrides(prev => { const { [code]: _drop, ...rest } = prev; return rest; });
   };
   const updateModuleOverride = (code: string, value: number) => setModuleOverrides(prev => ({ ...prev, [code]: value }));
+  const updateServiceOverride = (field: keyof ServiceOverrides, value: number) => setServiceOverrides(prev => ({ ...prev, [field]: value }));
   const toggleAddon = (code: string) => setSelectedAddons(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   const addCustomModule = () => setCustomModules(prev => [...prev, { id: Date.now().toString(), name: '', description: '', cost: 0, quantity: 1 }]);
   const removeCustomModule = (id: string) => setCustomModules(prev => prev.filter(m => m.id !== id));
@@ -195,6 +199,7 @@ export default function QuotationsPage() {
         discountPercentage: pricing.discountPercentage || null,
         discountAmount: pricing.discountAmount || null,
         taxAmount: pricing.totalTax || null,
+        taxInclusive: pricing.taxInclusive,
         taxBreakdown: pricing.taxBreakdown,
         addons: selectedAddons,
         pricingSnapshot: pricing,
@@ -240,6 +245,13 @@ export default function QuotationsPage() {
           return acc;
         }, {})
       : {});
+    // Same reasoning as moduleOverrides above — restore the exact service
+    // amounts this quotation was quoted at, not today's catalog defaults.
+    setServiceOverrides({
+      implementationCost: Number(q.implementationCost) || 0,
+      trainingCost: Number(q.trainingCost) || 0,
+      annualMaintenanceCost: Number(q.annualMaintenance) || 0,
+    });
     setClientName(q.lead?.contactPerson || '');
     setCompanyName(q.lead?.companyName || '');
     setClientEmail(q.lead?.email || '');
@@ -247,6 +259,7 @@ export default function QuotationsPage() {
     setClientCountry(q.clientCountry || 'IN');
     setClientState(q.clientState || '');
     setDiscountPercentage(Number(q.discountPercentage) || 0);
+    setTaxInclusive(!!q.taxInclusive);
     setSelectedAddons(Array.isArray(q.addons) ? q.addons : []);
     setEditingId(q.id);
     setEditingQuotationNumber(q.quotationNumber);
@@ -330,6 +343,7 @@ export default function QuotationsPage() {
       subtotal: pricing.subtotal + customModulesTotal,
       discountPercentage: pricing.discountPercentage,
       discountAmount: pricing.discountAmount,
+      taxInclusive: pricing.taxInclusive,
       taxBreakdown: pricing.taxBreakdown,
       grandTotal: pricing.grandTotal + customModulesTotal,
       currencySymbol: symbol,
@@ -366,6 +380,7 @@ export default function QuotationsPage() {
       subtotal: snapshot?.subtotal || Number(q.totalAmount),
       discountPercentage: snapshot?.discountPercentage || 0,
       discountAmount: snapshot?.discountAmount || 0,
+      taxInclusive: !!q.taxInclusive,
       taxBreakdown: snapshot?.taxBreakdown || [],
       grandTotal: Number(q.totalAmount),
       currencySymbol: symbol,
@@ -551,6 +566,13 @@ export default function QuotationsPage() {
               <div><label className="block text-sm font-medium text-slate-700 mb-1">State</label><select value={clientState} onChange={e => setClientState(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"><option value="">Select</option>{states.map(s => <option key={s.stateCode} value={s.stateCode}>{s.stateName}</option>)}</select></div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Discount %</label><input type="number" min={0} max={50} value={discountPercentage} onChange={e => setDiscountPercentage(Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></div>
             </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Tax (GST)</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setTaxInclusive(false)} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${!taxInclusive ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>Exclusive (add GST on top)</button>
+                <button type="button" onClick={() => setTaxInclusive(true)} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${taxInclusive ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>Inclusive (GST already included)</button>
+              </div>
+            </div>
           </div>
 
           {/* Add-ons */}
@@ -586,17 +608,36 @@ export default function QuotationsPage() {
                   {customModules.filter(c => c.name && c.cost > 0).map(c => <div key={c.id} className="flex justify-between text-sm"><span className="text-orange-700">{c.name}</span><span>{fmt(c.cost * c.quantity, pricing.currencySymbol, pricing.currencyCode)}</span></div>)}
                   <div className="flex justify-between text-sm font-medium border-t pt-1"><span>Modules Total</span><span>{fmt(pricing.modulesSubtotal + customModulesTotal, pricing.currencySymbol, pricing.currencyCode)}</span></div>
                 </div>
-                <div className="space-y-1 text-sm">
-                  {pricing.implementationCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Implementation</span><span>{fmt(pricing.implementationCost, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
-                  {pricing.trainingCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Training</span><span>{fmt(pricing.trainingCost, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
+                <div className="space-y-1.5 text-sm">
+                  <p className="text-xs font-medium text-slate-500 uppercase">Service costs (editable)</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-600">Implementation</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-slate-500">{pricing.currencySymbol}</span>
+                      <input type="number" value={serviceOverrides.implementationCost ?? pricing.implementationCost} onChange={e => updateServiceOverride('implementationCost', Number(e.target.value))} className="w-24 px-2 py-1 border border-slate-300 rounded text-sm text-right text-slate-800" />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-600">Training</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-slate-500">{pricing.currencySymbol}</span>
+                      <input type="number" value={serviceOverrides.trainingCost ?? pricing.trainingCost} onChange={e => updateServiceOverride('trainingCost', Number(e.target.value))} className="w-24 px-2 py-1 border border-slate-300 rounded text-sm text-right text-slate-800" />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-600">Annual Maintenance (AMC)</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-slate-500">{pricing.currencySymbol}</span>
+                      <input type="number" value={serviceOverrides.annualMaintenanceCost ?? pricing.annualMaintenanceCost} onChange={e => updateServiceOverride('annualMaintenanceCost', Number(e.target.value))} className="w-24 px-2 py-1 border border-slate-300 rounded text-sm text-right text-slate-800" />
+                    </div>
+                  </div>
                   {pricing.cloudHostingCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Cloud Hosting</span><span>{fmt(pricing.cloudHostingCost, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
-                  {pricing.annualMaintenanceCost > 0 && <div className="flex justify-between"><span className="text-slate-600">AMC</span><span>{fmt(pricing.annualMaintenanceCost, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
                   {pricing.addonsCost > 0 && <div className="flex justify-between"><span className="text-slate-600">Add-ons</span><span>{fmt(pricing.addonsCost, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
                 </div>
                 <hr />
                 <div className="flex justify-between font-medium text-sm"><span>Subtotal</span><span>{fmt(pricing.subtotal + customModulesTotal, pricing.currencySymbol, pricing.currencyCode)}</span></div>
                 {pricing.discountAmount > 0 && <div className="flex justify-between text-sm text-green-600"><span>Discount ({pricing.discountPercentage}%)</span><span>-{fmt(pricing.discountAmount, pricing.currencySymbol, pricing.currencyCode)}</span></div>}
-                {pricing.taxBreakdown.length > 0 && <div className="space-y-1"><p className="text-xs font-medium text-slate-500 uppercase">Taxes</p>{pricing.taxBreakdown.map((t, i) => <div key={i} className="flex justify-between text-sm text-slate-600"><span>{t.taxName} ({t.rate}%)</span><span>{fmt(t.amount, pricing.currencySymbol, pricing.currencyCode)}</span></div>)}</div>}
+                {pricing.taxBreakdown.length > 0 && <div className="space-y-1"><p className="text-xs font-medium text-slate-500 uppercase">Taxes {pricing.taxInclusive ? '(included in subtotal)' : ''}</p>{pricing.taxBreakdown.map((t, i) => <div key={i} className="flex justify-between text-sm text-slate-600"><span>{t.taxName} ({t.rate}%)</span><span>{fmt(t.amount, pricing.currencySymbol, pricing.currencyCode)}</span></div>)}</div>}
                 <hr />
                 <div className="flex justify-between items-center pt-1"><span className="text-lg font-bold text-slate-800">Grand Total</span><span className="text-xl font-bold text-amber-700">{fmt(pricing.grandTotal + customModulesTotal, pricing.currencySymbol, pricing.currencyCode)}</span></div>
                 <div className="flex gap-2 mt-4">

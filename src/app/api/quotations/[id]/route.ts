@@ -86,6 +86,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           ...(body.discountPercentage !== undefined && { discountPercentage: body.discountPercentage }),
           ...(body.discountAmount !== undefined && { discountAmount: body.discountAmount }),
           ...(body.taxAmount !== undefined && { taxAmount: body.taxAmount }),
+          ...(body.taxInclusive !== undefined && { taxInclusive: !!body.taxInclusive }),
           ...(body.taxBreakdown !== undefined && { taxBreakdown: body.taxBreakdown }),
           ...(body.clientCountry !== undefined && { clientCountry: body.clientCountry }),
           ...(body.clientState !== undefined && { clientState: body.clientState }),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveTaxRates } from './taxCalculation';
+import { resolveTaxRates, computeTaxTotals } from './taxCalculation';
 
 describe('resolveTaxRates', () => {
   describe('India, same state as supplier', () => {
@@ -132,6 +132,60 @@ describe('resolveTaxRates', () => {
         countryTaxRows: [{ taxName: 'GST', taxType: 'GST', rate: 9 }],
       });
       expect(rates).toEqual([{ taxName: 'GST', taxType: 'GST', rate: 9 }]);
+    });
+  });
+});
+
+describe('computeTaxTotals', () => {
+  const cgstSgst9 = [
+    { taxName: 'CGST', taxType: 'CGST', rate: 9 },
+    { taxName: 'SGST', taxType: 'SGST', rate: 9 },
+  ];
+
+  describe('exclusive (default)', () => {
+    it('adds tax on top of the taxable amount', () => {
+      const result = computeTaxTotals(1000, cgstSgst9, false);
+      expect(result.taxBreakdown).toEqual([
+        { taxName: 'CGST', taxType: 'CGST', rate: 9, amount: 90 },
+        { taxName: 'SGST', taxType: 'SGST', rate: 9, amount: 90 },
+      ]);
+      expect(result.totalTax).toBe(180);
+      expect(result.grandTotal).toBe(1180);
+    });
+
+    it('handles no applicable tax rates', () => {
+      const result = computeTaxTotals(500, [], false);
+      expect(result.taxBreakdown).toEqual([]);
+      expect(result.totalTax).toBe(0);
+      expect(result.grandTotal).toBe(500);
+    });
+  });
+
+  describe('inclusive', () => {
+    it('backs the tax out of the taxable amount instead of adding it', () => {
+      // 1180 inclusive of 18% (9%+9%) => base 1000, tax 180 — the exact
+      // inverse of the exclusive case above, and grandTotal stays at the
+      // quoted 1180 rather than becoming 1180+180.
+      const result = computeTaxTotals(1180, cgstSgst9, true);
+      expect(result.taxBreakdown).toEqual([
+        { taxName: 'CGST', taxType: 'CGST', rate: 9, amount: 90 },
+        { taxName: 'SGST', taxType: 'SGST', rate: 9, amount: 90 },
+      ]);
+      expect(result.totalTax).toBe(180);
+      expect(result.grandTotal).toBe(1180);
+    });
+
+    it('leaves the amount untouched when there are no applicable tax rates', () => {
+      const result = computeTaxTotals(500, [], true);
+      expect(result.taxBreakdown).toEqual([]);
+      expect(result.totalTax).toBe(0);
+      expect(result.grandTotal).toBe(500);
+    });
+
+    it('never produces a grand total larger than the quoted (inclusive) amount', () => {
+      const result = computeTaxTotals(31914.89, [{ taxName: 'IGST', taxType: 'IGST', rate: 18 }], true);
+      expect(result.grandTotal).toBe(31914.89);
+      expect(result.totalTax).toBeLessThan(result.grandTotal);
     });
   });
 });

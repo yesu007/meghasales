@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Decimal } from '@prisma/client/runtime/library';
-import { resolveTaxRates, type TaxRate } from '@/lib/taxCalculation';
+import { resolveTaxRates, computeTaxTotals, type TaxRate } from '@/lib/taxCalculation';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +10,7 @@ const DEFAULT_SUPPLIER_STATE = 'TN';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { moduleCodes, clientCountry, clientState, discountPercentage = 0, addonCodes = [], moduleOverrides } = body;
+    const { moduleCodes, clientCountry, clientState, discountPercentage = 0, addonCodes = [], moduleOverrides, serviceOverrides, taxInclusive = false } = body;
 
     if (!Array.isArray(moduleCodes)) {
       return NextResponse.json({ message: 'moduleCodes must be an array' }, { status: 400 });
@@ -57,11 +57,21 @@ export async function POST(request: NextRequest) {
       return isInr ? n : round(n / exchangeRate);
     };
 
-    const implementationCost = primary ? convert(primary.implementationCost) : 0;
+    // Like moduleOverrides, a sales rep can override the auto-populated
+    // service costs (already expressed in the client's currency) instead of
+    // using the primary module's catalog value converted at the current
+    // exchange rate — these previously had no way to be adjusted per-quote.
+    const implementationCost = typeof serviceOverrides?.implementationCost === 'number'
+      ? serviceOverrides.implementationCost
+      : primary ? convert(primary.implementationCost) : 0;
     const dataMigrationCost = primary ? convert(primary.dataMigrationCost) : 0;
-    const trainingCost = primary ? convert(primary.trainingCost) : 0;
+    const trainingCost = typeof serviceOverrides?.trainingCost === 'number'
+      ? serviceOverrides.trainingCost
+      : primary ? convert(primary.trainingCost) : 0;
     const cloudHostingCost = primary ? convert(primary.cloudHostingCost) : 0;
-    const annualMaintenanceCost = primary ? convert(primary.annualMaintenanceCost) : 0;
+    const annualMaintenanceCost = typeof serviceOverrides?.annualMaintenanceCost === 'number'
+      ? serviceOverrides.annualMaintenanceCost
+      : primary ? convert(primary.annualMaintenanceCost) : 0;
     const supportCharges = primary ? convert(primary.supportCharges) : 0;
     const oneTimeSetupFee = primary ? convert(primary.oneTimeSetupFee) : 0;
 
@@ -85,11 +95,12 @@ export async function POST(request: NextRequest) {
     const discountAmount = round(subtotal * discountPercentage / 100);
     const taxableAmount = subtotal - discountAmount;
 
-    // Calculate taxes
+    // Calculate taxes. When taxInclusive is true, the entered amounts
+    // (module/service prices) are treated as already including GST, so the
+    // tax is backed out of taxableAmount rather than added on top of it —
+    // grandTotal then equals taxableAmount instead of exceeding it.
     const taxRates = await resolveApplicableTaxRates(clientCountry, clientState);
-    const taxBreakdown = taxRates.map((t) => ({ ...t, amount: round(taxableAmount * t.rate / 100) }));
-    const totalTax = taxBreakdown.reduce((sum, t) => sum + t.amount, 0);
-    const grandTotal = round(taxableAmount + totalTax);
+    const { taxBreakdown, totalTax, grandTotal } = computeTaxTotals(taxableAmount, taxRates, !!taxInclusive);
 
     return NextResponse.json({
       currencyCode,
@@ -109,6 +120,7 @@ export async function POST(request: NextRequest) {
       subtotal: round(subtotal),
       discountPercentage,
       discountAmount: round(discountAmount),
+      taxInclusive,
       taxBreakdown,
       totalTax: round(totalTax),
       grandTotal,

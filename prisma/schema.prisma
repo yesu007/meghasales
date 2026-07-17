@@ -180,6 +180,7 @@ model Quotation {
   discountAmount        Decimal?  @map("discount_amount") @db.Decimal(15, 2)
   taxPercentage         Decimal?  @map("tax_percentage") @db.Decimal(5, 2)
   taxAmount             Decimal?  @map("tax_amount") @db.Decimal(15, 2)
+  taxInclusive          Boolean   @default(false) @map("tax_inclusive")
   totalAmount           Decimal?  @map("total_amount") @db.Decimal(15, 2)
   validUntil            DateTime? @map("valid_until")
   status                String    @default("DRAFT")

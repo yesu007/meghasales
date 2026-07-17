@@ -158,6 +158,7 @@ export async function POST(request: NextRequest) {
         discountAmount: body.discountAmount || null,
         taxPercentage: body.taxPercentage || null,
         taxAmount: body.taxAmount || null,
+        taxInclusive: !!body.taxInclusive,
         totalAmount: body.totalAmount || null,
         clientCountry,
         clientState,
