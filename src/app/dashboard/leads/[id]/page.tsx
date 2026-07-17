@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
-import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { LEAD_STATUSES, leadStatusColor } from '@/lib/leadStatus';
 import EventsTab from '@/components/leads/EventsTab';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
+import LeadDocumentsTab from '@/components/leads/LeadDocumentsTab';
 
 interface Lead {
   id: number;
@@ -136,6 +137,16 @@ export default function LeadDetailPage() {
           >
             <CalendarDaysIcon className="h-4 w-4" /> Events
           </Tab>
+          <Tab
+            disabled={!isConfirmed}
+            className={({ selected }) => classNames(
+              'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
+              !isConfirmed ? 'border-transparent text-slate-300 cursor-not-allowed' : selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}
+            title={!isConfirmed ? 'Documents unlock once this lead is Confirmed' : undefined}
+          >
+            <FolderOpenIcon className="h-4 w-4" /> Documents
+          </Tab>
           <Tab className={({ selected }) => classNames(
             'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
             selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -164,6 +175,16 @@ export default function LeadDetailPage() {
               <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
                 <CalendarDaysIcon className="h-12 w-12 mx-auto text-slate-300" />
                 <p className="mt-4 text-slate-600 font-medium">Events unlock once this lead is Confirmed</p>
+              </div>
+            )}
+          </Tab.Panel>
+          <Tab.Panel>
+            {isConfirmed && canView ? (
+              <LeadDocumentsTab leadId={lead.id} canManage={canManage} />
+            ) : (
+              <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+                <FolderOpenIcon className="h-12 w-12 mx-auto text-slate-300" />
+                <p className="mt-4 text-slate-600 font-medium">Documents unlock once this lead is Confirmed</p>
               </div>
             )}
           </Tab.Panel>

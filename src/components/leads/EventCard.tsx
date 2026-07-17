@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDownIcon, ChevronUpIcon, PencilIcon, TrashIcon, CalendarDaysIcon, MapPinIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, ChevronUpIcon, PencilIcon, TrashIcon, CalendarDaysIcon, MapPinIcon, UserGroupIcon, PaperClipIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import { EVENT_TYPE_LABELS } from './EventDrawer';
 import DocumentList from './DocumentList';
@@ -56,6 +56,8 @@ export default function EventCard({ leadId, event, onEdit, onDelete, canManage, 
             <span className="flex items-center gap-1"><CalendarDaysIcon className="h-3.5 w-3.5" /> {dayjs(event.eventDateTime).format('DD MMM YYYY, HH:mm')}{event.duration ? ` · ${event.duration} min` : ''}</span>
             {event.location && <span className="flex items-center gap-1"><MapPinIcon className="h-3.5 w-3.5" /> {event.location}</span>}
             {event.participants && <span className="flex items-center gap-1"><UserGroupIcon className="h-3.5 w-3.5" /> {event.participants}</span>}
+            {!!event._count?.documents && <span className="flex items-center gap-1 text-amber-600"><PaperClipIcon className="h-3.5 w-3.5" /> {event._count.documents} document{event._count.documents === 1 ? '' : 's'}</span>}
+            {!!event._count?.discussions && <span className="flex items-center gap-1"><ChatBubbleLeftRightIcon className="h-3.5 w-3.5" /> {event._count.discussions} discussion{event._count.discussions === 1 ? '' : 's'}</span>}
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
