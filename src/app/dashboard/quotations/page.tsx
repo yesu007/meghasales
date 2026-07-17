@@ -497,21 +497,29 @@ export default function QuotationsPage() {
                 {customModules.filter(c => c.name).map(c => <span key={c.id} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-700">{c.name}<button onClick={() => removeCustomModule(c.id)}><XMarkIcon className="h-3.5 w-3.5" /></button></span>)}
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
               {modules.map(mod => (
-                <button key={mod.moduleCode} onClick={() => toggleModule(mod.moduleCode)} className={`p-4 rounded-lg border-2 text-left transition-all ${selectedModules.includes(mod.moduleCode) ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-200' : 'border-slate-200 hover:border-amber-300'}`}>
-                  <div className="flex items-center justify-between"><h3 className="font-semibold text-slate-800">{mod.moduleName}</h3>{selectedModules.includes(mod.moduleCode) && <CheckCircleIcon className="h-5 w-5 text-amber-600" />}</div>
-                  <p className="text-xs text-slate-500 mt-1">{mod.description}</p>
-                  <p className="text-sm font-bold text-amber-700 mt-2">
+                <button key={mod.moduleCode} onClick={() => toggleModule(mod.moduleCode)} className={`w-full flex items-center justify-between gap-4 p-3 rounded-lg border-2 text-left transition-all ${selectedModules.includes(mod.moduleCode) ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-200' : 'border-slate-200 hover:border-amber-300'}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    {selectedModules.includes(mod.moduleCode) && <CheckCircleIcon className="h-5 w-5 text-amber-600 flex-shrink-0" />}
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-slate-800 truncate">{mod.moduleName}</h3>
+                      <p className="text-xs text-slate-500 truncate">{mod.description}</p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-bold text-amber-700 flex-shrink-0 whitespace-nowrap">
                     {pricing
                       ? fmt(pricing.modules.find(m => m.moduleCode === mod.moduleCode)?.basePrice ?? catalogPriceInPricingCurrency(mod.baseLicenseCost, pricing), pricing.currencySymbol, pricing.currencyCode)
                       : fmt(mod.baseLicenseCost, '₹', 'INR')}
                   </p>
                 </button>
               ))}
-              <button onClick={addCustomModule} className="p-4 rounded-lg border-2 border-dashed border-slate-300 text-left hover:border-amber-400 hover:bg-amber-50">
-                <div className="flex items-center gap-2"><PlusIcon className="h-5 w-5 text-amber-600" /><h3 className="font-semibold text-slate-800">Others (Custom)</h3></div>
-                <p className="text-xs text-slate-500 mt-1">Add custom module with your own pricing</p>
+              <button onClick={addCustomModule} className="w-full flex items-center gap-2 p-3 rounded-lg border-2 border-dashed border-slate-300 text-left hover:border-amber-400 hover:bg-amber-50">
+                <PlusIcon className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-slate-800">Others (Custom)</h3>
+                  <p className="text-xs text-slate-500 truncate">Add custom module with your own pricing</p>
+                </div>
               </button>
             </div>
             {selectedModules.length > 0 && pricing && (
