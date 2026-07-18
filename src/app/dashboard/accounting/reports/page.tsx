@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { ArrowDownTrayIcon, PrinterIcon, DocumentChartBarIcon } from '@heroicons/react/24/outline';
 import { generateReportPDF } from '@/lib/generateReportPDF';
 import { formatCurrency } from '@/lib/currency';
@@ -26,7 +27,7 @@ async function fetchReport(type: string, params: Record<string, string>) {
 
 async function fetchLeads(): Promise<Lead[]> {
   const res = await fetch('/api/leads?size=100&sortBy=companyName&sortDir=asc');
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error('Failed to fetch customers');
   const data = await res.json();
   return data.content;
 }
@@ -48,12 +49,20 @@ export default function AccountingReportsPage() {
   if (to) params.to = to;
   if (leadId) params.leadId = leadId;
 
-  const { data: report, isLoading } = useQuery({
+  const { data: report, isLoading, isError: isReportError } = useQuery({
     queryKey: ['accounting-report', type, params],
     queryFn: () => fetchReport(type, params),
   });
 
-  const { data: leads = [] } = useQuery<Lead[]>({ queryKey: ['leads-for-report'], queryFn: fetchLeads });
+  const { data: leads = [], isError: isLeadsError } = useQuery<Lead[]>({ queryKey: ['leads-for-report'], queryFn: fetchLeads });
+
+  useEffect(() => {
+    if (isReportError) toast.error('Failed to load report');
+  }, [isReportError]);
+
+  useEffect(() => {
+    if (isLeadsError) toast.error('Failed to load customers');
+  }, [isLeadsError]);
 
   const exportCsv = () => {
     const exportParams = new URLSearchParams({ type, ...params });

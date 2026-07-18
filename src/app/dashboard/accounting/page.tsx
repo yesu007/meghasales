@@ -1,6 +1,8 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import {
   ResponsiveContainer,
   BarChart,
@@ -75,7 +77,11 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 }
 
 export default function AccountingDashboardPage() {
-  const { data, isLoading } = useQuery({ queryKey: ['accounting-dashboard-stats'], queryFn: fetchDashboardStats });
+  const { data, isLoading, isError } = useQuery({ queryKey: ['accounting-dashboard-stats'], queryFn: fetchDashboardStats });
+
+  useEffect(() => {
+    if (isError) toast.error('Failed to load dashboard stats');
+  }, [isError]);
 
   const kpisByCurrency: any[] = data?.kpisByCurrency || [];
   const primaryCurrencyCode: string = data?.primaryCurrencyCode || 'INR';

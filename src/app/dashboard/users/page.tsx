@@ -52,7 +52,7 @@ async function fetchUsers(params: Record<string, string>) {
 
 async function fetchRoles(): Promise<RoleOption[]> {
   const res = await fetch('/api/roles');
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error('Failed to fetch roles');
   return res.json();
 }
 
@@ -79,22 +79,43 @@ export default function UsersPage() {
   if (roleFilter) params.roleId = roleFilter;
   if (activeFilter) params.isActive = activeFilter;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['users', params],
     queryFn: () => fetchUsers(params),
     placeholderData: (prev: any) => prev,
   });
 
-  const { data: roles = [] } = useQuery<RoleOption[]>({
+  const { data: roles = [], isError: isRolesError } = useQuery<RoleOption[]>({
     queryKey: ['roles'],
     queryFn: fetchRoles,
   });
 
+  useEffect(() => {
+    if (isError) toast.error('Failed to load users');
+  }, [isError]);
+
+  useEffect(() => {
+    if (isRolesError) toast.error('Failed to load roles');
+  }, [isRolesError]);
+
   const blankForm = { firstName: '', lastName: '', email: '', phone: '', password: '', roleId: '' };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); };
+  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
+
+  const validateForm = (data: typeof form) => {
+    const errs: Record<string, string> = {};
+    if (!data.firstName) errs.firstName = 'First name is required';
+    if (!data.lastName) errs.lastName = 'Last name is required';
+    if (!data.email) errs.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) errs.email = 'Enter a valid email address';
+    if (!editingId && !data.password) errs.password = 'Password is required';
+    else if (data.password && data.password.length < 8) errs.password = 'Password must be at least 8 characters';
+    if (!data.roleId) errs.roleId = 'Role is required';
+    return errs;
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (data: typeof form) => {
@@ -140,11 +161,12 @@ export default function UsersPage() {
   };
 
   const toggleActive = async (id: number, isActive: boolean) => {
-    await fetch(`/api/users/${id}`, {
+    const res = await fetch(`/api/users/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isActive: !isActive }),
     });
+    if (!res.ok) { toast.error('Failed to update user status'); return; }
     queryClient.invalidateQueries({ queryKey: ['users'] });
     toast.success(`User ${!isActive ? 'activated' : 'deactivated'}`);
   };
@@ -347,37 +369,46 @@ export default function UsersPage() {
                         <XMarkIcon className="h-5 w-5" />
                       </button>
                     </div>
-                    <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(form); }} className="flex-1 px-6 py-4 space-y-4">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const errs = validateForm(form);
+                        setFormErrors(errs);
+                        if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
+                        saveMutation.mutate(form);
+                      }}
+                      className="flex-1 px-6 py-4 space-y-4"
+                    >
                       <div className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">First Name *</label>
                             <input
-                              required
                               value={form.firstName}
                               onChange={(e) => setForm(f => ({ ...f, firstName: e.target.value }))}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.firstName ? 'border-red-400' : 'border-slate-300'}`}
                             />
+                            {formErrors.firstName && <p className="text-xs text-red-600 mt-1">{formErrors.firstName}</p>}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Last Name *</label>
                             <input
-                              required
                               value={form.lastName}
                               onChange={(e) => setForm(f => ({ ...f, lastName: e.target.value }))}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.lastName ? 'border-red-400' : 'border-slate-300'}`}
                             />
+                            {formErrors.lastName && <p className="text-xs text-red-600 mt-1">{formErrors.lastName}</p>}
                           </div>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
                           <input
-                            required
                             type="email"
                             value={form.email}
                             onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                            className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.email ? 'border-red-400' : 'border-slate-300'}`}
                           />
+                          {formErrors.email && <p className="text-xs text-red-600 mt-1">{formErrors.email}</p>}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
@@ -390,26 +421,25 @@ export default function UsersPage() {
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Password {editingId ? '' : '*'}</label>
                           <input
-                            required={!editingId}
                             type="password"
                             value={form.password}
                             onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                            className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.password ? 'border-red-400' : 'border-slate-300'}`}
                             placeholder={editingId ? 'Leave blank to keep current password' : 'Min 8 characters'}
-                            minLength={8}
                           />
+                          {formErrors.password && <p className="text-xs text-red-600 mt-1">{formErrors.password}</p>}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Role *</label>
                           <select
-                            required
                             value={form.roleId}
                             onChange={(e) => setForm(f => ({ ...f, roleId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                            className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.roleId ? 'border-red-400' : 'border-slate-300'}`}
                           >
                             <option value="">Select role</option>
                             {roles.map(r => <option key={r.id} value={r.id}>{roleLabel(r.name)}</option>)}
                           </select>
+                          {formErrors.roleId && <p className="text-xs text-red-600 mt-1">{formErrors.roleId}</p>}
                         </div>
                       </div>
                       <div className="flex justify-end gap-3 pt-4 border-t">

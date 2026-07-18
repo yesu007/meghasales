@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import {
   MagnifyingGlassIcon,
   XMarkIcon,
@@ -58,7 +59,7 @@ async function fetchAuditLogs(params: Record<string, string>) {
 
 async function fetchUsers(): Promise<UserOption[]> {
   const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
 }
@@ -88,16 +89,24 @@ export default function AuditLogPage() {
   if (dateFrom) params.dateFrom = dateFrom;
   if (dateTo) params.dateTo = dateTo;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError: isLogsError } = useQuery({
     queryKey: ['audit-logs', params],
     queryFn: () => fetchAuditLogs(params),
     placeholderData: (prev: any) => prev,
   });
 
-  const { data: users = [] } = useQuery<UserOption[]>({
+  const { data: users = [], isError: isUsersError } = useQuery<UserOption[]>({
     queryKey: ['users-for-audit'],
     queryFn: fetchUsers,
   });
+
+  useEffect(() => {
+    if (isLogsError) toast.error('Failed to load audit logs');
+  }, [isLogsError]);
+
+  useEffect(() => {
+    if (isUsersError) toast.error('Failed to load users');
+  }, [isUsersError]);
 
   const logs: AuditLogEntry[] = data?.content || [];
   const totalElements = data?.totalElements || 0;

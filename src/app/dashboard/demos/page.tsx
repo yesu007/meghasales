@@ -102,7 +102,7 @@ async function fetchLeads(): Promise<Lead[]> {
 
 async function fetchUsers(): Promise<UserOption[]> {
   const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
 }
@@ -134,30 +134,51 @@ export default function DemosPage() {
   if (statusFilter) params.status = statusFilter;
   if (typeFilter) params.demoType = typeFilter;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['demos', params],
     queryFn: () => fetchDemos(params),
     placeholderData: (prev: any) => prev,
   });
 
   // Fetch leads for the create form
-  const { data: leads = [] } = useQuery({
+  const { data: leads = [], isError: isLeadsError } = useQuery({
     queryKey: ['leads-for-demo'],
     queryFn: fetchLeads,
   });
 
   // Fetch users for the Assigned To dropdown
-  const { data: users = [] } = useQuery<UserOption[]>({
+  const { data: users = [], isError: isUsersError } = useQuery<UserOption[]>({
     queryKey: ['users-for-demo'],
     queryFn: fetchUsers,
   });
+
+  useEffect(() => {
+    if (isError) toast.error('Failed to load demos');
+  }, [isError]);
+
+  useEffect(() => {
+    if (isLeadsError) toast.error('Failed to load leads');
+  }, [isLeadsError]);
+
+  useEffect(() => {
+    if (isUsersError) toast.error('Failed to load users');
+  }, [isUsersError]);
 
   // Create/edit demo form
   const blankForm = { leadId: '', demoType: '', scheduledDate: '', assignedToId: '', attendees: '', modulesDemonstrated: '' };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); };
+  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
+
+  const validateForm = (data: typeof form) => {
+    const errs: Record<string, string> = {};
+    if (!data.leadId) errs.leadId = 'Lead / company is required';
+    if (!data.demoType) errs.demoType = 'Demo type is required';
+    if (!data.scheduledDate) errs.scheduledDate = 'Scheduled date & time is required';
+    return errs;
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (data: typeof form) => {
@@ -477,19 +498,24 @@ export default function DemosPage() {
                       </button>
                     </div>
                     <form
-                      onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(form); }}
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const errs = validateForm(form);
+                        setFormErrors(errs);
+                        if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
+                        saveMutation.mutate(form);
+                      }}
                       className="flex-1 px-6 py-4 space-y-4"
                     >
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Lead / Company *</label>
                           <select
-                            required
                             disabled={!!editingId}
                             title={editingId ? 'Lead cannot be changed after creation' : undefined}
                             value={form.leadId}
                             onChange={(e) => setForm(f => ({ ...f, leadId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                            className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.leadId ? 'border-red-400' : 'border-slate-300'}`}
                           >
                             <option value="">Select a lead</option>
                             {leads.map((lead: Lead) => (
@@ -498,29 +524,30 @@ export default function DemosPage() {
                               </option>
                             ))}
                           </select>
+                          {formErrors.leadId && <p className="text-xs text-red-600 mt-1">{formErrors.leadId}</p>}
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Demo Type *</label>
                             <select
-                              required
                               value={form.demoType}
                               onChange={(e) => setForm(f => ({ ...f, demoType: e.target.value }))}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.demoType ? 'border-red-400' : 'border-slate-300'}`}
                             >
                               <option value="">Select type</option>
                               {DEMO_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                             </select>
+                            {formErrors.demoType && <p className="text-xs text-red-600 mt-1">{formErrors.demoType}</p>}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Scheduled Date & Time *</label>
                             <input
-                              required
                               type="datetime-local"
                               value={form.scheduledDate}
                               onChange={(e) => setForm(f => ({ ...f, scheduledDate: e.target.value }))}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.scheduledDate ? 'border-red-400' : 'border-slate-300'}`}
                             />
+                            {formErrors.scheduledDate && <p className="text-xs text-red-600 mt-1">{formErrors.scheduledDate}</p>}
                           </div>
                         </div>
                         <div>

@@ -83,52 +83,75 @@ export default function QuotationsPage() {
   const [taxInclusive, setTaxInclusive] = useState(false);
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const resetCreateState = () => {
     setEditingId(null); setEditingQuotationNumber('');
     setSelectedModules([]); setModuleOverrides({}); setServiceOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone('');
     setClientCountry('IN'); setClientState(''); setDiscountPercentage(0); setTaxInclusive(false); setSelectedAddons([]); setPricing(null);
-    setClientMode('existing'); setSelectedLeadId('');
+    setClientMode('existing'); setSelectedLeadId(''); setFormErrors({});
   };
 
   // Fetch quotations from database
-  const { data: quotationsData } = useQuery({
+  const { data: quotationsData, isError: isQuotationsError } = useQuery({
     queryKey: ['quotations'],
     queryFn: async () => { const r = await fetch('/api/quotations?size=50'); if (!r.ok) throw new Error('Failed'); return r.json(); },
   });
   const quotations = quotationsData?.content || [];
 
   // Fetch modules and addons
-  const { data: modules = [] } = useQuery<ModuleConfig[]>({
+  const { data: modules = [], isError: isModulesError } = useQuery<ModuleConfig[]>({
     queryKey: ['modules'],
-    queryFn: async () => { const r = await fetch('/api/quotation-config'); return r.json(); },
+    queryFn: async () => { const r = await fetch('/api/quotation-config'); if (!r.ok) throw new Error('Failed to fetch modules'); return r.json(); },
   });
-  const { data: addons = [] } = useQuery<AddonConfig[]>({
+  const { data: addons = [], isError: isAddonsError } = useQuery<AddonConfig[]>({
     queryKey: ['addons'],
-    queryFn: async () => { const r = await fetch('/api/quotation-config?type=addons'); return r.json(); },
+    queryFn: async () => { const r = await fetch('/api/quotation-config?type=addons'); if (!r.ok) throw new Error('Failed to fetch addons'); return r.json(); },
   });
-  const { data: states = [] } = useQuery<{ stateCode: string; stateName: string }[]>({
+  const { data: states = [], isError: isStatesError } = useQuery<{ stateCode: string; stateName: string }[]>({
     queryKey: ['states', clientCountry],
-    queryFn: async () => { const r = await fetch(`/api/quotation-config/taxes?type=states&country=${clientCountry}`); return r.json(); },
+    queryFn: async () => { const r = await fetch(`/api/quotation-config/taxes?type=states&country=${clientCountry}`); if (!r.ok) throw new Error('Failed to fetch states'); return r.json(); },
     enabled: !!clientCountry,
   });
-  const { data: existingLeads = [] } = useQuery<ExistingLead[]>({
+  const { data: existingLeads = [], isError: isLeadsError } = useQuery<ExistingLead[]>({
     queryKey: ['leads-for-quotation'],
-    queryFn: async () => { const r = await fetch('/api/leads?size=100&sortBy=companyName&sortDir=asc'); if (!r.ok) return []; const data = await r.json(); return data.content; },
+    queryFn: async () => { const r = await fetch('/api/leads?size=100&sortBy=companyName&sortDir=asc'); if (!r.ok) throw new Error('Failed to fetch leads'); const data = await r.json(); return data.content; },
   });
   // Shared with CountrySelect's own internal fetch (same query key), so this
   // doesn't cost an extra request — needed here to resolve clientCountry
   // (an ISO code, the format the calculate API and Quotation.clientCountry
   // use) to/from the numeric Country id CountrySelect's `value` prop expects.
-  const { data: countryList = [] } = useQuery<Country[]>({
+  const { data: countryList = [], isError: isCountryListError } = useQuery<Country[]>({
     queryKey: ['countries'],
-    queryFn: async () => { const r = await fetch('/api/countries?activeOnly=true'); if (!r.ok) return []; return r.json(); },
+    queryFn: async () => { const r = await fetch('/api/countries?activeOnly=true'); if (!r.ok) throw new Error('Failed to fetch countries'); return r.json(); },
   });
-  const { data: currencyList = [] } = useQuery<CurrencyOption[]>({
+  const { data: currencyList = [], isError: isCurrencyListError } = useQuery<CurrencyOption[]>({
     queryKey: ['currencies'],
-    queryFn: async () => { const r = await fetch('/api/currencies?activeOnly=true'); if (!r.ok) return []; return r.json(); },
+    queryFn: async () => { const r = await fetch('/api/currencies?activeOnly=true'); if (!r.ok) throw new Error('Failed to fetch currencies'); return r.json(); },
   });
   const symbolForCurrency = (code: string) => currencyList.find(c => c.currencyCode === code)?.currencySymbol || code;
+
+  useEffect(() => {
+    if (isQuotationsError) toast.error('Failed to load quotations');
+  }, [isQuotationsError]);
+  useEffect(() => {
+    if (isModulesError) toast.error('Failed to load modules');
+  }, [isModulesError]);
+  useEffect(() => {
+    if (isAddonsError) toast.error('Failed to load add-ons');
+  }, [isAddonsError]);
+  useEffect(() => {
+    if (isStatesError) toast.error('Failed to load states');
+  }, [isStatesError]);
+  useEffect(() => {
+    if (isLeadsError) toast.error('Failed to load clients');
+  }, [isLeadsError]);
+  useEffect(() => {
+    if (isCountryListError) toast.error('Failed to load countries');
+  }, [isCountryListError]);
+  useEffect(() => {
+    if (isCurrencyListError) toast.error('Failed to load currencies');
+  }, [isCurrencyListError]);
 
   const selectExistingLead = (id: string) => {
     setSelectedLeadId(id);
@@ -150,8 +173,13 @@ export default function QuotationsPage() {
 
   // Auto-calculate pricing
   const calcMutation = useMutation({
-    mutationFn: async (data: any) => { const r = await fetch('/api/quotation-config/calculate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); return r.json(); },
+    mutationFn: async (data: any) => {
+      const r = await fetch('/api/quotation-config/calculate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (!r.ok) throw new Error('Failed to calculate pricing');
+      return r.json();
+    },
     onSuccess: (data) => setPricing(data),
+    onError: () => toast.error('Failed to calculate pricing'),
   });
 
   const hasCustomModules = customModules.some(c => c.name && c.cost > 0);
@@ -179,7 +207,16 @@ export default function QuotationsPage() {
 
   const saveQuotation = async () => {
     const clientValid = editingId || (clientMode === 'existing' ? !!selectedLeadId : !!(clientName && companyName));
-    if (!pricing || !clientValid || (selectedModules.length === 0 && customModules.filter(c => c.name && c.cost > 0).length === 0)) {
+    const hasModule = selectedModules.length > 0 || customModules.filter(c => c.name && c.cost > 0).length > 0;
+    const errs: Record<string, string> = {};
+    if (!editingId && clientMode === 'existing' && !selectedLeadId) errs.client = 'Select a client';
+    if (!editingId && clientMode === 'new') {
+      if (!clientName) errs.clientName = 'Client name is required';
+      if (!companyName) errs.companyName = 'Company is required';
+    }
+    if (!hasModule) errs.modules = 'Select at least one module';
+    setFormErrors(errs);
+    if (!pricing || !clientValid || !hasModule) {
       toast.error(clientMode === 'existing' && !editingId ? 'Select a client and at least one module' : 'Fill required fields and select at least one module');
       return;
     }
@@ -473,16 +510,17 @@ export default function QuotationsPage() {
             {!editingId && clientMode === 'existing' ? (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
-                <select value={selectedLeadId} onChange={e => selectExistingLead(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                <select value={selectedLeadId} onChange={e => selectExistingLead(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.client ? 'border-red-400' : 'border-slate-300'}`}>
                   <option value="">Select a client</option>
                   {existingLeads.map(l => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}{l.email ? ` (${l.email})` : ''}</option>)}
                 </select>
+                {formErrors.client && <p className="text-xs text-red-600 mt-1">{formErrors.client}</p>}
                 {existingLeads.length === 0 && <p className="text-xs text-slate-400 mt-1">No existing clients yet — switch to &ldquo;New Client&rdquo; to add one.</p>}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input disabled={!!editingId} value={clientName} onChange={e => setClientName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input disabled={!!editingId} value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input disabled={!!editingId} value={clientName} onChange={e => setClientName(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.clientName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.clientName && <p className="text-xs text-red-600 mt-1">{formErrors.clientName}</p>}</div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input disabled={!!editingId} value={companyName} onChange={e => setCompanyName(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}</div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input disabled={!!editingId} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input disabled={!!editingId} value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
               </div>
@@ -492,6 +530,7 @@ export default function QuotationsPage() {
           {/* Module Selection */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-lg font-semibold text-slate-800 mb-2 flex items-center gap-2"><BuildingOfficeIcon className="h-5 w-5 text-amber-600" /> Select Business Modules *</h2>
+            {formErrors.modules && <p className="text-xs text-red-600 mb-2">{formErrors.modules}</p>}
             {(selectedModules.length > 0 || customModules.length > 0) && (
               <div className="flex flex-wrap gap-2 mb-4">{selectedModules.map(code => { const mod = modules.find(m => m.moduleCode === code); return (<span key={code} className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${MODULE_COLORS[code] || 'bg-slate-100'}`}>{mod?.moduleName || code}<button onClick={() => toggleModule(code)}><XMarkIcon className="h-3.5 w-3.5" /></button></span>); })}
                 {customModules.filter(c => c.name).map(c => <span key={c.id} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-700">{c.name}<button onClick={() => removeCustomModule(c.id)}><XMarkIcon className="h-3.5 w-3.5" /></button></span>)}

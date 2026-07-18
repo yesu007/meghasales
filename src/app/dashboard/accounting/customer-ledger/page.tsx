@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { ArrowDownTrayIcon, BookOpenIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
@@ -21,7 +22,7 @@ function fmt(amount: number, currencyCode = 'INR'): string {
 
 async function fetchLeads(): Promise<Lead[]> {
   const res = await fetch('/api/leads?size=100&sortBy=companyName&sortDir=asc');
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error('Failed to fetch customers');
   const data = await res.json();
   return data.content;
 }
@@ -40,13 +41,21 @@ export default function CustomerLedgerPage() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
-  const { data: leads = [] } = useQuery<Lead[]>({ queryKey: ['leads-for-ledger'], queryFn: fetchLeads });
+  const { data: leads = [], isError: isLeadsError } = useQuery<Lead[]>({ queryKey: ['leads-for-ledger'], queryFn: fetchLeads });
 
-  const { data: ledger, isLoading } = useQuery({
+  const { data: ledger, isLoading, isError: isLedgerError } = useQuery({
     queryKey: ['customer-ledger', leadId, from, to],
     queryFn: () => fetchLedger(leadId, from, to),
     enabled: !!leadId,
   });
+
+  useEffect(() => {
+    if (isLeadsError) toast.error('Failed to load customers');
+  }, [isLeadsError]);
+
+  useEffect(() => {
+    if (isLedgerError) toast.error('Failed to load ledger');
+  }, [isLedgerError]);
 
   const exportCsv = () => {
     if (!ledger) return;

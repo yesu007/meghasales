@@ -82,7 +82,7 @@ async function fetchLeads(): Promise<Lead[]> {
 
 async function fetchUsers(): Promise<UserOption[]> {
   const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
 }
@@ -108,27 +108,46 @@ export default function ImplementationsPage() {
   if (search) params.search = search;
   if (statusFilter) params.status = statusFilter;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['implementations', params],
     queryFn: () => fetchImplementations(params),
     placeholderData: (prev: any) => prev,
   });
 
-  const { data: leads = [] } = useQuery({
+  const { data: leads = [], isError: isLeadsError } = useQuery({
     queryKey: ['leads-for-impl'],
     queryFn: fetchLeads,
   });
 
-  const { data: users = [] } = useQuery<UserOption[]>({
+  const { data: users = [], isError: isUsersError } = useQuery<UserOption[]>({
     queryKey: ['users-for-impl'],
     queryFn: fetchUsers,
   });
 
+  useEffect(() => {
+    if (isError) toast.error('Failed to load implementations');
+  }, [isError]);
+
+  useEffect(() => {
+    if (isLeadsError) toast.error('Failed to load leads');
+  }, [isLeadsError]);
+
+  useEffect(() => {
+    if (isUsersError) toast.error('Failed to load users');
+  }, [isUsersError]);
+
   const blankForm = { leadId: '', projectName: '', startDate: '', targetEndDate: '', currentStage: '', projectManagerId: '', notes: '' };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); };
+  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
+
+  const validateForm = (data: typeof form) => {
+    const errs: Record<string, string> = {};
+    if (!data.leadId) errs.leadId = 'Lead / company is required';
+    return errs;
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (data: typeof form) => {
@@ -395,17 +414,25 @@ export default function ImplementationsPage() {
                         <XMarkIcon className="h-5 w-5" />
                       </button>
                     </div>
-                    <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(form); }} className="flex-1 px-6 py-4 space-y-4">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const errs = validateForm(form);
+                        setFormErrors(errs);
+                        if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
+                        saveMutation.mutate(form);
+                      }}
+                      className="flex-1 px-6 py-4 space-y-4"
+                    >
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Lead / Company *</label>
                           <select
-                            required
                             disabled={!!editingId}
                             title={editingId ? 'Lead cannot be changed after creation' : undefined}
                             value={form.leadId}
                             onChange={(e) => setForm(f => ({ ...f, leadId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                            className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.leadId ? 'border-red-400' : 'border-slate-300'}`}
                           >
                             <option value="">Select a lead</option>
                             {leads.map((lead: Lead) => (
@@ -414,6 +441,7 @@ export default function ImplementationsPage() {
                               </option>
                             ))}
                           </select>
+                          {formErrors.leadId && <p className="text-xs text-red-600 mt-1">{formErrors.leadId}</p>}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>

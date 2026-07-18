@@ -1,17 +1,19 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 
 async function countFor(url: string): Promise<number> {
   const res = await fetch(url);
-  if (!res.ok) return 0;
+  if (!res.ok) throw new Error(`Failed to fetch ${url}`);
   const data = await res.json();
   return data.totalElements || 0;
 }
 
 async function fetchDashboardStats() {
-  const [totalLeads, draftQuotations, sentQuotations, scheduledDemos, rescheduledDemos, implementations] = await Promise.all([
+  const results = await Promise.allSettled([
     countFor('/api/leads?size=1'),
     countFor('/api/quotations?status=DRAFT&size=1'),
     countFor('/api/quotations?status=SENT&size=1'),
@@ -20,21 +22,29 @@ async function fetchDashboardStats() {
     countFor('/api/implementations?size=1'),
   ]);
 
+  const value = (i: number) => (results[i].status === 'fulfilled' ? (results[i] as PromiseFulfilledResult<number>).value : 0);
+  const hadFailure = results.some((r) => r.status === 'rejected');
+
   return {
-    totalLeads,
-    activeQuotations: draftQuotations + sentQuotations,
-    scheduledDemos: scheduledDemos + rescheduledDemos,
-    implementations,
+    totalLeads: value(0),
+    activeQuotations: value(1) + value(2),
+    scheduledDemos: value(3) + value(4),
+    implementations: value(5),
+    hadFailure,
   };
 }
 
 export default function DashboardPage() {
   const { data: session } = useSession();
 
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, isError } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: fetchDashboardStats,
   });
+
+  useEffect(() => {
+    if (isError || stats?.hadFailure) toast.error('Some dashboard stats failed to load');
+  }, [isError, stats?.hadFailure]);
 
   const kpis = [
     { label: 'Total Leads', value: stats?.totalLeads, color: 'bg-blue-50 text-blue-700' },

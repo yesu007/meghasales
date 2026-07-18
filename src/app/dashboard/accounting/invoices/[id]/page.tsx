@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeftIcon, DocumentTextIcon, BanknotesIcon } from '@heroicons/react/24/outline';
@@ -48,10 +49,14 @@ export default function InvoiceDetailPage() {
   const id = params.id as string;
   const [paymentDrawerOpen, setPaymentDrawerOpen] = useState(false);
 
-  const { data: invoice, isLoading } = useQuery({
+  const { data: invoice, isLoading, isError } = useQuery({
     queryKey: ['accounting-invoice', id],
     queryFn: () => fetchInvoice(id),
   });
+
+  useEffect(() => {
+    if (isError) toast.error('Failed to load invoice');
+  }, [isError]);
 
   if (isLoading) {
     return (

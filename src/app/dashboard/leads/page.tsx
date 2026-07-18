@@ -72,7 +72,7 @@ async function fetchLeads(params: Record<string, string>) {
 
 async function fetchUsers(): Promise<UserOption[]> {
   const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
 }
@@ -114,17 +114,25 @@ export default function LeadsPage() {
   if (sourceFilter) params.leadSource = sourceFilter;
   if (verticalFilter) params.businessVertical = verticalFilter;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['leads', params],
     queryFn: () => fetchLeads(params),
     placeholderData: (prev: any) => prev,
   });
 
   // Fetch users for BA assignment
-  const { data: users = [] } = useQuery<UserOption[]>({
+  const { data: users = [], isError: isUsersError } = useQuery<UserOption[]>({
     queryKey: ['users-for-ba'],
     queryFn: fetchUsers,
   });
+
+  useEffect(() => {
+    if (isError) toast.error('Failed to load leads');
+  }, [isError]);
+
+  useEffect(() => {
+    if (isUsersError) toast.error('Failed to load users');
+  }, [isUsersError]);
 
   // Create/edit lead form
   const blankForm = {
@@ -137,17 +145,33 @@ export default function LeadsPage() {
 
   // Only Administrators can override the currency a country implies —
   // this list is only fetched/rendered for ADMIN sessions.
-  const { data: currencies = [] } = useQuery<CurrencyOption[]>({
+  const { data: currencies = [], isError: isCurrenciesError } = useQuery<CurrencyOption[]>({
     queryKey: ['currencies'],
     queryFn: async () => {
       const res = await fetch('/api/currencies?activeOnly=true');
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error('Failed to fetch currencies');
       return res.json();
     },
     enabled: isAdmin,
   });
 
-  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); };
+  useEffect(() => {
+    if (isCurrenciesError) toast.error('Failed to load currencies');
+  }, [isCurrenciesError]);
+
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
+
+  const validateForm = (data: typeof form) => {
+    const errs: Record<string, string> = {};
+    if (!data.companyName) errs.companyName = 'Company name is required';
+    if (!data.contactPerson) errs.contactPerson = 'Contact person is required';
+    if (!data.mobile) errs.mobile = 'Mobile is required';
+    if (!data.leadSource) errs.leadSource = 'Lead source is required';
+    if (!data.countryId) errs.countryId = 'Country is required';
+    return errs;
+  };
 
   const handleCountryChange = (country: Country) => {
     setForm((f) => ({
@@ -213,13 +237,15 @@ export default function LeadsPage() {
   };
 
   const updateStatus = async (id: number, status: string) => {
-    await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    if (!res.ok) { toast.error('Failed to update status'); return; }
     queryClient.invalidateQueries({ queryKey: ['leads'] });
     toast.success('Status updated');
   };
 
   const assignBa = async (id: number, assignedBaId: string) => {
-    await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedBaId: assignedBaId || null }) });
+    const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedBaId: assignedBaId || null }) });
+    if (!res.ok) { toast.error('Failed to assign BA'); return; }
     queryClient.invalidateQueries({ queryKey: ['leads'] });
     toast.success('BA assigned');
   };
@@ -392,21 +418,26 @@ export default function LeadsPage() {
                     </div>
                     <form onSubmit={(e) => {
                       e.preventDefault();
-                      if (!form.countryId) { toast.error('Country is required'); return; }
+                      const errs = validateForm(form);
+                      setFormErrors(errs);
+                      if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
                       saveMutation.mutate(form);
                     }} className="flex-1 px-6 py-4 space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="col-span-2">
                           <label className="block text-sm font-medium text-slate-700 mb-1">Company Name *</label>
-                          <input required value={form.companyName} onChange={(e) => setForm(f => ({...f, companyName: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                          <input value={form.companyName} onChange={(e) => setForm(f => ({...f, companyName: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />
+                          {formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person *</label>
-                          <input required value={form.contactPerson} onChange={(e) => setForm(f => ({...f, contactPerson: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                          <input value={form.contactPerson} onChange={(e) => setForm(f => ({...f, contactPerson: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.contactPerson ? 'border-red-400' : 'border-slate-300'}`} />
+                          {formErrors.contactPerson && <p className="text-xs text-red-600 mt-1">{formErrors.contactPerson}</p>}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Mobile *</label>
-                          <input required value={form.mobile} onChange={(e) => setForm(f => ({...f, mobile: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                          <input value={form.mobile} onChange={(e) => setForm(f => ({...f, mobile: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.mobile ? 'border-red-400' : 'border-slate-300'}`} />
+                          {formErrors.mobile && <p className="text-xs text-red-600 mt-1">{formErrors.mobile}</p>}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
@@ -414,10 +445,11 @@ export default function LeadsPage() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Lead Source *</label>
-                          <select required value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                          <select value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
                             <option value="">Select</option>
                             {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                           </select>
+                          {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
@@ -429,6 +461,7 @@ export default function LeadsPage() {
                         <div className="col-span-2">
                           <label className="block text-sm font-medium text-slate-700 mb-1">Country *</label>
                           <CountrySelect value={form.countryId} onChange={handleCountryChange} />
+                          {formErrors.countryId && <p className="text-xs text-red-600 mt-1">{formErrors.countryId}</p>}
                           {form.currencyCode && (
                             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                               <span>Currency: <strong>{form.currencyCode} ({form.currencySymbol})</strong></span>

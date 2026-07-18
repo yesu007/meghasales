@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -53,10 +54,14 @@ export default function LeadDetailPage() {
   const canView = role === 'ADMIN' || permissions.includes('view_lead_events');
   const canAddDiscussion = canManage || permissions.includes('add_lead_discussion');
 
-  const { data: lead, isLoading } = useQuery({
+  const { data: lead, isLoading, isError } = useQuery({
     queryKey: ['lead', id],
     queryFn: () => fetchLead(id),
   });
+
+  useEffect(() => {
+    if (isError) toast.error('Failed to load lead');
+  }, [isError]);
 
   const statusMutation = useMutation({
     mutationFn: async (status: string) => {

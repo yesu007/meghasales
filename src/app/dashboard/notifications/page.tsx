@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BellIcon,
@@ -67,11 +67,15 @@ export default function NotificationsPage() {
   if (typeFilter) params.type = typeFilter;
   if (readFilter) params.isRead = readFilter;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['notifications', params],
     queryFn: () => fetchNotifications(params),
     placeholderData: (prev: any) => prev,
   });
+
+  useEffect(() => {
+    if (isError) toast.error('Failed to load notifications');
+  }, [isError]);
 
   const markReadMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -86,6 +90,7 @@ export default function NotificationsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
+    onError: () => toast.error('Failed to mark notification as read'),
   });
 
   const markAllReadMutation = useMutation({
@@ -102,6 +107,7 @@ export default function NotificationsPage() {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       toast.success('All notifications marked as read');
     },
+    onError: () => toast.error('Failed to mark all notifications as read'),
   });
 
   const notifications: Notification[] = data?.content || [];

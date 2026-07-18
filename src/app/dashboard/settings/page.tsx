@@ -22,7 +22,7 @@ interface CountryRow extends Country {}
 
 function CountryMasterManager() {
   const queryClient = useQueryClient();
-  const { data: countries = [], isLoading } = useQuery<CountryRow[]>({
+  const { data: countries = [], isLoading, isError: isCountriesError } = useQuery<CountryRow[]>({
     queryKey: ['countries', 'all'],
     queryFn: async () => {
       const res = await fetch('/api/countries?activeOnly=false');
@@ -30,19 +30,36 @@ function CountryMasterManager() {
       return res.json();
     },
   });
-  const { data: currencies = [] } = useQuery<CurrencyOption[]>({
+  const { data: currencies = [], isError: isCurrenciesError } = useQuery<CurrencyOption[]>({
     queryKey: ['currencies', 'all'],
     queryFn: async () => {
       const res = await fetch('/api/currencies?activeOnly=false');
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error('Failed to load currencies');
       return res.json();
     },
   });
+
+  useEffect(() => {
+    if (isCountriesError) toast.error('Failed to load countries');
+  }, [isCountriesError]);
+
+  useEffect(() => {
+    if (isCurrenciesError) toast.error('Failed to load currencies');
+  }, [isCurrenciesError]);
 
   const blankCountryForm = { countryName: '', isoCode: '', currencyCode: '', defaultTaxType: 'GST', defaultTaxPercentage: 0, flagEmoji: '' };
   const [countryForm, setCountryForm] = useState(blankCountryForm);
   const [editingCountryId, setEditingCountryId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [countryFormErrors, setCountryFormErrors] = useState<Record<string, string>>({});
+
+  const validateCountryForm = (data: typeof countryForm) => {
+    const errs: Record<string, string> = {};
+    if (!data.countryName) errs.countryName = 'Country name is required';
+    if (!data.isoCode) errs.isoCode = 'ISO code is required';
+    if (!data.currencyCode) errs.currencyCode = 'Currency is required';
+    return errs;
+  };
 
   const saveCountryMutation = useMutation({
     mutationFn: async (data: typeof countryForm) => {
@@ -55,7 +72,7 @@ function CountryMasterManager() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['countries'] });
       toast.success(editingCountryId ? 'Country updated' : 'Country added');
-      setShowForm(false); setEditingCountryId(null); setCountryForm(blankCountryForm);
+      setShowForm(false); setEditingCountryId(null); setCountryForm(blankCountryForm); setCountryFormErrors({});
     },
     onError: (e: any) => toast.error(e.message || 'Failed to save country'),
   });
@@ -73,6 +90,7 @@ function CountryMasterManager() {
   const openEditCountry = (c: CountryRow) => {
     setCountryForm({ countryName: c.countryName, isoCode: c.isoCode, currencyCode: c.currencyCode, defaultTaxType: c.defaultTaxType, defaultTaxPercentage: Number(c.defaultTaxPercentage), flagEmoji: c.flagEmoji || '' });
     setEditingCountryId(c.id);
+    setCountryFormErrors({});
     setShowForm(true);
   };
 
@@ -80,7 +98,7 @@ function CountryMasterManager() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-700">Manage Countries</h3>
-        <button type="button" onClick={() => { setCountryForm(blankCountryForm); setEditingCountryId(null); setShowForm(s => !s); }} className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700">
+        <button type="button" onClick={() => { setCountryForm(blankCountryForm); setEditingCountryId(null); setCountryFormErrors({}); setShowForm(s => !s); }} className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700">
           {showForm ? 'Cancel' : '+ Add Country'}
         </button>
       </div>
@@ -89,18 +107,21 @@ function CountryMasterManager() {
         <div className="grid grid-cols-2 gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Country Name</label>
-            <input value={countryForm.countryName} onChange={(e) => setCountryForm(f => ({ ...f, countryName: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+            <input value={countryForm.countryName} onChange={(e) => setCountryForm(f => ({ ...f, countryName: e.target.value }))} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.countryName ? 'border-red-400' : 'border-slate-300'}`} />
+            {countryFormErrors.countryName && <p className="text-xs text-red-600 mt-1">{countryFormErrors.countryName}</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">ISO Code</label>
-            <input value={countryForm.isoCode} onChange={(e) => setCountryForm(f => ({ ...f, isoCode: e.target.value.toUpperCase() }))} maxLength={2} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+            <input value={countryForm.isoCode} onChange={(e) => setCountryForm(f => ({ ...f, isoCode: e.target.value.toUpperCase() }))} maxLength={2} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.isoCode ? 'border-red-400' : 'border-slate-300'}`} />
+            {countryFormErrors.isoCode && <p className="text-xs text-red-600 mt-1">{countryFormErrors.isoCode}</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
-            <select value={countryForm.currencyCode} onChange={(e) => setCountryForm(f => ({ ...f, currencyCode: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+            <select value={countryForm.currencyCode} onChange={(e) => setCountryForm(f => ({ ...f, currencyCode: e.target.value }))} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.currencyCode ? 'border-red-400' : 'border-slate-300'}`}>
               <option value="">Select</option>
               {currencies.map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode} — {c.currencyName}</option>)}
             </select>
+            {countryFormErrors.currencyCode && <p className="text-xs text-red-600 mt-1">{countryFormErrors.currencyCode}</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Flag Emoji</label>
@@ -119,7 +140,17 @@ function CountryMasterManager() {
             <input type="number" step="0.01" value={countryForm.defaultTaxPercentage} onChange={(e) => setCountryForm(f => ({ ...f, defaultTaxPercentage: parseFloat(e.target.value) || 0 }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
           </div>
           <div className="col-span-2 flex justify-end">
-            <button type="button" onClick={() => saveCountryMutation.mutate(countryForm)} disabled={saveCountryMutation.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+            <button
+              type="button"
+              onClick={() => {
+                const errs = validateCountryForm(countryForm);
+                setCountryFormErrors(errs);
+                if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
+                saveCountryMutation.mutate(countryForm);
+              }}
+              disabled={saveCountryMutation.isPending}
+              className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
+            >
               {saveCountryMutation.isPending ? 'Saving...' : editingCountryId ? 'Save Changes' : 'Add Country'}
             </button>
           </div>
@@ -169,10 +200,14 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('company');
 
-  const { data: profile, isLoading } = useQuery({
+  const { data: profile, isLoading, isError: isProfileError } = useQuery({
     queryKey: ['company-profile'],
     queryFn: fetchProfile,
   });
+
+  useEffect(() => {
+    if (isProfileError) toast.error('Failed to load company profile');
+  }, [isProfileError]);
 
   const [form, setForm] = useState({
     companyName: '',
