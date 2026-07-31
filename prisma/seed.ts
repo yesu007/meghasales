@@ -233,6 +233,26 @@ async function main() {
   }
   console.log('  ✓ Lead Events permissions granted to ADMIN, BUSINESS_ANALYST, SALES, MANAGEMENT');
 
+  // Lead read permission — core Lead/Demo data had zero granular permissions
+  // before this (only the LEAD_EVENTS sub-feature above was ever gated); this
+  // is the first grant for the underlying lead records themselves, added for
+  // the voice assistant's read-only tools (src/lib/assistant/tools) so they
+  // aren't left ungated just because the equivalent REST routes are.
+  const viewLeadsPermission = await prisma.permission.upsert({
+    where: { name: 'view_leads' },
+    update: {},
+    create: { name: 'view_leads', description: 'View lead, demo, and dashboard summary data', module: 'LEADS' },
+  });
+  for (const role of [roles[0], roles[1], roles[2], roles[3], roles[6]]) {
+    // ADMIN, MANAGEMENT, BUSINESS_ANALYST, DEMO_TEAM, SALES
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: role.id, permissionId: viewLeadsPermission.id } },
+      update: {},
+      create: { roleId: role.id, permissionId: viewLeadsPermission.id },
+    });
+  }
+  console.log('  ✓ view_leads permission seeded and granted to ADMIN, MANAGEMENT, BUSINESS_ANALYST, DEMO_TEAM, SALES');
+
   // Default reminder templates (one per threshold, email + WhatsApp variants)
   const reminderThresholds = [
     { type: 'UPCOMING_7D', label: 'Payment Due in 7 Days' },
