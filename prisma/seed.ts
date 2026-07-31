@@ -66,7 +66,7 @@ async function main() {
 
   // Currencies
   const currencies = [
-    { currencyCode: 'INR', currencyName: 'Indian Rupee', currencySymbol: '₹', exchangeRateToInr: 1 },
+    { currencyCode: 'INR', currencyName: 'Indian Rupee', currencySymbol: '₹', exchangeRateToInr: 1, isBase: true },
     { currencyCode: 'USD', currencyName: 'US Dollar', currencySymbol: '$', exchangeRateToInr: 83.5 },
     { currencyCode: 'GBP', currencyName: 'British Pound', currencySymbol: '£', exchangeRateToInr: 106 },
     { currencyCode: 'AED', currencyName: 'UAE Dirham', currencySymbol: 'AED', exchangeRateToInr: 22.73 },
@@ -75,9 +75,45 @@ async function main() {
     { currencyCode: 'SAR', currencyName: 'Saudi Riyal', currencySymbol: 'SAR', exchangeRateToInr: 22.27 },
   ];
   for (const c of currencies) {
-    await prisma.currencyMaster.upsert({ where: { currencyCode: c.currencyCode }, update: {}, create: c });
+    // update only isBase (not the rate/name/symbol) — an existing row's rate
+    // is left alone since it may have been changed since seeding, but isBase
+    // is new and must be (re)asserted even on a DB that already has this row.
+    await prisma.currencyMaster.upsert({
+      where: { currencyCode: c.currencyCode },
+      update: { isBase: c.isBase ?? false },
+      create: c,
+    });
   }
   console.log('  ✓ Currencies seeded');
+
+  // Exchange rate history backfill — one MANUAL row per non-base currency,
+  // matching CurrencyMaster's current exchangeRateToInr so the history table
+  // isn't empty on a fresh DB. Fixed seed date (not "today") so re-running
+  // seed against the same DB stays idempotent via the upsert key below.
+  const EXCHANGE_RATE_SEED_DATE = new Date('2026-07-31');
+  for (const c of currencies) {
+    if (c.currencyCode === 'INR') continue;
+    await prisma.exchangeRate.upsert({
+      where: {
+        fromCurrency_toCurrency_rateDate_rateType: {
+          fromCurrency: c.currencyCode,
+          toCurrency: 'INR',
+          rateDate: EXCHANGE_RATE_SEED_DATE,
+          rateType: 'MANUAL',
+        },
+      },
+      update: {},
+      create: {
+        fromCurrency: c.currencyCode,
+        toCurrency: 'INR',
+        rate: c.exchangeRateToInr,
+        rateDate: EXCHANGE_RATE_SEED_DATE,
+        rateType: 'MANUAL',
+        source: 'manual',
+      },
+    });
+  }
+  console.log('  ✓ Exchange rate history backfilled');
 
   // Country taxes
   const countryTaxes = [

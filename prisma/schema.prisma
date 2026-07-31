@@ -83,6 +83,7 @@ model User {
   recordedPayments   Payment[]         @relation("PaymentRecordedBy")
   reminderFollowUps  PaymentReminder[] @relation("ReminderFollowedUpBy")
   issuedCreditNotes  CreditNote[]      @relation("CreditNoteIssuedBy")
+  createdExchangeRates ExchangeRate[]  @relation("ExchangeRateCreatedBy")
 
   @@map("users")
 }
@@ -436,11 +437,33 @@ model CurrencyMaster {
   currencySymbol   String   @map("currency_symbol")
   decimalPlaces    Int      @default(2) @map("decimal_places")
   exchangeRateToInr Decimal @default(1) @map("exchange_rate_to_inr") @db.Decimal(15, 6)
+  isBase           Boolean  @default(false) @map("is_base")
   isActive         Boolean  @default(true) @map("is_active")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   @@map("currency_master")
+}
+
+// Direction convention: rate = units of `toCurrency` per 1 unit of
+// `fromCurrency` (matches CurrencyMaster.exchangeRateToInr's existing
+// direction, e.g. fromCurrency=USD, toCurrency=INR, rate=83.5).
+// Append-only — never UPDATE a row, only INSERT a new one.
+model ExchangeRate {
+  id           Int      @id @default(autoincrement())
+  fromCurrency String   @map("from_currency")
+  toCurrency   String   @map("to_currency")
+  rate         Decimal  @db.Decimal(18, 8)
+  rateDate     DateTime @map("rate_date") @db.Date
+  rateType     String   @map("rate_type") // SPOT | DAILY | MONTHLY_AVG | MANUAL
+  source       String?
+  createdById  Int?     @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  createdBy User? @relation("ExchangeRateCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([fromCurrency, toCurrency, rateDate, rateType])
+  @@map("exchange_rates")
 }
 
 // Canonical country picklist + default currency/tax for UI dropdowns and
