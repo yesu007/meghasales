@@ -151,6 +151,7 @@ export default function InvoiceDetailPage() {
                     <th className="pb-2">Date</th>
                     <th className="pb-2">Method</th>
                     <th className="pb-2">Reference</th>
+                    <th className="pb-2">Paid In</th>
                     <th className="pb-2 text-right">Amount</th>
                   </tr>
                 </thead>
@@ -161,6 +162,11 @@ export default function InvoiceDetailPage() {
                       <td className="py-2 text-slate-600">{dayjs(p.paymentDate).format('DD MMM YYYY')}</td>
                       <td className="py-2 text-slate-600">{p.paymentMethod}</td>
                       <td className="py-2 text-slate-600">{p.referenceNumber || '—'}</td>
+                      <td className="py-2 text-slate-600">
+                        {p.currencyCode && p.currencyCode !== currencyCode
+                          ? `${fmt(p.paidAmount, p.currencyCode)} (${p.currencyCode})`
+                          : '—'}
+                      </td>
                       <td className="py-2 text-right font-medium text-slate-800">{fmt(p.amount, currencyCode)}</td>
                     </tr>
                   ))}

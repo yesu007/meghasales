@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, Fragment } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
@@ -16,6 +16,12 @@ const PAYMENT_METHODS = [
   { value: 'UPI', label: 'UPI' },
   { value: 'OTHER', label: 'Other' },
 ];
+
+interface CurrencyOption {
+  currencyCode: string;
+  currencyName: string;
+  currencySymbol: string;
+}
 
 function fmt(amount: number, currencyCode = 'INR'): string {
   return formatCurrency(amount, currencyCode);
@@ -32,19 +38,37 @@ interface PaymentEntryDrawerProps {
 
 export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoiceNumber, balanceDue, currencyCode = 'INR' }: PaymentEntryDrawerProps) {
   const queryClient = useQueryClient();
-  const blankForm = { amount: '', paymentDate: dayjs().format('YYYY-MM-DD'), paymentMethod: '', referenceNumber: '', notes: '' };
+  const blankForm = { amount: '', currencyCode, paymentDate: dayjs().format('YYYY-MM-DD'), paymentMethod: '', referenceNumber: '', notes: '' };
   const [form, setForm] = useState(blankForm);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  const { data: currencies = [] } = useQuery<CurrencyOption[]>({
+    queryKey: ['currencies'],
+    queryFn: async () => {
+      const res = await fetch('/api/currencies?activeOnly=true');
+      if (!res.ok) throw new Error('Failed to fetch currencies');
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
   const reset = () => { setForm(blankForm); setAttachment(null); };
   const close = () => { reset(); onClose(); };
+
+  const paidInInvoiceCurrency = form.currencyCode === currencyCode;
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       const amount = Number(form.amount);
       if (!amount || amount <= 0) throw new Error('Enter a valid payment amount');
-      if (amount > balanceDue) throw new Error(`Payment cannot exceed the outstanding balance of ${fmt(balanceDue, currencyCode)}`);
+      // The balanceDue cap only applies when paying in the invoice's own
+      // currency — a foreign-currency amount can't be compared to it
+      // client-side without the exchange rate, so the server (which does
+      // the conversion) is the source of truth for overpayment there.
+      if (paidInInvoiceCurrency && amount > balanceDue) {
+        throw new Error(`Payment cannot exceed the outstanding balance of ${fmt(balanceDue, currencyCode)}`);
+      }
 
       let attachmentUrl: string | undefined;
       let attachmentName: string | undefined;
@@ -70,6 +94,7 @@ export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoice
         body: JSON.stringify({
           invoiceId,
           amount,
+          currencyCode: form.currencyCode,
           paymentDate: form.paymentDate,
           paymentMethod: form.paymentMethod,
           referenceNumber: form.referenceNumber || undefined,
@@ -112,10 +137,24 @@ export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoice
                     <button onClick={close} className="p-1 text-slate-400 hover:text-slate-600 rounded"><XMarkIcon className="h-5 w-5" /></button>
                   </div>
                   <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="flex-1 px-6 py-4 space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Payment Amount *</label>
-                      <input required type="number" min={0.01} max={balanceDue} step="0.01" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" placeholder={`Up to ${fmt(balanceDue, currencyCode)}`} />
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Payment Amount *</label>
+                        <input required type="number" min={0.01} max={paidInInvoiceCurrency ? balanceDue : undefined} step="0.01" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" placeholder={paidInInvoiceCurrency ? `Up to ${fmt(balanceDue, currencyCode)}` : 'Amount received'} />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Currency *</label>
+                        <select required value={form.currencyCode} onChange={(e) => setForm((f) => ({ ...f, currencyCode: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                          <option value={currencyCode}>{currencyCode}</option>
+                          {currencies.filter((c) => c.currencyCode !== currencyCode).map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
+                        </select>
+                      </div>
                     </div>
+                    {!paidInInvoiceCurrency && (
+                      <p className="text-xs text-amber-700 -mt-2">
+                        Invoice is in {currencyCode} — this {form.currencyCode} amount will be converted at the exchange rate for the payment date.
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Payment Date *</label>

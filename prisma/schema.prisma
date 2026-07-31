@@ -640,7 +640,22 @@ model Payment {
   id              Int       @id @default(autoincrement())
   paymentNumber   String    @unique @map("payment_number")
   invoiceId       Int       @map("invoice_id")
+  // Amount applied to the invoice, in the INVOICE's currency (unchanged
+  // meaning — every existing report/PDF/list assumes this). When the payer
+  // paid in a different currency (currencyCode below), this is the
+  // converted result, not what they actually handed over.
   amount          Decimal   @db.Decimal(15, 2)
+  // Currency the payer actually paid in — defaults to the invoice's own
+  // currency (the common case, where no conversion is needed).
+  currencyCode    String    @default("INR") @map("currency_code")
+  // Snapshot of the rate used to convert currencyCode -> invoice.currencyCode
+  // at the time this payment was recorded. 1 when currencyCode matches the
+  // invoice's currency.
+  exchangeRate    Decimal   @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  // The amount as entered by the payer, in currencyCode, before conversion.
+  // Equal to `amount` when currencyCode matches the invoice's currency.
+  // Storing both (never just the converted figure) keeps this auditable.
+  paidAmount      Decimal   @map("paid_amount") @db.Decimal(15, 2)
   paymentDate     DateTime  @default(now()) @map("payment_date")
   paymentMethod   String    @map("payment_method") // CASH | BANK_TRANSFER | CHEQUE | CARD | UPI | OTHER
   referenceNumber String?   @map("reference_number")

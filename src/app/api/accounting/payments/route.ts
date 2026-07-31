@@ -3,11 +3,20 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { applyPayment, OverpaymentError } from '@/lib/accounting';
+import { getExchangeRate, RateNotFoundError } from '@/lib/exchangeRate';
 import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 class NotFoundError extends Error {}
+
+function round(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+// Only rate type populated today (no daily-rate ingestion job yet — that's
+// a later step of the FX roadmap this builds on).
+const PAYMENT_RATE_TYPE = 'MANUAL';
 
 export async function GET(request: NextRequest) {
   const denied = await requirePermission('view_accounting');
@@ -61,6 +70,9 @@ export async function GET(request: NextRequest) {
       companyName: p.invoice.lead.companyName,
       currencyCode: p.invoice.currencyCode,
       amount: p.amount,
+      paidCurrencyCode: p.currencyCode,
+      paidAmount: p.paidAmount,
+      exchangeRate: p.exchangeRate,
       paymentDate: p.paymentDate,
       paymentMethod: p.paymentMethod,
       referenceNumber: p.referenceNumber,
@@ -96,13 +108,34 @@ export async function POST(request: NextRequest) {
     if (!body.paymentMethod) return NextResponse.json({ message: 'paymentMethod is required' }, { status: 400 });
 
     const invoiceId = parseInt(body.invoiceId);
+    const paymentDate = body.paymentDate ? new Date(body.paymentDate) : new Date();
+
+    // Resolved outside the transaction — getExchangeRate reads through the
+    // standalone prisma singleton, not the transaction client, and a rate
+    // pair mismatch should fail before any writes are attempted anyway.
+    const invoiceForRate = await prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoiceForRate || invoiceForRate.deletedAt) throw new NotFoundError('Invoice not found');
+
+    const paidCurrency: string = body.currencyCode || invoiceForRate.currencyCode;
+    const paidAmount = Number(body.amount);
+
+    let exchangeRate = 1;
+    if (paidCurrency !== invoiceForRate.currencyCode) {
+      exchangeRate = await getExchangeRate(
+        paidCurrency,
+        invoiceForRate.currencyCode,
+        paymentDate.toISOString().slice(0, 10),
+        PAYMENT_RATE_TYPE,
+      );
+    }
+    const appliedAmount = round(paidAmount * exchangeRate);
 
     const result = await prisma.$transaction(async (tx) => {
       const invoice = await tx.invoice.findUnique({ where: { id: invoiceId } });
       if (!invoice || invoice.deletedAt) throw new NotFoundError('Invoice not found');
       if (invoice.status === 'CANCELLED') throw new Error('Cannot record a payment against a cancelled invoice');
 
-      const applied = applyPayment(invoice, body.amount);
+      const applied = applyPayment(invoice, appliedAmount);
 
       const count = await tx.payment.count();
       const paymentNumber = `PMT-${String(count + 1).padStart(5, '0')}`;
@@ -111,8 +144,11 @@ export async function POST(request: NextRequest) {
         data: {
           paymentNumber,
           invoiceId,
-          amount: body.amount,
-          paymentDate: body.paymentDate ? new Date(body.paymentDate) : new Date(),
+          amount: appliedAmount,
+          currencyCode: paidCurrency,
+          exchangeRate,
+          paidAmount,
+          paymentDate,
           paymentMethod: body.paymentMethod,
           referenceNumber: body.referenceNumber || null,
           attachmentUrl: body.attachmentUrl || null,
@@ -148,6 +184,9 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('POST /api/accounting/payments error:', error);
     if (error instanceof OverpaymentError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
+    if (error instanceof RateNotFoundError) {
       return NextResponse.json({ message: error.message }, { status: 400 });
     }
     if (error instanceof NotFoundError) {
