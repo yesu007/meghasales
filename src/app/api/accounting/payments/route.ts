@@ -118,15 +118,43 @@ export async function POST(request: NextRequest) {
 
     const paidCurrency: string = body.currencyCode || invoiceForRate.currencyCode;
     const paidAmount = Number(body.amount);
+    const rateDateStr = paymentDate.toISOString().slice(0, 10);
 
     let exchangeRate = 1;
     if (paidCurrency !== invoiceForRate.currencyCode) {
-      exchangeRate = await getExchangeRate(
-        paidCurrency,
-        invoiceForRate.currencyCode,
-        paymentDate.toISOString().slice(0, 10),
-        PAYMENT_RATE_TYPE,
-      );
+      if (body.exchangeRate !== undefined && body.exchangeRate !== null && body.exchangeRate !== '') {
+        // Manual override — no ExchangeRate row exists for every currency
+        // pair/date, and there's no rate-ingestion job yet, so the person
+        // recording the payment (who has the receipt in hand) can supply
+        // the rate directly rather than being blocked by RateNotFoundError.
+        const manualRate = Number(body.exchangeRate);
+        if (!Number.isFinite(manualRate) || manualRate <= 0) {
+          return NextResponse.json({ message: 'exchangeRate must be a positive number' }, { status: 400 });
+        }
+        exchangeRate = manualRate;
+
+        // Recorded into history (append-only — never overwrite an existing
+        // row for this exact pair/date/type) so the same day's rate is
+        // available for auto-resolution on the next payment instead of
+        // requiring a manual entry every time.
+        try {
+          await prisma.exchangeRate.create({
+            data: {
+              fromCurrency: paidCurrency,
+              toCurrency: invoiceForRate.currencyCode,
+              rate: exchangeRate,
+              rateDate: new Date(rateDateStr),
+              rateType: PAYMENT_RATE_TYPE,
+              source: 'Manual entry at payment recording',
+              createdById: body.recordedById ? parseInt(body.recordedById) : null,
+            },
+          });
+        } catch (error: any) {
+          if (error.code !== 'P2002') throw error;
+        }
+      } else {
+        exchangeRate = await getExchangeRate(paidCurrency, invoiceForRate.currencyCode, rateDateStr, PAYMENT_RATE_TYPE);
+      }
     }
     const appliedAmount = round(paidAmount * exchangeRate);
 

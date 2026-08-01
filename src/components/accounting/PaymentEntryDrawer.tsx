@@ -38,7 +38,7 @@ interface PaymentEntryDrawerProps {
 
 export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoiceNumber, balanceDue, currencyCode = 'INR' }: PaymentEntryDrawerProps) {
   const queryClient = useQueryClient();
-  const blankForm = { amount: '', currencyCode, paymentDate: dayjs().format('YYYY-MM-DD'), paymentMethod: '', referenceNumber: '', notes: '' };
+  const blankForm = { amount: '', currencyCode, exchangeRate: '', paymentDate: dayjs().format('YYYY-MM-DD'), paymentMethod: '', referenceNumber: '', notes: '' };
   const [form, setForm] = useState(blankForm);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -69,6 +69,9 @@ export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoice
       if (paidInInvoiceCurrency && amount > balanceDue) {
         throw new Error(`Payment cannot exceed the outstanding balance of ${fmt(balanceDue, currencyCode)}`);
       }
+      if (!paidInInvoiceCurrency && form.exchangeRate && Number(form.exchangeRate) <= 0) {
+        throw new Error('Exchange rate must be a positive number');
+      }
 
       let attachmentUrl: string | undefined;
       let attachmentName: string | undefined;
@@ -95,6 +98,7 @@ export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoice
           invoiceId,
           amount,
           currencyCode: form.currencyCode,
+          exchangeRate: !paidInInvoiceCurrency && form.exchangeRate ? Number(form.exchangeRate) : undefined,
           paymentDate: form.paymentDate,
           paymentMethod: form.paymentMethod,
           referenceNumber: form.referenceNumber || undefined,
@@ -151,9 +155,28 @@ export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoice
                       </div>
                     </div>
                     {!paidInInvoiceCurrency && (
-                      <p className="text-xs text-amber-700 -mt-2">
-                        Invoice is in {currencyCode} — this {form.currencyCode} amount will be converted at the exchange rate for the payment date.
-                      </p>
+                      <div className="-mt-2 space-y-2">
+                        <p className="text-xs text-amber-700">
+                          Invoice is in {currencyCode} — this {form.currencyCode} amount will be converted to {currencyCode}.
+                        </p>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">
+                            Exchange Rate ({form.currencyCode} → {currencyCode})
+                          </label>
+                          <input
+                            type="number"
+                            min={0.000001}
+                            step="0.000001"
+                            value={form.exchangeRate}
+                            onChange={(e) => setForm((f) => ({ ...f, exchangeRate: e.target.value }))}
+                            placeholder="Leave blank to use the recorded rate for this date"
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                          />
+                          <p className="text-xs text-slate-400 mt-1">
+                            1 {form.currencyCode} = this many {currencyCode}. Leave blank to auto-resolve from exchange rate history — recording fails if none exists yet for this pair/date.
+                          </p>
+                        </div>
+                      </div>
                     )}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
