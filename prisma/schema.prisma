@@ -783,6 +783,7 @@ model AdminTicket {
   reminders    AdminTicketReminder[]
   activities   AdminTicketActivity[]
   attachments  AdminTicketAttachment[]
+  comments     AdminTicketComment[]
 
   @@unique([recurrenceId, dueDate])
   @@index([status, dueDate])
@@ -855,6 +856,23 @@ model AdminTicketActivity {
   @@index([ticketId])
   @@index([performedAt])
   @@map("admin_ticket_activities")
+}
+
+// Freeform human discussion on a ticket, kept separate from
+// AdminTicketActivity (system-generated field-change/status audit trail) —
+// same separation of concerns as EventDiscussion vs LeadActivity elsewhere
+// in this schema. Create-only for v1; no edit/delete.
+model AdminTicketComment {
+  id        Int      @id @default(autoincrement())
+  ticketId  Int      @map("ticket_id")
+  body      String
+  authorId  Int?     @map("author_id") // loose ref to User.id
+  createdAt DateTime @default(now()) @map("created_at")
+
+  ticket AdminTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("admin_ticket_comments")
 }
 
 model AdminTicketAttachment {

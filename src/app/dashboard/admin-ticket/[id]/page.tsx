@@ -22,6 +22,12 @@ async function fetchTicket(id: string) {
   return res.json();
 }
 
+async function fetchComments(id: string) {
+  const res = await fetch(`/api/admin-ticket/tickets/${id}/comments`);
+  if (!res.ok) throw new Error('Failed to fetch comments');
+  return res.json();
+}
+
 export default function AdminTicketDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -30,9 +36,16 @@ export default function AdminTicketDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
+  const [commentDraft, setCommentDraft] = useState('');
+
   const { data: ticket, isLoading } = useQuery({
     queryKey: ['admin-ticket', id],
     queryFn: () => fetchTicket(id),
+  });
+
+  const { data: comments = [] } = useQuery({
+    queryKey: ['admin-ticket-comments', id],
+    queryFn: () => fetchComments(id),
   });
 
   const statusMutation = useMutation({
@@ -52,6 +65,27 @@ export default function AdminTicketDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['admin-ticket', id] });
       queryClient.invalidateQueries({ queryKey: ['admin-tickets'] });
       toast.success('Status updated');
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
+  const commentMutation = useMutation({
+    mutationFn: async (body: string) => {
+      const res = await fetch(`/api/admin-ticket/tickets/${id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body }),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.message || 'Failed to add comment');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-ticket-comments', id] });
+      setCommentDraft('');
+      toast.success('Comment added');
     },
     onError: (error: any) => toast.error(error.message),
   });
@@ -99,25 +133,29 @@ export default function AdminTicketDetailPage() {
           </span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5 text-sm">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-5 text-sm">
           <div><p className="text-slate-400">Priority</p><p className="font-medium text-slate-700">{ticket.priority}</p></div>
           <div><p className="text-slate-400">Assigned To</p><p className="font-medium text-slate-700">{ticket.assignedToName || '—'}</p></div>
           <div><p className="text-slate-400">Due Date</p><p className="font-medium text-slate-700">{ticket.dueDate ? dayjs(ticket.dueDate).format('DD MMM YYYY') : '—'}</p></div>
           <div><p className="text-slate-400">Created By</p><p className="font-medium text-slate-700">{ticket.createdByName || '—'}</p></div>
+          <div><p className="text-slate-400">Created On</p><p className="font-medium text-slate-700">{dayjs(ticket.createdAt).format('DD MMM YYYY')}</p></div>
         </div>
 
         {availableTransitions.length > 0 && (
-          <div className="flex gap-2 mt-5 pt-5 border-t border-slate-100">
-            {availableTransitions.map((s) => (
-              <button
-                key={s}
-                onClick={() => statusMutation.mutate(s)}
-                disabled={statusMutation.isPending}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
-              >
-                Move to {s.replace('_', ' ')}
-              </button>
-            ))}
+          <div className="flex items-center gap-3 mt-5 pt-5 border-t border-slate-100">
+            <label htmlFor="status-select" className="text-sm font-medium text-slate-600">Status</label>
+            <select
+              id="status-select"
+              value={ticket.status}
+              disabled={statusMutation.isPending}
+              onChange={(e) => statusMutation.mutate(e.target.value as TicketStatus)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm disabled:opacity-50"
+            >
+              <option value={ticket.status}>{ticket.status.replace('_', ' ')} (current)</option>
+              {availableTransitions.map((s) => (
+                <option key={s} value={s}>{s.replace('_', ' ')}</option>
+              ))}
+            </select>
           </div>
         )}
       </div>
@@ -148,6 +186,39 @@ export default function AdminTicketDetailPage() {
         ) : (
           <p className="text-sm text-slate-400">No attachments yet</p>
         )}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 className="font-semibold text-slate-800 mb-3">Comments</h2>
+        <div className="space-y-3 mb-4">
+          {comments.length ? (
+            comments.map((c: any) => (
+              <div key={c.id} className="bg-slate-50 rounded-lg p-3">
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">{c.body}</p>
+                <p className="text-xs text-slate-400 mt-1">{c.authorName || 'Unknown'} · {dayjs(c.createdAt).format('DD MMM YYYY, HH:mm')}</p>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-slate-400">No comments yet</p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <textarea
+            rows={2}
+            value={commentDraft}
+            onChange={(e) => setCommentDraft(e.target.value)}
+            placeholder="Add a comment..."
+            maxLength={4000}
+            className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          />
+          <button
+            onClick={() => commentDraft.trim() && commentMutation.mutate(commentDraft.trim())}
+            disabled={!commentDraft.trim() || commentMutation.isPending}
+            className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg disabled:opacity-50 self-end"
+          >
+            {commentMutation.isPending ? 'Posting...' : 'Post'}
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">

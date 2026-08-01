@@ -227,6 +227,7 @@ export default function AdminTicketListPage() {
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Category</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden md:table-cell">Assigned To</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden lg:table-cell">Due Date</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden xl:table-cell">Created</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Priority</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
                 </tr>
@@ -243,6 +244,7 @@ export default function AdminTicketListPage() {
                     <td className="px-4 py-3 text-slate-600">{t.category?.name}</td>
                     <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{t.assignedToName || '—'}</td>
                     <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{t.dueDate ? dayjs(t.dueDate).format('DD MMM YYYY') : '—'}</td>
+                    <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{dayjs(t.createdAt).format('DD MMM YYYY')}</td>
                     <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${PRIORITY_COLORS[t.priority] || 'bg-slate-100 text-slate-700'}`}>{t.priority}</span></td>
                     <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-700'}`}>{t.status.replace('_', ' ')}</span></td>
                   </tr>
