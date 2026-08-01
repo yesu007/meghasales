@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ClipboardDocumentCheckIcon, PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { STATUSES, PRIORITIES, isValidStatusTransition, TicketStatus, Priority } from '@/lib/adminTicket/constants';
 
 const STATUS_COLORS: Record<string, string> = {
   OPEN: 'bg-blue-100 text-blue-700',
@@ -174,6 +175,7 @@ function NewTicketModal({ onClose }: { onClose: () => void }) {
 export default function AdminTicketListPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-tickets', statusFilter],
@@ -181,6 +183,26 @@ export default function AdminTicketListPage() {
   });
 
   const tickets = data?.content || [];
+
+  const patchMutation = useMutation({
+    mutationFn: async ({ ticketId, version, patch }: { ticketId: number; version: number; patch: Record<string, unknown> }) => {
+      const res = await fetch(`/api/admin-ticket/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...patch, version }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to update ticket');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-tickets'] });
+      toast.success('Ticket updated');
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
 
   return (
     <div className="space-y-6">
@@ -233,22 +255,49 @@ export default function AdminTicketListPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {tickets.map((t: any) => (
-                  <tr key={t.id} className="hover:bg-slate-50 cursor-pointer">
-                    <td className="px-4 py-3">
-                      <Link href={`/dashboard/admin-ticket/${t.id}`} className="font-medium text-slate-800 hover:text-amber-600">
-                        {t.ticketNo}
-                      </Link>
-                      <p className="text-xs text-slate-500">{t.title}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{t.category?.name}</td>
-                    <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{t.assignedToName || '—'}</td>
-                    <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{t.dueDate ? dayjs(t.dueDate).format('DD MMM YYYY') : '—'}</td>
-                    <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{dayjs(t.createdAt).format('DD MMM YYYY')}</td>
-                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${PRIORITY_COLORS[t.priority] || 'bg-slate-100 text-slate-700'}`}>{t.priority}</span></td>
-                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-700'}`}>{t.status.replace('_', ' ')}</span></td>
-                  </tr>
-                ))}
+                {tickets.map((t: any) => {
+                  const availableStatuses = (STATUSES as readonly TicketStatus[]).filter(
+                    (s) => s === t.status || isValidStatusTransition(t.status, s)
+                  );
+                  return (
+                    <tr key={t.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <Link href={`/dashboard/admin-ticket/${t.id}`} className="font-medium text-slate-800 hover:text-amber-600">
+                          {t.ticketNo}
+                        </Link>
+                        <p className="text-xs text-slate-500">{t.title}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{t.category?.name}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{t.assignedToName || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{t.dueDate ? dayjs(t.dueDate).format('DD MMM YYYY') : '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{dayjs(t.createdAt).format('DD MMM YYYY')}</td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={t.priority}
+                          disabled={patchMutation.isPending}
+                          onChange={(e) => patchMutation.mutate({ ticketId: t.id, version: t.version, patch: { priority: e.target.value as Priority } })}
+                          className={`px-2 py-1 rounded text-xs font-medium border-0 disabled:opacity-50 ${PRIORITY_COLORS[t.priority] || 'bg-slate-100 text-slate-700'}`}
+                        >
+                          {(PRIORITIES as readonly Priority[]).map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={t.status}
+                          disabled={patchMutation.isPending}
+                          onChange={(e) => patchMutation.mutate({ ticketId: t.id, version: t.version, patch: { status: e.target.value as TicketStatus } })}
+                          className={`px-2 py-1 rounded text-xs font-medium border-0 disabled:opacity-50 ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-700'}`}
+                        >
+                          {availableStatuses.map((s) => (
+                            <option key={s} value={s}>{s.replace('_', ' ')}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
