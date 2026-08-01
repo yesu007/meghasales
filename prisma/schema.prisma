@@ -12,11 +12,11 @@ datasource db {
 // ============================================================
 
 model Role {
-  id          Int          @id @default(autoincrement())
-  name        String       @unique
+  id          Int              @id @default(autoincrement())
+  name        String           @unique
   description String?
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
   users       User[]
   permissions RolePermission[]
 
@@ -58,32 +58,32 @@ model User {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  role        Role      @relation(fields: [roleId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
 
   // Relations
-  assignedLeads     Lead[]          @relation("AssignedBA")
-  createdLeads      Lead[]          @relation("CreatedBy")
-  leadActivities    LeadActivity[]
-  assignedDemos     Demo[]
-  auditLogs         AuditLog[]
-  implementations   Implementation[] @relation("ProjectManager")
-  notifications     Notification[]
+  assignedLeads   Lead[]           @relation("AssignedBA")
+  createdLeads    Lead[]           @relation("CreatedBy")
+  leadActivities  LeadActivity[]
+  assignedDemos   Demo[]
+  auditLogs       AuditLog[]
+  implementations Implementation[] @relation("ProjectManager")
+  notifications   Notification[]
 
   // Event Management
   createdEvents            Event[]                @relation("EventCreatedBy")
-  uploadedEventDocuments   EventDocument[]         @relation("EventDocumentUploadedBy")
-  uploadedEventDocVersions EventDocumentVersion[]  @relation("EventDocumentVersionUploadedBy")
-  authoredDiscussions      EventDiscussion[]       @relation("EventDiscussionAuthor")
-  assignedDiscussions      EventDiscussion[]       @relation("EventDiscussionAssignedTo")
+  uploadedEventDocuments   EventDocument[]        @relation("EventDocumentUploadedBy")
+  uploadedEventDocVersions EventDocumentVersion[] @relation("EventDocumentVersionUploadedBy")
+  authoredDiscussions      EventDiscussion[]      @relation("EventDiscussionAuthor")
+  assignedDiscussions      EventDiscussion[]      @relation("EventDiscussionAssignedTo")
 
   // Accounting
-  managedInvoices    Invoice[]         @relation("InvoiceAccountManager")
-  createdInvoices    Invoice[]         @relation("InvoiceCreatedBy")
-  updatedInvoices    Invoice[]         @relation("InvoiceUpdatedBy")
-  recordedPayments   Payment[]         @relation("PaymentRecordedBy")
-  reminderFollowUps  PaymentReminder[] @relation("ReminderFollowedUpBy")
-  issuedCreditNotes  CreditNote[]      @relation("CreditNoteIssuedBy")
-  createdExchangeRates ExchangeRate[]  @relation("ExchangeRateCreatedBy")
+  managedInvoices      Invoice[]         @relation("InvoiceAccountManager")
+  createdInvoices      Invoice[]         @relation("InvoiceCreatedBy")
+  updatedInvoices      Invoice[]         @relation("InvoiceUpdatedBy")
+  recordedPayments     Payment[]         @relation("PaymentRecordedBy")
+  reminderFollowUps    PaymentReminder[] @relation("ReminderFollowedUpBy")
+  issuedCreditNotes    CreditNote[]      @relation("CreditNoteIssuedBy")
+  createdExchangeRates ExchangeRate[]    @relation("ExchangeRateCreatedBy")
 
   @@map("users")
 }
@@ -93,40 +93,40 @@ model User {
 // ============================================================
 
 model Lead {
-  id                   Int       @id @default(autoincrement())
-  companyName          String    @map("company_name")
-  contactPerson        String    @map("contact_person")
-  mobile               String?
-  email                String?
-  country              String?
-  state                String?
-  city                 String?
-  countryId            Int?      @map("country_id")
-  currencyCode         String?   @map("currency_code")
-  currencySymbol       String?   @map("currency_symbol")
-  taxType              String?   @map("tax_type")
+  id                    Int      @id @default(autoincrement())
+  companyName           String   @map("company_name")
+  contactPerson         String   @map("contact_person")
+  mobile                String?
+  email                 String?
+  country               String?
+  state                 String?
+  city                  String?
+  countryId             Int?     @map("country_id")
+  currencyCode          String?  @map("currency_code")
+  currencySymbol        String?  @map("currency_symbol")
+  taxType               String?  @map("tax_type")
   jewelleryBusinessType String?  @map("jewellery_business_type")
-  numberOfBranches     Int?      @map("number_of_branches")
-  existingErp          String?   @map("existing_erp")
-  leadSource           String    @map("lead_source")
-  assignedBaId         Int?      @map("assigned_ba_id")
-  status               String    @default("NEW")
-  businessVerticals    String?   @map("business_verticals")
-  notes                String?
-  createdById          Int?      @map("created_by")
-  createdAt            DateTime  @default(now()) @map("created_at")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
+  numberOfBranches      Int?     @map("number_of_branches")
+  existingErp           String?  @map("existing_erp")
+  leadSource            String   @map("lead_source")
+  assignedBaId          Int?     @map("assigned_ba_id")
+  status                String   @default("NEW")
+  businessVerticals     String?  @map("business_verticals")
+  notes                 String?
+  createdById           Int?     @map("created_by")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
 
-  assignedBa   User?   @relation("AssignedBA", fields: [assignedBaId], references: [id])
-  createdBy    User?   @relation("CreatedBy", fields: [createdById], references: [id])
-  countryRef   Country? @relation(fields: [countryId], references: [id])
-  activities   LeadActivity[]
-  demos        Demo[]
-  quotations   Quotation[]
+  assignedBa      User?            @relation("AssignedBA", fields: [assignedBaId], references: [id])
+  createdBy       User?            @relation("CreatedBy", fields: [createdById], references: [id])
+  countryRef      Country?         @relation(fields: [countryId], references: [id])
+  activities      LeadActivity[]
+  demos           Demo[]
+  quotations      Quotation[]
   implementations Implementation[]
-  invoices     Invoice[]
-  creditNotes  CreditNote[]
-  events       Event[]
+  invoices        Invoice[]
+  creditNotes     CreditNote[]
+  events          Event[]
 
   @@map("leads")
 }
@@ -183,8 +183,8 @@ model Event {
   // MEETING | PHONE_CALL | VIDEO_CALL | CLIENT_VISIT | INTERNAL_DISCUSSION |
   // FOLLOW_UP | REQUIREMENT_GATHERING | DOCUMENT_REVIEW | DEMO | OTHER
   eventDateTime DateTime  @map("event_date_time")
-  duration      Int?      // minutes
-  participants  String?   // free-text, mirrors Demo.attendees
+  duration      Int? // minutes
+  participants  String? // free-text, mirrors Demo.attendees
   location      String?
   meetingLink   String?   @map("meeting_link")
   description   String?
@@ -214,16 +214,16 @@ model EventDocument {
   id           Int      @id @default(autoincrement())
   eventId      Int?     @map("event_id")
   discussionId Int?     @map("discussion_id")
-  fileName     String   @map("file_name")   // kept in sync with latest version
+  fileName     String   @map("file_name") // kept in sync with latest version
   description  String?
   mimeType     String?  @map("mime_type")
   uploadedById Int?     @map("uploaded_by")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  event      Event?           @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  discussion EventDiscussion? @relation(fields: [discussionId], references: [id], onDelete: Cascade)
-  uploadedBy User?            @relation("EventDocumentUploadedBy", fields: [uploadedById], references: [id])
+  event      Event?                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  discussion EventDiscussion?       @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  uploadedBy User?                  @relation("EventDocumentUploadedBy", fields: [uploadedById], references: [id])
   versions   EventDocumentVersion[]
 
   @@index([eventId])
@@ -235,7 +235,7 @@ model EventDocumentVersion {
   id              Int      @id @default(autoincrement())
   eventDocumentId Int      @map("event_document_id")
   versionNumber   Int      @map("version_number")
-  fileUrl         String   @map("file_url")  // Vercel Blob URL for this version
+  fileUrl         String   @map("file_url") // Vercel Blob URL for this version
   fileName        String   @map("file_name")
   fileType        String?  @map("file_type") // extension, e.g. "pdf"
   mimeType        String?  @map("mime_type")
@@ -312,7 +312,7 @@ model Quotation {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  lead    Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead     Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
   invoices Invoice[]
 
   @@map("quotations")
@@ -336,7 +336,7 @@ model Implementation {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  lead           Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead           Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
   projectManager User? @relation("ProjectManager", fields: [projectManagerId], references: [id])
 
   @@map("implementations")
@@ -431,16 +431,16 @@ model StateTaxMaster {
 }
 
 model CurrencyMaster {
-  id               Int      @id @default(autoincrement())
-  currencyCode     String   @unique @map("currency_code")
-  currencyName     String   @map("currency_name")
-  currencySymbol   String   @map("currency_symbol")
-  decimalPlaces    Int      @default(2) @map("decimal_places")
-  exchangeRateToInr Decimal @default(1) @map("exchange_rate_to_inr") @db.Decimal(15, 6)
-  isBase           Boolean  @default(false) @map("is_base")
-  isActive         Boolean  @default(true) @map("is_active")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  id                Int      @id @default(autoincrement())
+  currencyCode      String   @unique @map("currency_code")
+  currencyName      String   @map("currency_name")
+  currencySymbol    String   @map("currency_symbol")
+  decimalPlaces     Int      @default(2) @map("decimal_places")
+  exchangeRateToInr Decimal  @default(1) @map("exchange_rate_to_inr") @db.Decimal(15, 6)
+  isBase            Boolean  @default(false) @map("is_base")
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
   @@map("currency_master")
 }
@@ -529,7 +529,7 @@ model CompanyProfile {
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 
-  defaultCountry        Country? @relation(fields: [defaultCountryId], references: [id])
+  defaultCountry Country? @relation(fields: [defaultCountryId], references: [id])
 
   @@map("company_profile")
 }
@@ -557,12 +557,12 @@ model Notification {
 }
 
 model StatusMaster {
-  id           Int      @id @default(autoincrement())
+  id           Int     @id @default(autoincrement())
   module       String
-  statusValue  String   @map("status_value")
-  displayLabel String   @map("display_label")
-  displayOrder Int      @default(0) @map("display_order")
-  isActive     Boolean  @default(true) @map("is_active")
+  statusValue  String  @map("status_value")
+  displayLabel String  @map("display_label")
+  displayOrder Int     @default(0) @map("display_order")
+  isActive     Boolean @default(true) @map("is_active")
   color        String?
   description  String?
 
@@ -582,7 +582,7 @@ model AuditLog {
   description String?
   createdAt   DateTime @default(now()) @map("created_at")
 
-  user        User?    @relation(fields: [userId], references: [id])
+  user User? @relation(fields: [userId], references: [id])
 
   @@index([entityType, entityId])
   @@index([createdAt])
@@ -697,9 +697,9 @@ model ReminderTemplate {
   id           Int      @id @default(autoincrement())
   name         String
   reminderType String   @map("reminder_type") // matches PaymentReminder.reminderType, or CUSTOM
-  channel      String   // EMAIL | WHATSAPP
+  channel      String // EMAIL | WHATSAPP
   subject      String?
-  body         String   // supports {{customerName}}, {{invoiceNumber}}, {{amountDue}}, {{dueDate}} tokens
+  body         String // supports {{customerName}}, {{invoiceNumber}}, {{amountDue}}, {{dueDate}} tokens
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -724,4 +724,151 @@ model CreditNote {
 
   @@index([leadId])
   @@map("credit_notes")
+}
+
+// ============================================================
+// ADMIN TICKET MODULE (office-admin task tracker)
+//
+// Fully additive, feature-flagged (FEATURE_ADMIN_TICKET) module — own
+// tables only, no columns added to and no FKs pointing at existing tables.
+// assignedToId/createdById/completedById/performedById/uploadedById below
+// are loose references to User.id (and escalationRoleId to Role.id): plain
+// Int columns with no @relation, resolved via a separate read when needed.
+// This is deliberate, not an oversight — a real FK would mean deactivating
+// or deleting a User/Role could fail because of a row in this module.
+// ============================================================
+
+model AdminTicketCategory {
+  id               Int      @id @default(autoincrement())
+  name             String
+  code             String   @unique
+  defaultPriority  String   @default("MEDIUM") @map("default_priority") // LOW | MEDIUM | HIGH | CRITICAL
+  defaultSlaDays   Int?     @map("default_sla_days")
+  escalationRoleId Int?     @map("escalation_role_id") // loose ref to Role.id, no FK
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  tickets AdminTicket[]
+
+  @@map("admin_ticket_categories")
+}
+
+model AdminTicket {
+  id             Int       @id @default(autoincrement())
+  ticketNo       String    @unique @map("ticket_no")
+  categoryId     Int       @map("category_id")
+  title          String
+  description    String?
+  priority       String    @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  status         String    @default("OPEN") // OPEN | IN_PROGRESS | PENDING | COMPLETED | CANCELLED
+  assignedToId   Int?      @map("assigned_to") // loose ref to User.id
+  createdById    Int?      @map("created_by") // loose ref to User.id
+  dueDate        DateTime? @map("due_date")
+  completedAt    DateTime? @map("completed_at")
+  completedById  Int?      @map("completed_by") // loose ref to User.id
+  recurrenceId   Int?      @map("recurrence_id")
+  parentTicketId Int?      @map("parent_ticket_id")
+  refType        String?   @map("ref_type") // loose link to an existing entity, e.g. "LEAD" | "EVENT"
+  refId          Int?      @map("ref_id") // no FK — see module note above
+  isActive       Boolean   @default(true) @map("is_active")
+  version        Int       @default(1) // optimistic-lock token for concurrent completes
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  category     AdminTicketCategory     @relation(fields: [categoryId], references: [id])
+  recurrence   AdminTicketRecurrence?  @relation(fields: [recurrenceId], references: [id])
+  parentTicket AdminTicket?            @relation("AdminTicketOccurrences", fields: [parentTicketId], references: [id])
+  occurrences  AdminTicket[]           @relation("AdminTicketOccurrences")
+  reminders    AdminTicketReminder[]
+  activities   AdminTicketActivity[]
+  attachments  AdminTicketAttachment[]
+
+  @@unique([recurrenceId, dueDate])
+  @@index([status, dueDate])
+  @@index([categoryId])
+  @@index([assignedToId])
+  @@index([recurrenceId])
+  @@index([refType, refId])
+  @@map("admin_tickets")
+}
+
+model AdminTicketRecurrence {
+  id                Int       @id @default(autoincrement())
+  frequency         String // DAILY | WEEKLY | MONTHLY | QUARTERLY | YEARLY | CUSTOM_CRON
+  intervalValue     Int       @default(1) @map("interval_value")
+  dayOfMonth        Int?      @map("day_of_month")
+  dayOfWeek         Int?      @map("day_of_week") // 0 (Sun) - 6 (Sat)
+  monthOfYear       Int?      @map("month_of_year") // 1-12, used by YEARLY
+  startDate         DateTime  @map("start_date")
+  endDate           DateTime? @map("end_date")
+  nextRunDate       DateTime  @map("next_run_date")
+  lastGeneratedDate DateTime? @map("last_generated_date")
+  leadTimeDays      Int       @default(0) @map("lead_time_days") // generate the occurrence N days before it's due
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  occurrences AdminTicket[]
+
+  @@index([isActive, nextRunDate])
+  @@map("admin_ticket_recurrences")
+}
+
+model AdminTicketReminder {
+  id            Int       @id @default(autoincrement())
+  ticketId      Int       @map("ticket_id")
+  offsetDays    Int       @map("offset_days") // negative = before due, positive = overdue nudge
+  channel       String // EMAIL | SMS | WHATSAPP | IN_APP | PUSH
+  recipientType String    @map("recipient_type") // ASSIGNEE | CREATOR | ROLE | EXPLICIT
+  recipientRef  String?   @map("recipient_ref")
+  scheduledAt   DateTime  @map("scheduled_at")
+  status        String    @default("PENDING") // PENDING | SENT | FAILED | SKIPPED | CANCELLED
+  attemptCount  Int       @default(0) @map("attempt_count")
+  lastError     String?   @map("last_error")
+  sentAt        DateTime? @map("sent_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  ticket AdminTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, offsetDays, channel, recipientType])
+  @@index([scheduledAt, status])
+  @@index([ticketId])
+  @@map("admin_ticket_reminders")
+}
+
+// Append-only audit trail — rows are only ever inserted, never updated or
+// deleted, matching AuditLog's pattern elsewhere in this schema.
+model AdminTicketActivity {
+  id            Int      @id @default(autoincrement())
+  ticketId      Int      @map("ticket_id")
+  action        String
+  fieldName     String?  @map("field_name")
+  oldValue      String?  @map("old_value")
+  newValue      String?  @map("new_value")
+  performedById Int?     @map("performed_by") // loose ref to User.id
+  performedAt   DateTime @default(now()) @map("performed_at")
+  remarks       String?
+
+  ticket AdminTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([performedAt])
+  @@map("admin_ticket_activities")
+}
+
+model AdminTicketAttachment {
+  id           Int      @id @default(autoincrement())
+  ticketId     Int      @map("ticket_id")
+  fileName     String   @map("file_name")
+  filePath     String   @map("file_path") // Vercel Blob URL
+  mimeType     String?  @map("mime_type")
+  size         Int?
+  uploadedById Int?     @map("uploaded_by") // loose ref to User.id
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  ticket AdminTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("admin_ticket_attachments")
 }

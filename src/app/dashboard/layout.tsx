@@ -15,10 +15,12 @@ import {
   UserGroupIcon,
   BellIcon,
   ClipboardDocumentListIcon,
+  ClipboardDocumentCheckIcon,
   BanknotesIcon,
   ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
+import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
@@ -37,6 +39,9 @@ const NAV_ITEMS = [
       { href: '/dashboard/accounting/reports', label: 'Reports' },
     ],
   },
+  ...(isAdminTicketModuleEnabled()
+    ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon }]
+    : []),
   { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
   { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
   { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon },

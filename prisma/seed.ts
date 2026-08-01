@@ -317,6 +317,51 @@ async function main() {
   }
   console.log('  ✓ Reminder templates seeded');
 
+  // Admin Ticket module permissions — feature-flagged (FEATURE_ADMIN_TICKET),
+  // fully additive office-admin task tracker. ADMIN gets both explicitly
+  // (belt-and-suspenders alongside requirePermission()'s ADMIN bypass);
+  // DEVOPS (closest existing role to "office admin"/facilities duties) gets
+  // full manage access; MANAGEMENT gets read-only view for oversight.
+  const adminTicketPermissions = [
+    { name: 'view_admin_tickets', description: 'View admin tickets, categories, and activity', module: 'ADMIN_TICKET' },
+    { name: 'manage_admin_tickets', description: 'Create/edit/complete admin tickets and categories', module: 'ADMIN_TICKET' },
+  ];
+  const createdAdminTicketPermissions = await Promise.all(
+    adminTicketPermissions.map((p) => prisma.permission.upsert({ where: { name: p.name }, update: {}, create: p }))
+  );
+  const byAdminTicketName = (name: string) => createdAdminTicketPermissions.find((p) => p.name === name)!;
+  const adminTicketGrants: Array<[typeof roles[number], typeof createdAdminTicketPermissions]> = [
+    [roles[0], createdAdminTicketPermissions], // ADMIN — all
+    [roles[5], createdAdminTicketPermissions], // DEVOPS — all
+    [roles[1], [byAdminTicketName('view_admin_tickets')]], // MANAGEMENT — read-only
+  ];
+  for (const [role, perms] of adminTicketGrants) {
+    for (const permission of perms) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+        update: {},
+        create: { roleId: role.id, permissionId: permission.id },
+      });
+    }
+  }
+  console.log('  ✓ Admin Ticket permissions granted to ADMIN, DEVOPS, MANAGEMENT');
+
+  // Starter categories matching the common office-admin obligation types —
+  // upsert by code so re-seeding never duplicates or clobbers edits made
+  // later through the UI.
+  const adminTicketCategories = [
+    { code: 'STATUTORY', name: 'Statutory / Compliance', defaultPriority: 'HIGH', defaultSlaDays: 30 },
+    { code: 'CONTRACTS', name: 'Contracts & Renewals', defaultPriority: 'MEDIUM', defaultSlaDays: 30 },
+    { code: 'ASSETS', name: 'Assets & Facilities', defaultPriority: 'MEDIUM', defaultSlaDays: 14 },
+    { code: 'VENDOR_FINANCE', name: 'Vendor & Finance', defaultPriority: 'MEDIUM', defaultSlaDays: 7 },
+    { code: 'HR_ADMIN', name: 'HR / Staff Admin', defaultPriority: 'MEDIUM', defaultSlaDays: 14 },
+    { code: 'AD_HOC', name: 'Ad-hoc', defaultPriority: 'LOW', defaultSlaDays: 7 },
+  ];
+  for (const c of adminTicketCategories) {
+    await prisma.adminTicketCategory.upsert({ where: { code: c.code }, update: {}, create: c });
+  }
+  console.log('  ✓ Admin Ticket categories seeded');
+
   console.log('✅ Seeding complete!');
 }
 

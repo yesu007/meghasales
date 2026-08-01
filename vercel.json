@@ -3,6 +3,10 @@
     {
       "path": "/api/accounting/reminders/generate",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/admin-ticket/reminders/generate",
+      "schedule": "0 7 * * *"
     }
   ]
 }
