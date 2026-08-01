@@ -4,13 +4,15 @@ export type Priority = (typeof PRIORITIES)[number];
 export const STATUSES = ['OPEN', 'IN_PROGRESS', 'PENDING', 'COMPLETED', 'CANCELLED'] as const;
 export type TicketStatus = (typeof STATUSES)[number];
 
-// Anything not listed here is rejected — COMPLETED/CANCELLED are terminal.
+// Every status can move to every other status — the dropdown always offers
+// the full list so a mistaken COMPLETED/CANCELLED can be reopened, not just
+// forward transitions through a fixed workflow.
 const STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
-  OPEN: ['IN_PROGRESS', 'PENDING', 'CANCELLED'],
-  IN_PROGRESS: ['PENDING', 'COMPLETED', 'CANCELLED'],
-  PENDING: ['IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
-  COMPLETED: [],
-  CANCELLED: [],
+  OPEN: ['IN_PROGRESS', 'PENDING', 'COMPLETED', 'CANCELLED'],
+  IN_PROGRESS: ['OPEN', 'PENDING', 'COMPLETED', 'CANCELLED'],
+  PENDING: ['OPEN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
+  COMPLETED: ['OPEN', 'IN_PROGRESS', 'PENDING', 'CANCELLED'],
+  CANCELLED: ['OPEN', 'IN_PROGRESS', 'PENDING', 'COMPLETED'],
 };
 
 export function isValidStatusTransition(from: TicketStatus, to: TicketStatus): boolean {

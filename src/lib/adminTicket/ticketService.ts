@@ -159,6 +159,11 @@ export async function changeTicketStatus(
   if (toStatus === 'COMPLETED') {
     data.completedAt = new Date();
     data.completedById = performedById;
+  } else if (fromStatus === 'COMPLETED') {
+    // Reopening a mistakenly-completed ticket — the old completion record
+    // no longer applies.
+    data.completedAt = null;
+    data.completedById = null;
   }
 
   const updateResult = await prisma.adminTicket.updateMany({ where: { id: ticketId, version }, data });

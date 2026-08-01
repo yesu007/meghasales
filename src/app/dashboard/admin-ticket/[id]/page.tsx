@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { STATUSES, isValidStatusTransition, TicketStatus } from '@/lib/adminTicket/constants';
+import { STATUSES, PRIORITIES, isValidStatusTransition, TicketStatus, Priority } from '@/lib/adminTicket/constants';
 
 const STATUS_COLORS: Record<string, string> = {
   OPEN: 'bg-blue-100 text-blue-700',
@@ -69,6 +69,27 @@ export default function AdminTicketDetailPage() {
     onError: (error: any) => toast.error(error.message),
   });
 
+  const priorityMutation = useMutation({
+    mutationFn: async (priority: Priority) => {
+      const res = await fetch(`/api/admin-ticket/tickets/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority, version: ticket.version }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to update priority');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-ticket', id] });
+      queryClient.invalidateQueries({ queryKey: ['admin-tickets'] });
+      toast.success('Priority updated');
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
   const commentMutation = useMutation({
     mutationFn: async (body: string) => {
       const res = await fetch(`/api/admin-ticket/tickets/${id}/comments`, {
@@ -113,7 +134,7 @@ export default function AdminTicketDetailPage() {
   if (isLoading) return <div className="h-40 bg-slate-100 rounded-xl animate-pulse" />;
   if (!ticket) return <p className="text-slate-500">Ticket not found</p>;
 
-  const availableTransitions = (STATUSES as readonly TicketStatus[]).filter((s) => isValidStatusTransition(ticket.status, s));
+  const availableStatuses = (STATUSES as readonly TicketStatus[]).filter((s) => s === ticket.status || isValidStatusTransition(ticket.status, s));
 
   return (
     <div className="space-y-6">
@@ -133,16 +154,15 @@ export default function AdminTicketDetailPage() {
           </span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-5 text-sm">
-          <div><p className="text-slate-400">Priority</p><p className="font-medium text-slate-700">{ticket.priority}</p></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5 text-sm">
           <div><p className="text-slate-400">Assigned To</p><p className="font-medium text-slate-700">{ticket.assignedToName || '—'}</p></div>
           <div><p className="text-slate-400">Due Date</p><p className="font-medium text-slate-700">{ticket.dueDate ? dayjs(ticket.dueDate).format('DD MMM YYYY') : '—'}</p></div>
           <div><p className="text-slate-400">Created By</p><p className="font-medium text-slate-700">{ticket.createdByName || '—'}</p></div>
           <div><p className="text-slate-400">Created On</p><p className="font-medium text-slate-700">{dayjs(ticket.createdAt).format('DD MMM YYYY')}</p></div>
         </div>
 
-        {availableTransitions.length > 0 && (
-          <div className="flex items-center gap-3 mt-5 pt-5 border-t border-slate-100">
+        <div className="flex flex-wrap items-center gap-6 mt-5 pt-5 border-t border-slate-100">
+          <div className="flex items-center gap-3">
             <label htmlFor="status-select" className="text-sm font-medium text-slate-600">Status</label>
             <select
               id="status-select"
@@ -151,13 +171,27 @@ export default function AdminTicketDetailPage() {
               onChange={(e) => statusMutation.mutate(e.target.value as TicketStatus)}
               className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm disabled:opacity-50"
             >
-              <option value={ticket.status}>{ticket.status.replace('_', ' ')} (current)</option>
-              {availableTransitions.map((s) => (
-                <option key={s} value={s}>{s.replace('_', ' ')}</option>
+              {availableStatuses.map((s) => (
+                <option key={s} value={s}>{s.replace('_', ' ')}{s === ticket.status ? ' (current)' : ''}</option>
               ))}
             </select>
           </div>
-        )}
+
+          <div className="flex items-center gap-3">
+            <label htmlFor="priority-select" className="text-sm font-medium text-slate-600">Priority</label>
+            <select
+              id="priority-select"
+              value={ticket.priority}
+              disabled={priorityMutation.isPending}
+              onChange={(e) => priorityMutation.mutate(e.target.value as Priority)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm disabled:opacity-50"
+            >
+              {(PRIORITIES as readonly Priority[]).map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">

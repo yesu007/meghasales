@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidStatusTransition } from './constants';
+import { isValidStatusTransition, STATUSES, TicketStatus } from './constants';
 
 describe('isValidStatusTransition', () => {
   it('allows OPEN -> IN_PROGRESS', () => {
@@ -10,21 +10,29 @@ describe('isValidStatusTransition', () => {
     expect(isValidStatusTransition('IN_PROGRESS', 'COMPLETED')).toBe(true);
   });
 
+  it('allows OPEN -> COMPLETED directly (the dropdown offers every status, not just a fixed workflow)', () => {
+    expect(isValidStatusTransition('OPEN', 'COMPLETED')).toBe(true);
+  });
+
   it('rejects a no-op transition to the same status', () => {
     expect(isValidStatusTransition('OPEN', 'OPEN')).toBe(false);
   });
 
-  it('rejects any transition out of COMPLETED (terminal)', () => {
-    expect(isValidStatusTransition('COMPLETED', 'OPEN')).toBe(false);
-    expect(isValidStatusTransition('COMPLETED', 'IN_PROGRESS')).toBe(false);
+  it('allows reopening a COMPLETED ticket', () => {
+    expect(isValidStatusTransition('COMPLETED', 'OPEN')).toBe(true);
+    expect(isValidStatusTransition('COMPLETED', 'IN_PROGRESS')).toBe(true);
   });
 
-  it('rejects any transition out of CANCELLED (terminal)', () => {
-    expect(isValidStatusTransition('CANCELLED', 'OPEN')).toBe(false);
+  it('allows reopening a CANCELLED ticket', () => {
+    expect(isValidStatusTransition('CANCELLED', 'OPEN')).toBe(true);
   });
 
-  it('rejects skipping straight from OPEN to COMPLETED without going through a working state', () => {
-    // OPEN can go to IN_PROGRESS/PENDING/CANCELLED only, per the transition table.
-    expect(isValidStatusTransition('OPEN', 'COMPLETED')).toBe(false);
+  it('allows moving between every distinct pair of statuses', () => {
+    for (const from of STATUSES) {
+      for (const to of STATUSES) {
+        if (from === to) continue;
+        expect(isValidStatusTransition(from as TicketStatus, to as TicketStatus)).toBe(true);
+      }
+    }
   });
 });
