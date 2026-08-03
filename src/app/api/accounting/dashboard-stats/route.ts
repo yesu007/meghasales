@@ -31,10 +31,11 @@ export async function GET() {
         where: { deletedAt: null, paymentDate: { gte: sixMonthsAgo } },
         select: { paidAmount: true, currencyCode: true, paymentDate: true },
       }),
-      // Payment Trend (last 30 days)
+      // Payment Trend (last 30 days) — also carries invoice.leadId so the
+      // same fetch doubles as the source for the Money In (top payers) list.
       prisma.payment.findMany({
         where: { deletedAt: null, paymentDate: { gte: thirtyDaysAgo } },
-        select: { paidAmount: true, currencyCode: true, paymentDate: true },
+        select: { paidAmount: true, currencyCode: true, paymentDate: true, invoice: { select: { leadId: true } } },
       }),
     ]);
 
@@ -138,12 +139,35 @@ export async function GET() {
       }))
       .sort(byRank);
 
+    // Money In (top 10, last 30 days) — top payers by (customer, currency),
+    // same grouping discipline as Outstanding by Customer above.
+    const byPayerCurrency: Record<string, { leadId: number; currencyCode: string; received: number }> = {};
+    for (const p of dailyPayments) {
+      if (!p.invoice) continue;
+      const currencyCode = p.currencyCode || 'INR';
+      const k = `${p.invoice.leadId} ${currencyCode}`;
+      if (!byPayerCurrency[k]) byPayerCurrency[k] = { leadId: p.invoice.leadId, currencyCode, received: 0 };
+      byPayerCurrency[k].received += Number(p.paidAmount);
+    }
+    const topPayers = Object.values(byPayerCurrency).sort((a, b) => b.received - a.received).slice(0, 10);
+    const payerLeadIds = topPayers.map((r) => r.leadId);
+    const payerLeads = payerLeadIds.length > 0
+      ? await prisma.lead.findMany({ where: { id: { in: payerLeadIds } }, select: { id: true, companyName: true } })
+      : [];
+    const payerNameById = new Map(payerLeads.map((l) => [l.id, l.companyName]));
+    const moneyInByCustomer = topPayers.map((r) => ({
+      customer: payerNameById.get(r.leadId) || `Lead #${r.leadId}`,
+      currencyCode: r.currencyCode,
+      received: r.received,
+    }));
+
     return NextResponse.json({
       kpisByCurrency,
       primaryCurrencyCode,
       charts: {
         monthlyCollectionsByCurrency,
         outstandingByCustomer: outstandingByCustomerChart,
+        moneyInByCustomer,
         statusDistribution,
         paymentTrendByCurrency,
       },
