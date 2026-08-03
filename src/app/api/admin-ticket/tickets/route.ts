@@ -36,17 +36,33 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '0');
     const size = parseInt(searchParams.get('size') || '20');
     const status = searchParams.get('status') || '';
-    const categoryId = searchParams.get('categoryId') || '';
-    const assignedToId = searchParams.get('assignedToId') || '';
-    const priority = searchParams.get('priority') || '';
+    const search = searchParams.get('search') || '';
+    const dueDateFrom = searchParams.get('dueDateFrom') || '';
+    const dueDateTo = searchParams.get('dueDateTo') || '';
+    // Advance Filter passes these as comma-separated ids/values for a
+    // multi-select ("any of these categories/priorities/assignees").
+    const categoryIds = (searchParams.get('categoryId') || '').split(',').map((s) => parseInt(s)).filter((n) => !isNaN(n));
+    const assignedToIds = (searchParams.get('assignedToId') || '').split(',').map((s) => parseInt(s)).filter((n) => !isNaN(n));
+    const priorities = (searchParams.get('priority') || '').split(',').filter((p) => (PRIORITIES as readonly string[]).includes(p));
 
-    const where: Prisma.AdminTicketWhereInput = { isActive: true };
+    // baseWhere excludes status so tab counts reflect the OTHER active
+    // filters (search/assignee/priority/category/date range) without being
+    // collapsed to whichever tab happens to be selected.
+    const baseWhere: Prisma.AdminTicketWhereInput = { isActive: true };
+    if (search) baseWhere.OR = [{ title: { contains: search, mode: 'insensitive' } }, { ticketNo: { contains: search, mode: 'insensitive' } }];
+    if (priorities.length) baseWhere.priority = { in: priorities };
+    if (categoryIds.length) baseWhere.categoryId = { in: categoryIds };
+    if (assignedToIds.length) baseWhere.assignedToId = { in: assignedToIds };
+    if (dueDateFrom || dueDateTo) {
+      baseWhere.dueDate = {};
+      if (dueDateFrom) baseWhere.dueDate.gte = new Date(dueDateFrom);
+      if (dueDateTo) baseWhere.dueDate.lte = new Date(`${dueDateTo}T23:59:59.999`);
+    }
+
+    const where: Prisma.AdminTicketWhereInput = { ...baseWhere };
     if (status && (STATUSES as readonly string[]).includes(status)) where.status = status;
-    if (priority && (PRIORITIES as readonly string[]).includes(priority)) where.priority = priority;
-    if (categoryId) where.categoryId = parseInt(categoryId);
-    if (assignedToId) where.assignedToId = parseInt(assignedToId);
 
-    const [tickets, totalElements] = await Promise.all([
+    const [tickets, totalElements, statusGroups] = await Promise.all([
       prisma.adminTicket.findMany({
         where,
         orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
@@ -55,7 +71,12 @@ export async function GET(request: NextRequest) {
         include: { category: true, _count: { select: { attachments: true } } },
       }),
       prisma.adminTicket.count({ where }),
+      prisma.adminTicket.groupBy({ by: ['status'], where: baseWhere, _count: true }),
     ]);
+
+    const statusCounts: Record<string, number> = {};
+    for (const s of STATUSES) statusCounts[s] = 0;
+    for (const g of statusGroups) statusCounts[g.status] = g._count;
 
     const userIds = Array.from(
       new Set(tickets.flatMap((t) => [t.assignedToId, t.createdById]).filter((id): id is number => id != null))
@@ -82,6 +103,7 @@ export async function GET(request: NextRequest) {
       size,
       totalElements,
       totalPages: Math.ceil(totalElements / size),
+      statusCounts,
     });
   } catch (error) {
     console.error('GET /api/admin-ticket/tickets error:', error);

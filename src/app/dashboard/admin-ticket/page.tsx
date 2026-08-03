@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ClipboardDocumentCheckIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { ClipboardDocumentCheckIcon, PlusIcon, MagnifyingGlassIcon, FunnelIcon, ListBulletIcon, Squares2X2Icon, XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { STATUSES, PRIORITIES, isValidStatusTransition, TicketStatus, Priority } from '@/lib/adminTicket/constants';
@@ -16,6 +16,32 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: 'bg-slate-100 text-slate-500',
 };
 
+const STATUS_BAR_COLOR: Record<string, string> = {
+  OPEN: '#2563EB',
+  IN_PROGRESS: '#D97706',
+  PENDING: '#EA580C',
+  COMPLETED: '#16A34A',
+  CANCELLED: '#94A3B8',
+};
+
+// Not a measured completion percentage (this module has no sub-task
+// checklist) — a fixed per-status stage marker, purely visual.
+const STATUS_PROGRESS: Record<string, number> = {
+  OPEN: 8,
+  IN_PROGRESS: 50,
+  PENDING: 75,
+  COMPLETED: 100,
+  CANCELLED: 100,
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  OPEN: 'Open',
+  IN_PROGRESS: 'In Progress',
+  PENDING: 'Pending',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+};
+
 const PRIORITY_COLORS: Record<string, string> = {
   LOW: 'bg-slate-100 text-slate-600',
   MEDIUM: 'bg-blue-100 text-blue-700',
@@ -23,9 +49,32 @@ const PRIORITY_COLORS: Record<string, string> = {
   CRITICAL: 'bg-red-100 text-red-700',
 };
 
-async function fetchTickets(status: string) {
-  const params = new URLSearchParams({ size: '50' });
-  if (status) params.set('status', status);
+const AVATAR_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7'];
+function avatarColor(id: number): string {
+  return AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
+}
+function initials(name: string): string {
+  return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+}
+
+interface AdvanceFilters {
+  assignedToIds: number[];
+  priorities: string[];
+  categoryIds: number[];
+  dueDateFrom: string;
+  dueDateTo: string;
+}
+const EMPTY_FILTERS: AdvanceFilters = { assignedToIds: [], priorities: [], categoryIds: [], dueDateFrom: '', dueDateTo: '' };
+
+async function fetchTickets(statusFilter: string, search: string, filters: AdvanceFilters) {
+  const params = new URLSearchParams({ size: '100' });
+  if (statusFilter) params.set('status', statusFilter);
+  if (search) params.set('search', search);
+  if (filters.assignedToIds.length) params.set('assignedToId', filters.assignedToIds.join(','));
+  if (filters.priorities.length) params.set('priority', filters.priorities.join(','));
+  if (filters.categoryIds.length) params.set('categoryId', filters.categoryIds.join(','));
+  if (filters.dueDateFrom) params.set('dueDateFrom', filters.dueDateFrom);
+  if (filters.dueDateTo) params.set('dueDateTo', filters.dueDateTo);
   const res = await fetch(`/api/admin-ticket/tickets?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch tickets');
   return res.json();
@@ -172,17 +221,221 @@ function NewTicketModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+type FilterSection = 'assignee' | 'priority' | 'category' | 'dueDate';
+const FILTER_SECTIONS: { key: FilterSection; label: string }[] = [
+  { key: 'assignee', label: 'Assignee' },
+  { key: 'priority', label: 'Priority' },
+  { key: 'category', label: 'Category' },
+  { key: 'dueDate', label: 'Due date' },
+];
+
+function AdvanceFilterModal({
+  initial,
+  categories,
+  users,
+  onClose,
+  onApply,
+}: {
+  initial: AdvanceFilters;
+  categories: any[];
+  users: any[];
+  onClose: () => void;
+  onApply: (filters: AdvanceFilters) => void;
+}) {
+  const [section, setSection] = useState<FilterSection>('assignee');
+  const [draft, setDraft] = useState<AdvanceFilters>(initial);
+
+  const toggle = (list: number[], id: number) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+          <h2 className="text-base font-semibold text-slate-800">Advance Filter</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="flex" style={{ height: 380 }}>
+          <div className="w-44 border-r border-slate-100 py-2 shrink-0">
+            {FILTER_SECTIONS.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => setSection(s.key)}
+                className={`w-full text-left px-4 py-2.5 text-sm font-medium ${section === s.key ? 'bg-amber-50 text-amber-700' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                {s.label}
+                {s.key === 'assignee' && draft.assignedToIds.length > 0 && <span className="ml-1.5 text-xs text-slate-400">({draft.assignedToIds.length})</span>}
+                {s.key === 'priority' && draft.priorities.length > 0 && <span className="ml-1.5 text-xs text-slate-400">({draft.priorities.length})</span>}
+                {s.key === 'category' && draft.categoryIds.length > 0 && <span className="ml-1.5 text-xs text-slate-400">({draft.categoryIds.length})</span>}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            {section === 'assignee' && (
+              <div className="space-y-1">
+                {users.map((u: any) => (
+                  <label key={u.id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={draft.assignedToIds.includes(u.id)}
+                      onChange={() => setDraft((d) => ({ ...d, assignedToIds: toggle(d.assignedToIds, u.id) }))}
+                      className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0"
+                      style={{ backgroundColor: avatarColor(u.id) }}
+                    >
+                      {initials(`${u.firstName} ${u.lastName}`)}
+                    </span>
+                    <span className="text-sm text-slate-700">{u.firstName} {u.lastName}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {section === 'priority' && (
+              <div className="space-y-1">
+                {(PRIORITIES as readonly string[]).map((p) => (
+                  <label key={p} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={draft.priorities.includes(p)}
+                      onChange={() => setDraft((d) => ({ ...d, priorities: d.priorities.includes(p) ? d.priorities.filter((x) => x !== p) : [...d.priorities, p] }))}
+                      className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${PRIORITY_COLORS[p]}`}>{p}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {section === 'category' && (
+              <div className="space-y-1">
+                {categories.map((c: any) => (
+                  <label key={c.id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={draft.categoryIds.includes(c.id)}
+                      onChange={() => setDraft((d) => ({ ...d, categoryIds: toggle(d.categoryIds, c.id) }))}
+                      className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-sm text-slate-700">{c.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {section === 'dueDate' && (
+              <div className="space-y-3 max-w-xs">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">From</label>
+                  <input
+                    type="date"
+                    value={draft.dueDateFrom}
+                    onChange={(e) => setDraft((d) => ({ ...d, dueDateFrom: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">To</label>
+                  <input
+                    type="date"
+                    value={draft.dueDateTo}
+                    onChange={(e) => setDraft((d) => ({ ...d, dueDateTo: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-200">
+          <button onClick={() => setDraft(EMPTY_FILTERS)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-lg mr-auto">
+            Clear all
+          </button>
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50">
+            Close
+          </button>
+          <button onClick={() => onApply(draft)} className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700">
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TicketCard({ ticket }: { ticket: any }) {
+  return (
+    <Link href={`/dashboard/admin-ticket/${ticket.id}`} className="block bg-white rounded-xl shadow-sm border border-slate-200 p-5 hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-slate-400">{ticket.ticketNo}</p>
+          <h3 className="text-sm font-semibold text-slate-800 mt-0.5 truncate">{ticket.title}</h3>
+        </div>
+      </div>
+      <p className="text-xs text-slate-500 mt-1">{ticket.category?.name}</p>
+
+      <div className="h-1.5 bg-slate-100 rounded-full mt-3 overflow-hidden">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${STATUS_PROGRESS[ticket.status] ?? 0}%`, backgroundColor: STATUS_BAR_COLOR[ticket.status] || '#94A3B8' }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between mt-4">
+        <div>
+          <p className="text-[11px] text-slate-400 uppercase tracking-wide">Assigned to</p>
+          <div className="flex items-center gap-1.5 mt-1">
+            {ticket.assignedToId ? (
+              <span
+                className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold text-white shrink-0"
+                style={{ backgroundColor: avatarColor(ticket.assignedToId) }}
+              >
+                {initials(ticket.assignedToName || '?')}
+              </span>
+            ) : null}
+            <span className="text-xs text-slate-600 truncate">{ticket.assignedToName || 'Unassigned'}</span>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-[11px] text-slate-400 uppercase tracking-wide">Deadline</p>
+          <p className="text-xs text-slate-600 mt-1">{ticket.dueDate ? dayjs(ticket.dueDate).format('DD MMM YYYY') : '—'}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 mt-4 flex-wrap">
+        <span className={`px-2 py-1 rounded text-xs font-medium ${PRIORITY_COLORS[ticket.priority] || 'bg-slate-100 text-slate-700'}`}>{ticket.priority}</span>
+        <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[ticket.status] || 'bg-slate-100 text-slate-700'}`}>{STATUS_LABELS[ticket.status] || ticket.status}</span>
+      </div>
+    </Link>
+  );
+}
+
 export default function AdminTicketListPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [view, setView] = useState<'card' | 'list'>('card');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<AdvanceFilters>(EMPTY_FILTERS);
   const queryClient = useQueryClient();
 
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-tickets', statusFilter],
-    queryFn: () => fetchTickets(statusFilter),
+    queryKey: ['admin-tickets', statusFilter, search, filters],
+    queryFn: () => fetchTickets(statusFilter, search, filters),
   });
+  const { data: categories = [] } = useQuery({ queryKey: ['admin-ticket-categories'], queryFn: fetchCategories });
+  const { data: users = [] } = useQuery({ queryKey: ['users-for-admin-ticket'], queryFn: fetchUsers });
 
   const tickets = data?.content || [];
+  const statusCounts: Record<string, number> = data?.statusCounts || {};
+  const allCount = Object.values(statusCounts).reduce((s, n) => s + (n || 0), 0);
+  const activeFilterCount = filters.assignedToIds.length + filters.priorities.length + filters.categoryIds.length + (filters.dueDateFrom ? 1 : 0) + (filters.dueDateTo ? 1 : 0);
 
   const patchMutation = useMutation({
     mutationFn: async ({ ticketId, version, patch }: { ticketId: number; version: number; patch: Record<string, unknown> }) => {
@@ -206,41 +459,96 @@ export default function AdminTicketListPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Admin Tickets</h1>
           <p className="text-slate-500 mt-1">Office-admin obligations — compliance, renewals, facilities, and ad-hoc tasks</p>
         </div>
-        <button
-          onClick={() => setShowNewModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700"
-        >
-          <PlusIcon className="h-4 w-4" /> New Ticket
-        </button>
-      </div>
-
-      <div className="flex gap-2">
-        {[{ v: '', l: 'All' }, { v: 'OPEN', l: 'Open' }, { v: 'IN_PROGRESS', l: 'In Progress' }, { v: 'PENDING', l: 'Pending' }, { v: 'COMPLETED', l: 'Completed' }, { v: 'CANCELLED', l: 'Cancelled' }].map((s) => (
+        <div className="flex items-center gap-3">
+          <div className="flex items-center bg-white border border-slate-300 rounded-lg p-0.5">
+            <button
+              onClick={() => setView('list')}
+              className={`p-1.5 rounded-md ${view === 'list' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+              title="List view"
+            >
+              <ListBulletIcon className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setView('card')}
+              className={`p-1.5 rounded-md ${view === 'card' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+              title="Card view"
+            >
+              <Squares2X2Icon className="h-4 w-4" />
+            </button>
+          </div>
           <button
-            key={s.v}
-            onClick={() => setStatusFilter(s.v)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusFilter === s.v ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+            onClick={() => setShowNewModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700"
           >
-            {s.l}
+            <PlusIcon className="h-4 w-4" /> New Ticket
           </button>
-        ))}
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        {isLoading ? (
-          <div className="p-4 space-y-3">{[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-slate-100 rounded animate-pulse" />)}</div>
-        ) : tickets.length === 0 ? (
-          <div className="text-center py-16">
-            <ClipboardDocumentCheckIcon className="h-12 w-12 mx-auto text-slate-300" />
-            <p className="mt-4 text-lg font-medium text-slate-600">No admin tickets</p>
-            <p className="text-sm text-slate-400 mt-1">Create one to start tracking a compliance deadline, renewal, or ad-hoc task</p>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { v: '', l: 'All' },
+            { v: 'OPEN', l: 'Open' },
+            { v: 'IN_PROGRESS', l: 'In Progress' },
+            { v: 'PENDING', l: 'Pending' },
+            { v: 'COMPLETED', l: 'Completed' },
+            { v: 'CANCELLED', l: 'Cancelled' },
+          ].map((s) => (
+            <button
+              key={s.v}
+              onClick={() => setStatusFilter(s.v)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusFilter === s.v ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+            >
+              {s.l} <span className="opacity-70">({s.v ? statusCounts[s.v] ?? 0 : allCount})</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <MagnifyingGlassIcon className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search tickets"
+              className="pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm w-48"
+            />
+          </div>
+          <button
+            onClick={() => setShowFilterModal(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 bg-white"
+          >
+            <FunnelIcon className="h-4 w-4" /> Filter
+            {activeFilterCount > 0 && <span className="bg-amber-600 text-white text-xs rounded-full px-1.5">{activeFilterCount}</span>}
+          </button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        view === 'card' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[...Array(6)].map((_, i) => <div key={i} className="h-52 bg-slate-100 rounded-xl animate-pulse" />)}
           </div>
         ) : (
+          <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">{[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-slate-100 rounded animate-pulse" />)}</div>
+        )
+      ) : tickets.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 text-center py-16">
+          <ClipboardDocumentCheckIcon className="h-12 w-12 mx-auto text-slate-300" />
+          <p className="mt-4 text-lg font-medium text-slate-600">No admin tickets</p>
+          <p className="text-sm text-slate-400 mt-1">Create one to start tracking a compliance deadline, renewal, or ad-hoc task</p>
+        </div>
+      ) : view === 'card' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {tickets.map((t: any) => <TicketCard key={t.id} ticket={t} />)}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
@@ -301,10 +609,19 @@ export default function AdminTicketListPage() {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {showNewModal && <NewTicketModal onClose={() => setShowNewModal(false)} />}
+      {showFilterModal && (
+        <AdvanceFilterModal
+          initial={filters}
+          categories={categories}
+          users={users}
+          onClose={() => setShowFilterModal(false)}
+          onApply={(next) => { setFilters(next); setShowFilterModal(false); }}
+        />
+      )}
     </div>
   );
 }
