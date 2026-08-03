@@ -29,12 +29,12 @@ export async function GET() {
       // Monthly Collections (last 6 months)
       prisma.payment.findMany({
         where: { deletedAt: null, paymentDate: { gte: sixMonthsAgo } },
-        select: { amount: true, paymentDate: true, invoice: { select: { currencyCode: true } } },
+        select: { paidAmount: true, currencyCode: true, paymentDate: true },
       }),
       // Payment Trend (last 30 days)
       prisma.payment.findMany({
         where: { deletedAt: null, paymentDate: { gte: thirtyDaysAgo } },
-        select: { amount: true, paymentDate: true, invoice: { select: { currencyCode: true } } },
+        select: { paidAmount: true, currencyCode: true, paymentDate: true },
       }),
     ]);
 
@@ -92,9 +92,12 @@ export async function GET() {
       outstanding: r.outstanding,
     }));
 
-    // Monthly Collections / Payment Trend: grouped per currency (one series
-    // per currency present in payments) instead of summed into a single
-    // blended number — a USD payment must never be added into an INR total.
+    // Monthly Collections / Payment Trend: grouped by the currency the payer
+    // actually paid in (payment.currencyCode / paidAmount), NOT the invoice's
+    // billing currency (payment.amount is that currency-converted figure).
+    // A payment recorded in USD against an INR invoice must show up as USD
+    // received, not get folded into the INR total or dropped because the
+    // invoice itself is INR.
     const primaryCurrencyCode = kpisByCurrency[0]?.currencyCode || 'INR';
     const currencyRank = new Map(kpisByCurrency.map((k, i) => [k.currencyCode, i]));
     const byRank = (a: { currencyCode: string }, b: { currencyCode: string }) =>
@@ -105,11 +108,11 @@ export async function GET() {
     for (let i = 5; i >= 0; i--) monthKeys.push(dayjs().subtract(i, 'month').format('MMM YYYY'));
     const monthlyByCurrency: Record<string, Record<string, number>> = {};
     for (const p of monthlyPayments) {
-      const currencyCode = p.invoice?.currencyCode || 'INR';
+      const currencyCode = p.currencyCode || 'INR';
       const key = dayjs(p.paymentDate).format('MMM YYYY');
       if (!monthKeys.includes(key)) continue;
       if (!monthlyByCurrency[currencyCode]) monthlyByCurrency[currencyCode] = {};
-      monthlyByCurrency[currencyCode][key] = (monthlyByCurrency[currencyCode][key] || 0) + Number(p.amount);
+      monthlyByCurrency[currencyCode][key] = (monthlyByCurrency[currencyCode][key] || 0) + Number(p.paidAmount);
     }
     const monthlyCollectionsByCurrency = Object.entries(monthlyByCurrency)
       .map(([currencyCode, buckets]) => ({
@@ -122,11 +125,11 @@ export async function GET() {
     for (let i = 29; i >= 0; i--) dayKeys.push(dayjs().subtract(i, 'day').format('DD MMM'));
     const dailyByCurrency: Record<string, Record<string, number>> = {};
     for (const p of dailyPayments) {
-      const currencyCode = p.invoice?.currencyCode || 'INR';
+      const currencyCode = p.currencyCode || 'INR';
       const key = dayjs(p.paymentDate).format('DD MMM');
       if (!dayKeys.includes(key)) continue;
       if (!dailyByCurrency[currencyCode]) dailyByCurrency[currencyCode] = {};
-      dailyByCurrency[currencyCode][key] = (dailyByCurrency[currencyCode][key] || 0) + Number(p.amount);
+      dailyByCurrency[currencyCode][key] = (dailyByCurrency[currencyCode][key] || 0) + Number(p.paidAmount);
     }
     const paymentTrendByCurrency = Object.entries(dailyByCurrency)
       .map(([currencyCode, buckets]) => ({
