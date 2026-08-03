@@ -92,39 +92,57 @@ export async function GET() {
       outstanding: r.outstanding,
     }));
 
-    // Monthly Collections / Payment Trend: true multi-currency time-series
-    // charting (grouped/stacked bars per currency) is out of scope for this
-    // cleanup — these two trend charts keep summing across currencies as
-    // they always did, but now format using the dashboard's dominant
-    // currency (by total invoice value) instead of a hardcoded ₹, so at
-    // least the common single-currency case (all data today) renders
-    // correctly instead of mislabeling non-INR amounts.
+    // Monthly Collections / Payment Trend: grouped per currency (one series
+    // per currency present in payments) instead of summed into a single
+    // blended number — a USD payment must never be added into an INR total.
     const primaryCurrencyCode = kpisByCurrency[0]?.currencyCode || 'INR';
+    const currencyRank = new Map(kpisByCurrency.map((k, i) => [k.currencyCode, i]));
+    const byRank = (a: { currencyCode: string }, b: { currencyCode: string }) =>
+      (currencyRank.has(a.currencyCode) ? currencyRank.get(a.currencyCode)! : 999) -
+      (currencyRank.has(b.currencyCode) ? currencyRank.get(b.currencyCode)! : 999);
 
-    const monthBuckets: Record<string, number> = {};
-    for (let i = 5; i >= 0; i--) monthBuckets[dayjs().subtract(i, 'month').format('MMM YYYY')] = 0;
+    const monthKeys: string[] = [];
+    for (let i = 5; i >= 0; i--) monthKeys.push(dayjs().subtract(i, 'month').format('MMM YYYY'));
+    const monthlyByCurrency: Record<string, Record<string, number>> = {};
     for (const p of monthlyPayments) {
+      const currencyCode = p.invoice?.currencyCode || 'INR';
       const key = dayjs(p.paymentDate).format('MMM YYYY');
-      if (key in monthBuckets) monthBuckets[key] += Number(p.amount);
+      if (!monthKeys.includes(key)) continue;
+      if (!monthlyByCurrency[currencyCode]) monthlyByCurrency[currencyCode] = {};
+      monthlyByCurrency[currencyCode][key] = (monthlyByCurrency[currencyCode][key] || 0) + Number(p.amount);
     }
-    const monthlyCollections = Object.entries(monthBuckets).map(([month, amount]) => ({ month, amount }));
+    const monthlyCollectionsByCurrency = Object.entries(monthlyByCurrency)
+      .map(([currencyCode, buckets]) => ({
+        currencyCode,
+        data: monthKeys.map((month) => ({ month, amount: buckets[month] || 0 })),
+      }))
+      .sort(byRank);
 
-    const dayBuckets: Record<string, number> = {};
-    for (let i = 29; i >= 0; i--) dayBuckets[dayjs().subtract(i, 'day').format('DD MMM')] = 0;
+    const dayKeys: string[] = [];
+    for (let i = 29; i >= 0; i--) dayKeys.push(dayjs().subtract(i, 'day').format('DD MMM'));
+    const dailyByCurrency: Record<string, Record<string, number>> = {};
     for (const p of dailyPayments) {
+      const currencyCode = p.invoice?.currencyCode || 'INR';
       const key = dayjs(p.paymentDate).format('DD MMM');
-      if (key in dayBuckets) dayBuckets[key] += Number(p.amount);
+      if (!dayKeys.includes(key)) continue;
+      if (!dailyByCurrency[currencyCode]) dailyByCurrency[currencyCode] = {};
+      dailyByCurrency[currencyCode][key] = (dailyByCurrency[currencyCode][key] || 0) + Number(p.amount);
     }
-    const paymentTrend = Object.entries(dayBuckets).map(([date, amount]) => ({ date, amount }));
+    const paymentTrendByCurrency = Object.entries(dailyByCurrency)
+      .map(([currencyCode, buckets]) => ({
+        currencyCode,
+        data: dayKeys.map((date) => ({ date, amount: buckets[date] || 0 })),
+      }))
+      .sort(byRank);
 
     return NextResponse.json({
       kpisByCurrency,
       primaryCurrencyCode,
       charts: {
-        monthlyCollections,
+        monthlyCollectionsByCurrency,
         outstandingByCustomer: outstandingByCustomerChart,
         statusDistribution,
-        paymentTrend,
+        paymentTrendByCurrency,
       },
     });
   } catch (error: any) {

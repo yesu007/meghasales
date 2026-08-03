@@ -84,8 +84,9 @@ export default function AccountingDashboardPage() {
   }, [isError]);
 
   const kpisByCurrency: any[] = data?.kpisByCurrency || [];
-  const primaryCurrencyCode: string = data?.primaryCurrencyCode || 'INR';
   const charts = data?.charts;
+  const monthlyCollectionsByCurrency: { currencyCode: string; data: any[] }[] = charts?.monthlyCollectionsByCurrency || [];
+  const paymentTrendByCurrency: { currencyCode: string; data: any[] }[] = charts?.paymentTrendByCurrency || [];
 
   if (isLoading) {
     return (
@@ -143,25 +144,30 @@ export default function AccountingDashboardPage() {
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ChartCard title="Monthly Collections">
-          <ResponsiveContainer>
-            <BarChart data={charts?.monthlyCollections || []} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={{ stroke: '#E2E8F0' }} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmt(v, primaryCurrencyCode)} />
-              <Tooltip formatter={(v: any) => fmt(Number(v), primaryCurrencyCode)} contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: '#E2E8F0' }} />
-              <Bar dataKey="amount" fill={BRAND} radius={[4, 4, 0, 0]} name="Collected" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
+        {monthlyCollectionsByCurrency.map((series) => (
+          <ChartCard
+            key={series.currencyCode}
+            title={monthlyCollectionsByCurrency.length > 1 ? `Monthly Collections (${series.currencyCode})` : 'Monthly Collections'}
+          >
+            <ResponsiveContainer>
+              <BarChart data={series.data} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={{ stroke: '#E2E8F0' }} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmt(v, series.currencyCode)} />
+                <Tooltip formatter={(v: any) => fmt(Number(v), series.currencyCode)} contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: '#E2E8F0' }} />
+                <Bar dataKey="amount" fill={BRAND} radius={[4, 4, 0, 0]} name="Collected" />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        ))}
 
         <ChartCard title="Outstanding by Customer">
           <ResponsiveContainer>
             <BarChart data={charts?.outstandingByCustomer || []} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmt(v, primaryCurrencyCode)} />
+              <XAxis type="number" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmt(v)} />
               <YAxis type="category" dataKey="customer" width={110} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(v: any, _name: any, props: any) => fmt(Number(v), props?.payload?.currencyCode || primaryCurrencyCode)} contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: '#E2E8F0' }} />
+              <Tooltip formatter={(v: any, _name: any, props: any) => fmt(Number(v), props?.payload?.currencyCode || 'INR')} contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: '#E2E8F0' }} />
               <Bar dataKey="outstanding" fill={BRAND} radius={[0, 4, 4, 0]} name="Outstanding" />
             </BarChart>
           </ResponsiveContainer>
@@ -179,17 +185,22 @@ export default function AccountingDashboardPage() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Payment Trend (30 days)">
-          <ResponsiveContainer>
-            <LineChart data={charts?.paymentTrend || []} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={{ stroke: '#E2E8F0' }} tickLine={false} interval={4} />
-              <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmt(v, primaryCurrencyCode)} />
-              <Tooltip formatter={(v: any) => fmt(Number(v), primaryCurrencyCode)} contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: '#E2E8F0' }} />
-              <Line type="monotone" dataKey="amount" stroke={BRAND} strokeWidth={2} dot={false} name="Collected" />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
+        {paymentTrendByCurrency.map((series) => (
+          <ChartCard
+            key={series.currencyCode}
+            title={paymentTrendByCurrency.length > 1 ? `Payment Trend (30 days, ${series.currencyCode})` : 'Payment Trend (30 days)'}
+          >
+            <ResponsiveContainer>
+              <LineChart data={series.data} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={{ stroke: '#E2E8F0' }} tickLine={false} interval={4} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmt(v, series.currencyCode)} />
+                <Tooltip formatter={(v: any) => fmt(Number(v), series.currencyCode)} contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: '#E2E8F0' }} />
+                <Line type="monotone" dataKey="amount" stroke={BRAND} strokeWidth={2} dot={false} name="Collected" />
+              </LineChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        ))}
       </div>
     </div>
   );
