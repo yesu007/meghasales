@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { worldCountries } from './data/worldCountries';
+import { worldCurrencies } from './data/worldCurrencies';
 
 const prisma = new PrismaClient();
 
@@ -115,6 +116,41 @@ async function main() {
     });
   }
   console.log('  ✓ Exchange rate history backfilled');
+
+  // Rest-of-world currencies — CurrencyMaster previously only had the 7
+  // currencies above, which meant the "Override currency (Administrator
+  // only)" select on the Lead form (and the Country Master's own Currency
+  // select) couldn't offer any currency outside that list, even though the
+  // countries table now covers all 197 ISO countries. `update: {}` so this
+  // never clobbers a rate an admin has since corrected via the Currency
+  // Master UI.
+  for (const c of worldCurrencies) {
+    await prisma.currencyMaster.upsert({
+      where: { currencyCode: c.currencyCode },
+      update: {},
+      create: { currencyCode: c.currencyCode, currencyName: c.currencyName, currencySymbol: c.currencySymbol, exchangeRateToInr: c.exchangeRateToInr },
+    });
+    await prisma.exchangeRate.upsert({
+      where: {
+        fromCurrency_toCurrency_rateDate_rateType: {
+          fromCurrency: c.currencyCode,
+          toCurrency: 'INR',
+          rateDate: EXCHANGE_RATE_SEED_DATE,
+          rateType: 'MANUAL',
+        },
+      },
+      update: {},
+      create: {
+        fromCurrency: c.currencyCode,
+        toCurrency: 'INR',
+        rate: c.exchangeRateToInr,
+        rateDate: EXCHANGE_RATE_SEED_DATE,
+        rateType: 'MANUAL',
+        source: 'manual (approximate — refine via Currency Master)',
+      },
+    });
+  }
+  console.log(`  ✓ ${worldCurrencies.length} more currencies seeded (rest of world)`);
 
   // Country taxes
   const countryTaxes = [
