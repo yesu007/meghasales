@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { worldCountries } from './data/worldCountries';
 
 const prisma = new PrismaClient();
 
@@ -152,11 +153,12 @@ async function main() {
   console.log('  ✓ State taxes seeded');
 
   // Countries — canonical picklist/defaults, backed 1:1 by the currency and
-  // country-tax rows seeded above. Deliberately does NOT include every
-  // country previously referenced by the old hardcoded quotations-page
-  // list (CN/HK/AU/CA/DE/FR/IT) since those never had matching currency/tax
-  // data — admins can add them properly via the Country Master UI once
-  // real rates are known, rather than seeding guessed values here.
+  // country-tax rows seeded above for the handful with a real, known tax
+  // rate. These are seeded first so the full-world merge below never
+  // overwrites their `defaultTaxType`/`defaultTaxPercentage` (upsert `update`
+  // is `{}` in both loops — a country row, once created, keeps whatever tax
+  // fields it was created with; admins can still edit any of them later via
+  // the Country Master UI).
   const countries = [
     { countryName: 'India', isoCode: 'IN', currencyCode: 'INR', currencyName: 'Indian Rupee', currencySymbol: '₹', defaultTaxType: 'GST', defaultTaxPercentage: 18, flagEmoji: '🇮🇳' },
     { countryName: 'United States', isoCode: 'US', currencyCode: 'USD', currencyName: 'US Dollar', currencySymbol: '$', defaultTaxType: 'NONE', defaultTaxPercentage: 0, flagEmoji: '🇺🇸' },
@@ -169,8 +171,27 @@ async function main() {
   const createdCountries = await Promise.all(
     countries.map((c) => prisma.country.upsert({ where: { isoCode: c.isoCode }, update: {}, create: c }))
   );
-  console.log(`  ✓ ${createdCountries.length} countries seeded`);
+  console.log(`  ✓ ${createdCountries.length} countries seeded (known tax rates)`);
   const indiaCountry = createdCountries.find((c) => c.isoCode === 'IN')!;
+
+  // Full ISO 3166-1 country list — makes CountrySelect's type-search combobox
+  // (src/components/CountrySelect.tsx, used on Lead Add, Quotations, and
+  // Settings → Regional) cover every country in the world, not just the 7
+  // above with a hand-verified tax rate. These get `defaultTaxType: 'NONE'` /
+  // `defaultTaxPercentage: 0` since their real rates aren't verified here —
+  // same "don't seed guessed tax data" principle as before, just no longer
+  // used as a reason to omit the country from the picklist entirely. Skips
+  // any isoCode already created above so their real tax rates are untouched.
+  const knownIsoCodes = new Set(countries.map((c) => c.isoCode));
+  const flagEmojiFromIso = (isoCode: string) =>
+    String.fromCodePoint(...Array.from(isoCode.toUpperCase()).map((ch) => 127397 + ch.charCodeAt(0)));
+  const restOfWorldCountries = worldCountries
+    .filter((c) => !knownIsoCodes.has(c.isoCode))
+    .map((c) => ({ ...c, defaultTaxType: 'NONE', defaultTaxPercentage: 0, flagEmoji: flagEmojiFromIso(c.isoCode) }));
+  const createdRestOfWorld = await Promise.all(
+    restOfWorldCountries.map((c) => prisma.country.upsert({ where: { isoCode: c.isoCode }, update: {}, create: c }))
+  );
+  console.log(`  ✓ ${createdRestOfWorld.length} more countries seeded (rest of world)`);
 
   // Company Profile
   const companyProfile = await prisma.companyProfile.upsert({
