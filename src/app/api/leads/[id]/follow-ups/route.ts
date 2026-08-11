@@ -12,15 +12,55 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   try {
     const leadId = parseInt(params.id);
 
-    const followUps = await prisma.leadFollowUp.findMany({
-      where: { leadId },
-      orderBy: { followUpDate: 'desc' },
-      include: {
-        loggedBy: { select: { firstName: true, lastName: true } },
-      },
-    });
+    // Follow-up history merges two sources: explicit LeadFollowUp entries
+    // (logged via this tab's "Add Follow-up" form) AND Events that carry
+    // their own follow-up plan (the Events tab's "Next Action"/"Follow-up
+    // Date" fields, e.g. `eventType: 'FOLLOW_UP'` or any event where the
+    // user set a next-step). Without this merge, a follow-up plan set while
+    // logging an event never appeared here — a real gap, not a duplicate
+    // of the Events tab, since this view is specifically about follow-up
+    // planning/history across BOTH ways a follow-up gets recorded.
+    const [followUps, events] = await Promise.all([
+      prisma.leadFollowUp.findMany({
+        where: { leadId },
+        include: { loggedBy: { select: { firstName: true, lastName: true } } },
+      }),
+      prisma.event.findMany({
+        where: { leadId, OR: [{ followUpDate: { not: null } }, { nextAction: { not: null } }] },
+        include: { createdBy: { select: { firstName: true, lastName: true } } },
+      }),
+    ]);
 
-    return NextResponse.json(followUps);
+    const merged = [
+      ...followUps.map((f) => ({
+        id: f.id,
+        source: 'FOLLOWUP' as const,
+        interactionDate: f.followUpDate,
+        method: f.method,
+        title: null,
+        notes: f.notes,
+        outcome: f.outcome,
+        nextAction: f.nextAction,
+        nextFollowUpDate: f.nextFollowUpDate,
+        loggedBy: f.loggedBy,
+        createdAt: f.createdAt,
+      })),
+      ...events.map((e) => ({
+        id: e.id,
+        source: 'EVENT' as const,
+        interactionDate: e.eventDateTime,
+        method: e.eventType,
+        title: e.title,
+        notes: e.description,
+        outcome: null,
+        nextAction: e.nextAction,
+        nextFollowUpDate: e.followUpDate,
+        loggedBy: e.createdBy,
+        createdAt: e.createdAt,
+      })),
+    ].sort((a, b) => new Date(b.interactionDate).getTime() - new Date(a.interactionDate).getTime());
+
+    return NextResponse.json(merged);
   } catch (error) {
     console.error('GET /api/leads/[id]/follow-ups error:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
