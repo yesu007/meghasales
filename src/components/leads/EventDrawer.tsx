@@ -124,11 +124,11 @@ export default function EventDrawer({ isOpen, onClose, leadId, event }: EventDra
             <Transition.Child as={Fragment} enter="transform transition ease-in-out duration-300" enterFrom="translate-x-full" enterTo="translate-x-0" leave="transform transition ease-in-out duration-200" leaveFrom="translate-x-0" leaveTo="translate-x-full">
               <Dialog.Panel className="w-screen max-w-lg">
                 <div className="flex h-full flex-col bg-white shadow-xl overflow-y-auto">
-                  <div className="flex items-center justify-between px-6 py-4 border-b">
+                  <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b">
                     <Dialog.Title className="text-lg font-semibold text-slate-800">{isEditing ? 'Edit Event' : 'New Event'}</Dialog.Title>
-                    <button onClick={close} className="p-1 text-slate-400 hover:text-slate-600 rounded"><XMarkIcon className="h-5 w-5" /></button>
+                    <button onClick={close} className="p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-slate-600 rounded"><XMarkIcon className="h-5 w-5" /></button>
                   </div>
-                  <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="flex-1 px-6 py-4 space-y-4">
+                  <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="flex-1 px-4 sm:px-6 py-4 space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Event Title *</label>
                       <input required value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
@@ -189,8 +189,8 @@ export default function EventDrawer({ isOpen, onClose, leadId, event }: EventDra
                       <input type="date" value={form.followUpDate} onChange={(e) => setForm((f) => ({ ...f, followUpDate: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                     </div>
                     <div className="flex justify-end gap-3 pt-4 border-t">
-                      <button type="button" onClick={close} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-                      <button type="submit" disabled={saveMutation.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                      <button type="button" onClick={close} className="px-4 py-2 min-h-[44px] text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+                      <button type="submit" disabled={saveMutation.isPending} className="px-4 py-2 min-h-[44px] bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
                         {saveMutation.isPending ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Event'}
                       </button>
                     </div>

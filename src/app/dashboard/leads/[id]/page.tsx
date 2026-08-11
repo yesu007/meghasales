@@ -106,20 +106,20 @@ export default function LeadDetailPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard/leads" className="p-2 hover:bg-slate-100 rounded-lg">
+        <div className="flex items-center gap-3 min-w-0">
+          <Link href="/dashboard/leads" className="p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-slate-100 rounded-lg flex-shrink-0">
             <ArrowLeftIcon className="h-5 w-5 text-slate-600" />
           </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">{lead.companyName}</h1>
-            <p className="text-slate-500 mt-1">{lead.contactPerson}{lead.email ? ` — ${lead.email}` : ''}</p>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">{lead.companyName}</h1>
+            <p className="text-slate-500 mt-1 text-sm sm:text-base truncate">{lead.contactPerson}{lead.email ? ` — ${lead.email}` : ''}</p>
           </div>
         </div>
         <select
           value={lead.status}
           disabled={statusMutation.isPending}
           onChange={(e) => statusMutation.mutate(e.target.value)}
-          className={`self-start sm:self-auto px-3 py-1.5 rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
+          className={`self-start sm:self-auto px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
         >
           {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
@@ -128,13 +128,13 @@ export default function LeadDetailPage() {
       <Tab.Group>
         <Tab.List className="flex overflow-x-auto border-b border-slate-200">
           <Tab className={({ selected }) => classNames(
-            'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px',
+            'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px',
             selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
           )}>
             Overview
           </Tab>
           <Tab className={({ selected }) => classNames(
-            'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
+            'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
             selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
           )}>
             <PhoneIcon className="h-4 w-4" /> Follow-ups
@@ -142,7 +142,7 @@ export default function LeadDetailPage() {
           <Tab
             disabled={!isConfirmed}
             className={({ selected }) => classNames(
-              'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
               !isConfirmed ? 'border-transparent text-slate-300 cursor-not-allowed' : selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             )}
             title={!isConfirmed ? 'Events unlock once this lead is Confirmed' : undefined}
@@ -152,7 +152,7 @@ export default function LeadDetailPage() {
           <Tab
             disabled={!isConfirmed}
             className={({ selected }) => classNames(
-              'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
               !isConfirmed ? 'border-transparent text-slate-300 cursor-not-allowed' : selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             )}
             title={!isConfirmed ? 'Documents unlock once this lead is Confirmed' : undefined}
@@ -160,7 +160,7 @@ export default function LeadDetailPage() {
             <FolderOpenIcon className="h-4 w-4" /> Documents
           </Tab>
           <Tab className={({ selected }) => classNames(
-            'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
+            'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
             selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
           )}>
             <ClockIcon className="h-4 w-4" /> Activity

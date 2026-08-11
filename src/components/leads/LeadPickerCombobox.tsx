@@ -49,7 +49,7 @@ export default function LeadPickerCombobox({ value, onChange, placeholder }: Lea
         <div className="relative w-full cursor-default overflow-hidden rounded-lg border border-slate-300 bg-white text-left focus-within:ring-2 focus-within:ring-amber-500">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Combobox.Input
-            className="w-full border-none py-2 pl-9 pr-10 text-sm text-slate-800 focus:outline-none"
+            className="w-full border-none py-2 min-h-[44px] pl-9 pr-10 text-sm text-slate-800 focus:outline-none"
             displayValue={(l: LeadOption | null) => (l ? l.companyName : '')}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={placeholder || 'Search by company or contact name...'}

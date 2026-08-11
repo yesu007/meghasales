@@ -110,7 +110,7 @@ export default function DocumentList({ leadId, eventId, canManage }: DocumentLis
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <p className="text-xs font-medium text-slate-500 uppercase">Requirement Documents</p>
         {canManage && (
           <DocumentUpload label="Add Document" onFileSelected={(file) => uploadMutation.mutate(file)} disabled={uploadMutation.isPending} />

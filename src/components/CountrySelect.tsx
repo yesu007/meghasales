@@ -50,7 +50,7 @@ export default function CountrySelect({ value, onChange, disabled }: CountrySele
       <div className="relative">
         <div className="relative w-full cursor-default overflow-hidden rounded-lg border border-slate-300 bg-white text-left focus-within:ring-2 focus-within:ring-amber-500 disabled:bg-slate-100">
           <Combobox.Input
-            className="w-full border-none py-2 pl-3 pr-10 text-sm text-slate-800 focus:outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
+            className="w-full border-none py-2 min-h-[44px] pl-3 pr-10 text-sm text-slate-800 focus:outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
             displayValue={(c: Country | null) => (c ? `${c.flagEmoji ? c.flagEmoji + ' ' : ''}${c.countryName}` : '')}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search country..."

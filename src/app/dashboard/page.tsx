@@ -93,10 +93,10 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-800">
           Welcome back, {session?.user?.name?.split(' ')[0]}
         </h1>
-        <p className="text-slate-500 mt-1">Here&apos;s your CRM overview</p>
+        <p className="text-slate-500 mt-1 text-sm sm:text-base">Here&apos;s your CRM overview</p>
       </div>
 
       {/* KPI Cards */}
@@ -135,17 +135,17 @@ export default function DashboardPage() {
                   <h3 className="text-base font-semibold text-slate-800">{leadDetail.companyName}</h3>
                   <p className="text-sm text-slate-500">{leadDetail.contactPerson}{leadDetail.email ? ` — ${leadDetail.email}` : ''}</p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className={`px-3 py-1.5 rounded-full text-sm font-medium ${leadStatusColor(leadDetail.status)}`}>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className={`px-3 py-1.5 min-h-[36px] inline-flex items-center rounded-full text-sm font-medium ${leadStatusColor(leadDetail.status)}`}>
                     {leadStatusLabel(leadDetail.status)}
                   </span>
-                  <Link href={`/dashboard/leads/${leadDetail.id}`} className="flex items-center gap-1 text-sm text-amber-600 hover:text-amber-700 font-medium">
+                  <Link href={`/dashboard/leads/${leadDetail.id}`} className="flex items-center gap-1 min-h-[44px] text-sm text-amber-600 hover:text-amber-700 font-medium">
                     Full details <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
                   </Link>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-slate-800 mt-0.5 capitalize">{(leadDetail.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned Owner</p><p className="text-slate-800 mt-0.5">{leadDetail.assignedBa ? `${leadDetail.assignedBa.firstName} ${leadDetail.assignedBa.lastName}` : 'Unassigned'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Created</p><p className="text-slate-800 mt-0.5">{dayjs(leadDetail.createdAt).format('DD MMM YYYY')}</p></div>
@@ -165,13 +165,13 @@ export default function DashboardPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <h2 className="text-lg font-semibold text-slate-800 mb-4">Quick Actions</h2>
         <div className="flex flex-wrap gap-3">
-          <a href="/dashboard/leads" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+          <a href="/dashboard/leads" className="flex items-center px-4 py-2 min-h-[44px] bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
             Manage Leads
           </a>
-          <a href="/dashboard/quotations" className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+          <a href="/dashboard/quotations" className="flex items-center px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
             Create Quotation
           </a>
-          <a href="/dashboard/demos" className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700">
+          <a href="/dashboard/demos" className="flex items-center px-4 py-2 min-h-[44px] bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700">
             Schedule Demo
           </a>
         </div>

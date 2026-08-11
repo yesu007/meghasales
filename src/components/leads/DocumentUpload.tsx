@@ -12,7 +12,7 @@ interface DocumentUploadProps {
 
 export default function DocumentUpload({ label = 'Attach a file', onFileSelected, disabled }: DocumentUploadProps) {
   return (
-    <label className={`flex items-center gap-2 px-3 py-2 border border-dashed border-slate-300 rounded-lg text-sm text-slate-500 hover:border-amber-400 hover:text-amber-600 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+    <label className={`flex items-center justify-center gap-2 px-3 py-2 min-h-[44px] border border-dashed border-slate-300 rounded-lg text-sm text-slate-500 hover:border-amber-400 hover:text-amber-600 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
       <PaperClipIcon className="h-4 w-4" />
       {label}
       <input

@@ -18,6 +18,8 @@ import {
   ClipboardDocumentCheckIcon,
   BanknotesIcon,
   ChevronDownIcon,
+  Bars3Icon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
 import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
@@ -53,6 +55,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -62,6 +65,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     const activeParent = NAV_ITEMS.find((item) => 'children' in item && item.children && pathname.startsWith(item.href));
     if (activeParent) setExpandedGroups((prev) => new Set(prev).add(activeParent.href));
+  }, [pathname]);
+
+  // Close the mobile nav drawer on navigation — otherwise it stays open
+  // over the new page after tapping a link.
+  useEffect(() => {
+    setMobileNavOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -86,14 +95,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen flex bg-slate-50">
-      {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col">
-        <div className="p-6 border-b border-slate-700">
-          <div className="bg-white rounded-lg px-3 py-2 inline-block">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={TEKFILO_LOGO} alt="Tekfilo" className="h-6 w-auto" />
+      {/* Mobile nav backdrop — only rendered below md, where the sidebar is
+          an overlay drawer instead of a static column */}
+      {mobileNavOpen && (
+        <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setMobileNavOpen(false)} />
+      )}
+
+      {/* Sidebar — static in-flow column at md+ (unchanged from before),
+          a slide-in overlay drawer below md */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out overflow-y-auto md:static md:z-auto md:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-6 border-b border-slate-700 flex items-start justify-between">
+          <div>
+            <div className="bg-white rounded-lg px-3 py-2 inline-block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={TEKFILO_LOGO} alt="Tekfilo" className="h-6 w-auto" />
+            </div>
+            <p className="text-xs text-slate-400 mt-2">MeghaSales CRM</p>
           </div>
-          <p className="text-xs text-slate-400 mt-2">MeghaSales CRM</p>
+          <button onClick={() => setMobileNavOpen(false)} className="md:hidden p-2 -mr-2 -mt-1 text-slate-400 hover:text-white" aria-label="Close menu">
+            <XMarkIcon className="h-6 w-6" />
+          </button>
         </div>
 
         <nav className="flex-1 py-4">
@@ -159,16 +180,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Menu */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-end px-8">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between md:justify-end px-4 sm:px-6 lg:px-8">
+          <button onClick={() => setMobileNavOpen(true)} className="md:hidden p-2 -ml-2 text-slate-600 hover:text-slate-900" aria-label="Open menu">
+            <Bars3Icon className="h-6 w-6" />
+          </button>
           <div className="relative" ref={userMenuRef}>
             <button
               onClick={() => setUserMenuOpen((prev) => !prev)}
               className="flex items-center gap-3"
             >
-              <div className="w-8 h-8 bg-amber-600 rounded-full flex items-center justify-center text-sm font-bold text-white">
+              <div className="w-8 h-8 bg-amber-600 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
                 {session.user?.name?.[0] || 'U'}
               </div>
-              <div className="text-left">
+              <div className="text-left hidden sm:block">
                 <p className="text-sm font-medium text-slate-800">{session.user?.name}</p>
                 <p className="text-xs text-slate-500">{(session.user as any)?.role}</p>
               </div>
@@ -197,7 +221,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        <main className="flex-1 p-8 overflow-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-x-hidden overflow-y-auto">
           {children}
         </main>
       </div>

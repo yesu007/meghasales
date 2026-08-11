@@ -62,10 +62,10 @@ export default function EventsTab({ leadId, canManage, canAddDiscussion }: Event
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h2 className="text-lg font-semibold text-slate-800">Events</h2>
         {canManage && (
-          <button onClick={() => { setEditingEvent(null); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+          <button onClick={() => { setEditingEvent(null); setDrawerOpen(true); }} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 self-start sm:self-auto">
             <PlusIcon className="h-4 w-4" /> New Event
           </button>
         )}
