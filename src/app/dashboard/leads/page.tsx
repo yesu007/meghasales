@@ -107,9 +107,9 @@ export default function LeadsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Summary widgets ("dashboard") visibility, persisted per-browser so the
-  // preference sticks across visits. Defaults to shown; read from
+  // preference sticks across visits. Defaults to collapsed; read from
   // localStorage on mount only (can't touch it during SSR).
-  const [showDashboard, setShowDashboard] = useState(true);
+  const [showDashboard, setShowDashboard] = useState(false);
   useEffect(() => {
     const stored = localStorage.getItem('leads-dashboard-visible');
     if (stored !== null) setShowDashboard(stored === 'true');
@@ -342,17 +342,32 @@ export default function LeadsPage() {
         </button>
       </div>
 
-      {/* Summary widgets */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Dashboard</h2>
+      {/* View toggle + Dashboard show/hide — share one row instead of each
+          getting their own mostly-empty full-width band. */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="overflow-x-auto">
+          <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+            {VIEW_TABS.map((t) => (
+              <button
+                key={t.value}
+                onClick={() => changeView(t.value)}
+                className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${view === t.value ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <button
           onClick={toggleDashboard}
-          className="flex items-center gap-1 px-2 min-h-[44px] text-sm text-slate-500 hover:text-amber-600 font-medium"
+          className="flex items-center gap-1 px-2 min-h-[44px] text-sm text-slate-500 hover:text-amber-600 font-medium self-start sm:self-auto"
         >
           {showDashboard ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
           {showDashboard ? 'Hide Dashboard' : 'Show Dashboard'}
         </button>
       </div>
+
+      {/* Summary widgets */}
       {showDashboard && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
@@ -373,21 +388,6 @@ export default function LeadsPage() {
           </div>
         </div>
       )}
-
-      {/* View toggle */}
-      <div className="overflow-x-auto">
-        <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
-          {VIEW_TABS.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => changeView(t.value)}
-              className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${view === t.value ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Search & Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
