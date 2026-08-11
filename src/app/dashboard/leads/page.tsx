@@ -106,6 +106,21 @@ export default function LeadsPage() {
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // Summary widgets ("dashboard") visibility, persisted per-browser so the
+  // preference sticks across visits. Defaults to shown; read from
+  // localStorage on mount only (can't touch it during SSR).
+  const [showDashboard, setShowDashboard] = useState(true);
+  useEffect(() => {
+    const stored = localStorage.getItem('leads-dashboard-visible');
+    if (stored !== null) setShowDashboard(stored === 'true');
+  }, []);
+  const toggleDashboard = () => {
+    setShowDashboard((prev) => {
+      const next = !prev;
+      localStorage.setItem('leads-dashboard-visible', String(next));
+      return next;
+    });
+  };
 
   // Search, filter, sort, pagination
   const [searchInput, setSearchInput] = useState('');
@@ -328,24 +343,36 @@ export default function LeadsPage() {
       </div>
 
       {/* Summary widgets */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Total New Leads</p>
-          <p className="text-3xl font-bold mt-2 text-slate-700">{stats?.totalNew ?? '—'}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Pending Follow-up</p>
-          <p className="text-3xl font-bold mt-2 text-orange-600">{stats?.pendingFollowUp ?? '—'}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Overdue Follow-ups</p>
-          <p className="text-3xl font-bold mt-2 text-red-600">{stats?.overdueFollowUp ?? '—'}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Converted This Month</p>
-          <p className="text-3xl font-bold mt-2 text-green-600">{stats?.convertedThisMonth ?? '—'}</p>
-        </div>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Dashboard</h2>
+        <button
+          onClick={toggleDashboard}
+          className="flex items-center gap-1 px-2 min-h-[44px] text-sm text-slate-500 hover:text-amber-600 font-medium"
+        >
+          {showDashboard ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
+          {showDashboard ? 'Hide Dashboard' : 'Show Dashboard'}
+        </button>
       </div>
+      {showDashboard && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <p className="text-sm text-slate-500">Total New Leads</p>
+            <p className="text-3xl font-bold mt-2 text-slate-700">{stats?.totalNew ?? '—'}</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <p className="text-sm text-slate-500">Pending Follow-up</p>
+            <p className="text-3xl font-bold mt-2 text-orange-600">{stats?.pendingFollowUp ?? '—'}</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <p className="text-sm text-slate-500">Overdue Follow-ups</p>
+            <p className="text-3xl font-bold mt-2 text-red-600">{stats?.overdueFollowUp ?? '—'}</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <p className="text-sm text-slate-500">Converted This Month</p>
+            <p className="text-3xl font-bold mt-2 text-green-600">{stats?.convertedThisMonth ?? '—'}</p>
+          </div>
+        </div>
+      )}
 
       {/* View toggle */}
       <div className="overflow-x-auto">
