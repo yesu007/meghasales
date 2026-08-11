@@ -6,13 +6,14 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
-import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, PhoneIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { LEAD_STATUSES, leadStatusColor } from '@/lib/leadStatus';
 import EventsTab from '@/components/leads/EventsTab';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
 import LeadDocumentsTab from '@/components/leads/LeadDocumentsTab';
+import FollowUpsTab from '@/components/leads/FollowUpsTab';
 
 interface Lead {
   id: number;
@@ -132,6 +133,12 @@ export default function LeadDetailPage() {
           )}>
             Overview
           </Tab>
+          <Tab className={({ selected }) => classNames(
+            'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
+            selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+          )}>
+            <PhoneIcon className="h-4 w-4" /> Follow-ups
+          </Tab>
           <Tab
             disabled={!isConfirmed}
             className={({ selected }) => classNames(
@@ -172,6 +179,9 @@ export default function LeadDetailPage() {
                 <div className="sm:col-span-2"><p className="text-xs font-medium text-slate-500 uppercase">Notes</p><p className="text-sm text-slate-800 mt-1 whitespace-pre-wrap">{lead.notes}</p></div>
               )}
             </div>
+          </Tab.Panel>
+          <Tab.Panel>
+            <FollowUpsTab leadId={lead.id} />
           </Tab.Panel>
           <Tab.Panel>
             {isConfirmed && canView ? (

@@ -64,6 +64,7 @@ model User {
   assignedLeads   Lead[]           @relation("AssignedBA")
   createdLeads    Lead[]           @relation("CreatedBy")
   leadActivities  LeadActivity[]
+  loggedFollowUps LeadFollowUp[]   @relation("LeadFollowUpLoggedBy")
   assignedDemos   Demo[]
   auditLogs       AuditLog[]
   implementations Implementation[] @relation("ProjectManager")
@@ -117,10 +118,18 @@ model Lead {
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 
+  // Denormalized follow-up tracking (kept in sync whenever a LeadFollowUp is
+  // logged) so the leads list can filter/sort on "last contacted" and flag
+  // overdue follow-ups without a per-row subquery against lead_follow_ups.
+  lastFollowUpDate DateTime? @map("last_follow_up_date")
+  nextFollowUpDate DateTime? @map("next_follow_up_date")
+  followUpCount    Int      @default(0) @map("follow_up_count")
+
   assignedBa      User?            @relation("AssignedBA", fields: [assignedBaId], references: [id])
   createdBy       User?            @relation("CreatedBy", fields: [createdById], references: [id])
   countryRef      Country?         @relation(fields: [countryId], references: [id])
   activities      LeadActivity[]
+  followUps       LeadFollowUp[]
   demos           Demo[]
   quotations      Quotation[]
   implementations Implementation[]
@@ -129,6 +138,26 @@ model Lead {
   events          Event[]
 
   @@map("leads")
+}
+
+model LeadFollowUp {
+  id               Int       @id @default(autoincrement())
+  leadId           Int       @map("lead_id")
+  followUpDate     DateTime  @map("follow_up_date")
+  method           String // CALL | EMAIL | VISIT | WHATSAPP | OTHER
+  notes            String?
+  outcome          String? // INTERESTED | NOT_REACHED | CALLBACK_REQUESTED | NEEDS_MORE_INFO | NOT_INTERESTED | CONVERTED
+  nextAction       String?   @map("next_action")
+  nextFollowUpDate DateTime? @map("next_followup_date")
+  loggedById       Int?      @map("logged_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  lead     Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  loggedBy User? @relation("LeadFollowUpLoggedBy", fields: [loggedById], references: [id])
+
+  @@index([leadId])
+  @@index([nextFollowUpDate])
+  @@map("lead_follow_ups")
 }
 
 model LeadActivity {

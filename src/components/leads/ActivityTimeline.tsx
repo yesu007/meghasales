@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   CheckCircleIcon, CalendarDaysIcon, DocumentIcon, ChatBubbleLeftRightIcon,
-  TrashIcon, PlayCircleIcon, XCircleIcon, ClockIcon, PlusCircleIcon,
+  TrashIcon, PlayCircleIcon, XCircleIcon, ClockIcon, PlusCircleIcon, PhoneIcon,
 } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 
@@ -22,6 +22,7 @@ interface ActivityTimelineProps {
 const ACTIVITY_ICONS: Record<string, typeof ClockIcon> = {
   CREATED: PlusCircleIcon,
   LEAD_CONFIRMED: CheckCircleIcon,
+  FOLLOWUP_LOGGED: PhoneIcon,
   DEMO_SCHEDULED: CalendarDaysIcon,
   DEMO_STATUS_CHANGED: PlayCircleIcon,
   EVENT_CREATED: CalendarDaysIcon,

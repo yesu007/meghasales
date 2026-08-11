@@ -25,6 +25,12 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { LEAD_STATUSES } from '@/lib/leadStatus';
 
+const VIEW_TABS = [
+  { value: '', label: 'All Leads' },
+  { value: 'new', label: 'New Leads' },
+  { value: 'followed-up', label: 'Followed-up Leads' },
+];
+
 const SOURCES = [
   { value: 'WEBSITE', label: 'Website' },
   { value: 'WHATSAPP', label: 'WhatsApp' },
@@ -56,6 +62,17 @@ interface Lead {
   assignedBaId: number | null;
   assignedBaName: string | null;
   createdAt: string;
+  lastFollowUpDate: string | null;
+  nextFollowUpDate: string | null;
+  followUpCount: number;
+  isOverdue: boolean;
+}
+
+interface LeadStats {
+  totalNew: number;
+  pendingFollowUp: number;
+  overdueFollowUp: number;
+  convertedThisMonth: number;
 }
 
 interface UserOption {
@@ -96,6 +113,7 @@ export default function LeadsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [verticalFilter, setVerticalFilter] = useState('');
+  const [view, setView] = useState(''); // '' | 'new' | 'followed-up'
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
@@ -113,12 +131,31 @@ export default function LeadsPage() {
   if (statusFilter) params.status = statusFilter;
   if (sourceFilter) params.leadSource = sourceFilter;
   if (verticalFilter) params.businessVertical = verticalFilter;
+  if (view) params.view = view;
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['leads', params],
     queryFn: () => fetchLeads(params),
     placeholderData: (prev: any) => prev,
   });
+
+  const { data: stats } = useQuery<LeadStats>({
+    queryKey: ['lead-stats'],
+    queryFn: async () => {
+      const res = await fetch('/api/leads/stats');
+      if (!res.ok) throw new Error('Failed to fetch lead stats');
+      return res.json();
+    },
+  });
+
+  const changeView = (v: string) => {
+    setView(v);
+    setPage(0);
+    // Followed-up Leads is explicitly "sortable by last contacted date" —
+    // default to that ordering when the tab is picked, same as any other tab.
+    if (v === 'followed-up') { setSortBy('lastFollowUpDate'); setSortDir('desc'); }
+    else if (sortBy === 'lastFollowUpDate') { setSortBy('createdAt'); setSortDir('desc'); }
+  };
 
   // Fetch users for BA assignment
   const { data: users = [], isError: isUsersError } = useQuery<UserOption[]>({
@@ -290,6 +327,39 @@ export default function LeadsPage() {
         </button>
       </div>
 
+      {/* Summary widgets */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+          <p className="text-sm text-slate-500">Total New Leads</p>
+          <p className="text-3xl font-bold mt-2 text-slate-700">{stats?.totalNew ?? '—'}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+          <p className="text-sm text-slate-500">Pending Follow-up</p>
+          <p className="text-3xl font-bold mt-2 text-orange-600">{stats?.pendingFollowUp ?? '—'}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+          <p className="text-sm text-slate-500">Overdue Follow-ups</p>
+          <p className="text-3xl font-bold mt-2 text-red-600">{stats?.overdueFollowUp ?? '—'}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+          <p className="text-sm text-slate-500">Converted This Month</p>
+          <p className="text-3xl font-bold mt-2 text-green-600">{stats?.convertedThisMonth ?? '—'}</p>
+        </div>
+      </div>
+
+      {/* View toggle */}
+      <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+        {VIEW_TABS.map((t) => (
+          <button
+            key={t.value}
+            onClick={() => changeView(t.value)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${view === t.value ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* Search & Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
         <div className="flex flex-col md:flex-row gap-3">
@@ -352,6 +422,8 @@ export default function LeadsPage() {
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('status')} className="flex items-center gap-1 font-semibold text-white">Status <SortIcon col="status" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Assigned BA</th>
                     <th className="px-4 py-3 text-left hidden md:table-cell"><button onClick={() => handleSort('createdAt')} className="flex items-center gap-1 font-semibold text-white">Created <SortIcon col="createdAt" /></button></th>
+                    <th className="px-4 py-3 text-left hidden lg:table-cell"><button onClick={() => handleSort('lastFollowUpDate')} className="flex items-center gap-1 font-semibold text-white">Last Follow-up <SortIcon col="lastFollowUpDate" /></button></th>
+                    <th className="px-4 py-3 text-left hidden lg:table-cell"><button onClick={() => handleSort('nextFollowUpDate')} className="flex items-center gap-1 font-semibold text-white">Next Follow-up <SortIcon col="nextFollowUpDate" /></button></th>
                     <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
                   </tr>
                 </thead>
@@ -380,6 +452,14 @@ export default function LeadsPage() {
                         </select>
                       </td>
                       <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{dayjs(lead.createdAt).format('DD MMM YYYY')}</td>
+                      <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{lead.lastFollowUpDate ? dayjs(lead.lastFollowUpDate).format('DD MMM YYYY') : '—'}</td>
+                      <td className={`px-4 py-3 hidden lg:table-cell ${lead.isOverdue ? 'text-red-600 font-semibold' : 'text-slate-500'}`}>
+                        {lead.nextFollowUpDate ? (
+                          <span className={lead.isOverdue ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 border border-red-200' : ''}>
+                            {dayjs(lead.nextFollowUpDate).format('DD MMM YYYY')}{lead.isOverdue ? ' (Overdue)' : ''}
+                          </span>
+                        ) : '—'}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
                           <Link href={`/dashboard/leads/${lead.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-block" title="View">

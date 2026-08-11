@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
+import { isFollowUpOverdue } from '@/lib/leadFollowUp';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +21,11 @@ export async function GET(request: NextRequest) {
     const city = searchParams.get('city') || '';
     const state = searchParams.get('state') || '';
     const country = searchParams.get('country') || '';
-    const sortBy = searchParams.get('sortBy') || 'createdAt';
+    // 'new' = leads with no follow-up logged yet; 'followed-up' = leads with
+    // at least one follow-up entry (see requirement: All Leads | New Leads |
+    // Followed-up Leads toggle on the leads list).
+    const view = searchParams.get('view') || '';
+    const sortBy = searchParams.get('sortBy') || (view === 'followed-up' ? 'lastFollowUpDate' : 'createdAt');
     const sortDir = searchParams.get('sortDir') || 'desc';
     const createdFrom = searchParams.get('createdFrom') || '';
     const createdTo = searchParams.get('createdTo') || '';
@@ -60,11 +65,13 @@ export async function GET(request: NextRequest) {
     if (country) AND.push({ country: { contains: country, mode: 'insensitive' } });
     if (createdFrom) AND.push({ createdAt: { gte: new Date(createdFrom) } });
     if (createdTo) AND.push({ createdAt: { lte: new Date(createdTo) } });
+    if (view === 'new') AND.push({ followUpCount: 0 });
+    if (view === 'followed-up') AND.push({ followUpCount: { gt: 0 } });
 
     if (AND.length > 0) where.AND = AND;
 
     // Validate sort field
-    const validSortFields = ['companyName', 'contactPerson', 'email', 'status', 'leadSource', 'createdAt', 'updatedAt'];
+    const validSortFields = ['companyName', 'contactPerson', 'email', 'status', 'leadSource', 'createdAt', 'updatedAt', 'lastFollowUpDate', 'nextFollowUpDate'];
     const orderField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const orderDir = sortDir === 'asc' ? 'asc' : 'desc';
 
@@ -96,6 +103,10 @@ export async function GET(request: NextRequest) {
       state: lead.state,
       createdAt: lead.createdAt,
       updatedAt: lead.updatedAt,
+      lastFollowUpDate: lead.lastFollowUpDate,
+      nextFollowUpDate: lead.nextFollowUpDate,
+      followUpCount: lead.followUpCount,
+      isOverdue: isFollowUpOverdue(lead.nextFollowUpDate, lead.status),
     }));
 
     return NextResponse.json({
