@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
+import { leadStatusLabel } from '@/lib/leadStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,11 +29,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.lead.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Lead not found' }, { status: 404 });
 
-    const statusChangedToConfirmed = body.status === 'CONFIRMED' && existing.status !== 'CONFIRMED';
+    const statusChanged = !!body.status && body.status !== existing.status;
+
+    const session = await getServerSession(authOptions);
+    const performedById = session?.user ? parseInt((session.user as any).id, 10) : null;
 
     let countryFields: Awaited<ReturnType<typeof resolveLeadCountryFields>> | null = null;
     if (body.countryId !== undefined) {
-      const session = await getServerSession(authOptions);
       const isAdmin = (session?.user as any)?.role === 'ADMIN';
       try {
         countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { isAdmin, overrideCurrencyCode: body.currencyCode });
@@ -65,12 +68,20 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       },
     });
 
-    if (statusChangedToConfirmed) {
+    // Log every status transition (not just ->Converted) so the activity
+    // timeline is a complete status-change history, not a partial one.
+    // 'LEAD_CONFIRMED' is kept as its own type for the Converted transition
+    // specifically since it has its own icon/meaning; every other
+    // transition gets a generic 'STATUS_CHANGED' entry.
+    if (statusChanged) {
       await prisma.leadActivity.create({
         data: {
           leadId: id,
-          activityType: 'LEAD_CONFIRMED',
-          description: `Lead confirmed: ${lead.companyName}`,
+          activityType: lead.status === 'CONFIRMED' ? 'LEAD_CONFIRMED' : 'STATUS_CHANGED',
+          description: lead.status === 'CONFIRMED'
+            ? `Lead confirmed: ${lead.companyName}`
+            : `Status changed from ${leadStatusLabel(existing.status)} to ${leadStatusLabel(lead.status)}`,
+          performedById: Number.isFinite(performedById) ? performedById : null,
         },
       });
     }
