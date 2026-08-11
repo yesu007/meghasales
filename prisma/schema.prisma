@@ -136,6 +136,7 @@ model Lead {
   invoices        Invoice[]
   creditNotes     CreditNote[]
   events          Event[]
+  documents       EventDocument[]
 
   @@map("leads")
 }
@@ -243,6 +244,11 @@ model EventDocument {
   id           Int      @id @default(autoincrement())
   eventId      Int?     @map("event_id")
   discussionId Int?     @map("discussion_id")
+  // Lead-level document — no Event required. Exactly one of eventId/
+  // discussionId/leadId is expected to be set (enforced in application
+  // code, not a DB constraint, matching how eventId/discussionId already
+  // coexist here).
+  leadId       Int?     @map("lead_id")
   fileName     String   @map("file_name") // kept in sync with latest version
   description  String?
   mimeType     String?  @map("mime_type")
@@ -252,11 +258,13 @@ model EventDocument {
 
   event      Event?                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
   discussion EventDiscussion?       @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  lead       Lead?                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
   uploadedBy User?                  @relation("EventDocumentUploadedBy", fields: [uploadedById], references: [id])
   versions   EventDocumentVersion[]
 
   @@index([eventId])
   @@index([discussionId])
+  @@index([leadId])
   @@map("event_documents")
 }
 

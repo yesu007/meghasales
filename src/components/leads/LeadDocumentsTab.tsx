@@ -20,6 +20,7 @@ interface DocVersion {
 interface LeadDocumentRecord {
   id: number;
   eventId: number | null;
+  leadId: number | null;
   fileName: string;
   description: string | null;
   mimeType: string | null;
@@ -74,15 +75,14 @@ export default function LeadDocumentsTab({ leadId, canManage }: LeadDocumentsTab
     queryFn: () => fetchEvents(leadId),
   });
 
-  const expandedDoc = documents.find((d) => d.id === expandedId) || null;
   const { data: historyDoc } = useQuery({
     queryKey: ['document-detail', leadId, expandedId],
     queryFn: async () => {
-      const res = await fetch(`/api/leads/${leadId}/events/${expandedDoc!.eventId}/documents/${expandedId}`);
+      const res = await fetch(`/api/leads/${leadId}/documents/${expandedId}`);
       if (!res.ok) throw new Error('Failed to load version history');
       return res.json() as Promise<{ versions: DocVersion[] }>;
     },
-    enabled: expandedId !== null && !!expandedDoc?.eventId,
+    enabled: expandedId !== null,
   });
 
   const invalidateAll = () => {
@@ -93,10 +93,12 @@ export default function LeadDocumentsTab({ leadId, canManage }: LeadDocumentsTab
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
-      if (!uploadEventId) throw new Error('Choose which event this document belongs to');
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch(`/api/leads/${leadId}/events/${uploadEventId}/documents`, { method: 'POST', body: fd });
+      // With an event picked, attach to it (shows up on that event's card
+      // too); otherwise upload straight to the lead — no event required.
+      const url = uploadEventId ? `/api/leads/${leadId}/events/${uploadEventId}/documents` : `/api/leads/${leadId}/documents`;
+      const res = await fetch(url, { method: 'POST', body: fd });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.message || 'Upload failed');
@@ -108,10 +110,10 @@ export default function LeadDocumentsTab({ leadId, canManage }: LeadDocumentsTab
   });
 
   const replaceMutation = useMutation({
-    mutationFn: async ({ eventId, documentId, file }: { eventId: number; documentId: number; file: File }) => {
+    mutationFn: async ({ documentId, file }: { documentId: number; file: File }) => {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch(`/api/leads/${leadId}/events/${eventId}/documents/${documentId}/versions`, { method: 'POST', body: fd });
+      const res = await fetch(`/api/leads/${leadId}/documents/${documentId}/versions`, { method: 'POST', body: fd });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.message || 'Failed to upload new version');
@@ -123,8 +125,8 @@ export default function LeadDocumentsTab({ leadId, canManage }: LeadDocumentsTab
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async ({ eventId, documentId }: { eventId: number; documentId: number }) => {
-      const res = await fetch(`/api/leads/${leadId}/events/${eventId}/documents/${documentId}`, { method: 'DELETE' });
+    mutationFn: async (documentId: number) => {
+      const res = await fetch(`/api/leads/${leadId}/documents/${documentId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete document');
     },
     onSuccess: () => { invalidateAll(); toast.success('Document deleted'); },
@@ -138,10 +140,10 @@ export default function LeadDocumentsTab({ leadId, canManage }: LeadDocumentsTab
         {canManage && (
           <div className="flex items-center gap-2">
             <select value={uploadEventId} onChange={(e) => setUploadEventId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-              <option value="">Select event...</option>
+              <option value="">No event (general document)</option>
               {events.map((ev) => <option key={ev.id} value={ev.id}>{ev.title}</option>)}
             </select>
-            <DocumentUpload label="Upload Document" onFileSelected={(file) => uploadMutation.mutate(file)} disabled={uploadMutation.isPending || !uploadEventId} />
+            <DocumentUpload label="Upload Document" onFileSelected={(file) => uploadMutation.mutate(file)} disabled={uploadMutation.isPending} />
           </div>
         )}
       </div>
@@ -152,7 +154,7 @@ export default function LeadDocumentsTab({ leadId, canManage }: LeadDocumentsTab
         <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
           <FolderOpenIcon className="h-12 w-12 mx-auto text-slate-300" />
           <p className="mt-4 text-slate-600 font-medium">No documents uploaded yet</p>
-          {canManage && events.length === 0 && <p className="text-sm text-slate-400 mt-1">Create an event first, then you can attach documents to it</p>}
+          {canManage && <p className="text-sm text-slate-400 mt-1">Upload one directly, or attach it to a specific event</p>}
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 divide-y divide-slate-100">
@@ -189,18 +191,18 @@ export default function LeadDocumentsTab({ leadId, canManage }: LeadDocumentsTab
                         {expanded ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
                       </button>
                     )}
-                    {canManage && doc.eventId && (
+                    {canManage && (
                       <label className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 cursor-pointer" title="Replace with newer version">
                         <ArrowUpTrayIcon className="h-4 w-4" />
                         <input type="file" className="hidden" onChange={(e) => {
                           const file = e.target.files?.[0];
                           e.target.value = '';
-                          if (file) replaceMutation.mutate({ eventId: doc.eventId!, documentId: doc.id, file });
+                          if (file) replaceMutation.mutate({ documentId: doc.id, file });
                         }} accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,image/*" />
                       </label>
                     )}
-                    {canManage && doc.eventId && (
-                      <button onClick={() => { if (window.confirm(`Delete "${doc.fileName}"?`)) deleteMutation.mutate({ eventId: doc.eventId!, documentId: doc.id }); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                    {canManage && (
+                      <button onClick={() => { if (window.confirm(`Delete "${doc.fileName}"?`)) deleteMutation.mutate(doc.id); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
                         <TrashIcon className="h-4 w-4" />
                       </button>
                     )}
