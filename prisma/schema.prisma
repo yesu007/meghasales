@@ -87,6 +87,7 @@ model User {
   reminderFollowUps    PaymentReminder[] @relation("ReminderFollowedUpBy")
   issuedCreditNotes    CreditNote[]      @relation("CreditNoteIssuedBy")
   createdExchangeRates ExchangeRate[]    @relation("ExchangeRateCreatedBy")
+  recordedExpenses     Expense[]         @relation("ExpenseRecordedBy")
 
   @@map("users")
 }
@@ -1141,6 +1142,57 @@ model CreditNote {
 
   @@index([leadId])
   @@map("credit_notes")
+}
+
+// The mirror-image ledger of Invoice/Payment — money going out instead of
+// coming in. Deliberately simpler than Invoice: a single amount/status per
+// row (no partial-payment accumulation, no approval workflow), since this
+// is company/admin-recorded spend, not an employee claim needing sign-off.
+model ExpenseCategory {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  expenses Expense[]
+
+  @@map("expense_categories")
+}
+
+model Expense {
+  id              Int       @id @default(autoincrement())
+  expenseNumber   String    @unique @map("expense_number")
+  categoryId      Int       @map("category_id")
+  vendor          String?
+  expenseDate     DateTime  @map("expense_date")
+  amount          Decimal   @db.Decimal(14, 2)
+  currencyCode    String    @default("INR") @map("currency_code")
+  // Snapshot of the rate to the base currency at record time — same
+  // auditability reasoning as Payment.exchangeRate: never recompute
+  // historical expenses against today's rate.
+  exchangeRate    Decimal   @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  paymentMethod   String    @map("payment_method") // CASH | BANK_TRANSFER | CHEQUE | CARD | UPI | OTHER
+  status          String    @default("PENDING") // PENDING | PAID
+  paidDate        DateTime? @map("paid_date")
+  referenceNumber String?   @map("reference_number") // vendor's bill/receipt number
+  attachmentUrl   String?   @map("attachment_url")
+  attachmentName  String?   @map("attachment_name")
+  notes           String?
+  recordedById    Int?      @map("recorded_by")
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  category   ExpenseCategory @relation(fields: [categoryId], references: [id])
+  recordedBy User?           @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([expenseDate])
+  @@map("expenses")
 }
 
 // ============================================================

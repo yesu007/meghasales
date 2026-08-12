@@ -20,6 +20,7 @@ import {
   CurrencyRupeeIcon,
   WalletIcon,
   CalendarDaysIcon,
+  ReceiptPercentIcon,
   ChevronDownIcon,
   Bars3Icon,
   XMarkIcon,
@@ -66,6 +67,7 @@ function getNavSections(canViewPayroll: boolean) {
             { href: '/dashboard/accounting/reports', label: 'Reports' },
           ],
         },
+        { href: '/dashboard/expenses', label: 'Expenses', icon: ReceiptPercentIcon },
         // Admin section — gated by the flag AND view_payroll, since
         // Employees/Salary Structures/Runs expose everyone's salary data,
         // not just the viewer's own.
