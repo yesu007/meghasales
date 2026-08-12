@@ -654,9 +654,94 @@ model Employee {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  salaryAssignments  SalaryStructureAssignment[]
 
   @@map("employees")
+}
+
+// Payroll Phase 1 — a named, reusable pay-slip line item (Basic, HRA,
+// Employer PF, ...). `code` is the stable programmatic handle Phase 2's
+// run engine will look up ("find the BASIC component's resolved value on
+// this structure") rather than matching on the free-text `name`, which is
+// editable and not guaranteed unique in spirit even though the DB enforces
+// it. isStatutory marks components a payroll admin can edit the value of
+// but shouldn't be able to delete (PF/ESI/PT) — enforced in the API layer,
+// not the schema.
+model SalaryComponent {
+  id              Int      @id @default(autoincrement())
+  name            String
+  code            String   @unique
+  type            String // EARNING | DEDUCTION
+  calculationType String   @default("FLAT") @map("calculation_type") // FLAT | PERCENT_OF_BASIC
+  isStatutory     Boolean  @default(false) @map("is_statutory")
+  isActive        Boolean  @default(true) @map("is_active")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  structureComponents SalaryStructureComponent[]
+
+  @@map("salary_components")
+}
+
+// A named, reusable CTC template ("Standard L1") — built once, assigned to
+// many employees via SalaryStructureAssignment below.
+model SalaryStructure {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  components  SalaryStructureComponent[]
+  assignments SalaryStructureAssignment[]
+
+  @@map("salary_structures")
+}
+
+// One row per component included in a structure. `value` is either a flat
+// rupee amount or a percent-of-basic figure, per the component's own
+// calculationType — this table doesn't duplicate that flag, it just holds
+// the number the structure uses for it.
+model SalaryStructureComponent {
+  id          Int     @id @default(autoincrement())
+  structureId Int     @map("structure_id")
+  componentId Int     @map("component_id")
+  value       Decimal @db.Decimal(12, 2)
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  structure SalaryStructure @relation(fields: [structureId], references: [id], onDelete: Cascade)
+  component SalaryComponent @relation(fields: [componentId], references: [id])
+
+  @@unique([structureId, componentId])
+  @@map("salary_structure_components")
+}
+
+// Links an Employee to a SalaryStructure with a CTC and an effective-date
+// range — an increment adds a new row (closing the previous one's
+// effectiveTo) instead of overwriting history, the same way ExchangeRate
+// keeps a full rate history rather than a single mutable current value.
+// `version` is the same optimistic-lock convention AdminTicket uses on
+// updates that must not silently clobber a concurrent edit.
+model SalaryStructureAssignment {
+  id            Int       @id @default(autoincrement())
+  employeeId    Int       @map("employee_id")
+  structureId   Int       @map("structure_id")
+  ctcAnnual     Decimal   @db.Decimal(14, 2) @map("ctc_annual")
+  effectiveFrom DateTime  @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  createdById   Int?      @map("created_by")
+  version       Int       @default(1)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  employee  Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  structure SalaryStructure @relation(fields: [structureId], references: [id])
+
+  @@index([employeeId, effectiveFrom])
+  @@map("salary_structure_assignments")
 }
 
 model StatusMaster {

@@ -46,10 +46,15 @@ const NAV_ITEMS = [
   ...(isAdminTicketModuleEnabled()
     ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon }]
     : []),
-  // Phase 0 of the payroll plan — flag defaults off, so this stays invisible
-  // until there's an actual /dashboard/payroll page to link to (Phase 1).
+  // Phase 1 of the payroll plan — flag still defaults off in production.
   ...(isPayrollModuleEnabled()
-    ? [{ href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon }]
+    ? [{
+        href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon,
+        children: [
+          { href: '/dashboard/payroll', label: 'Employees' },
+          { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
+        ],
+      }]
     : []),
   { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
   { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
