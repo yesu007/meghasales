@@ -438,21 +438,21 @@ export default function QuotationsPage() {
           <div className="text-center py-16"><CalculatorIcon className="h-12 w-12 mx-auto text-slate-300" /><p className="mt-4 text-lg font-medium text-slate-600">No quotations yet</p><p className="text-sm text-slate-400">Create your first quotation</p></div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b"><tr>
-              <th className="px-4 py-3 text-left font-semibold text-slate-700">Quote No</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-700">Client</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-700">Modules</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-700">Amount</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-700">Date</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-700">Actions</th>
+            <thead className="bg-slate-900"><tr>
+              <th className="px-4 py-3 text-left font-semibold text-white">Quote No</th>
+              <th className="px-4 py-3 text-left font-semibold text-white">Client</th>
+              <th className="px-4 py-3 text-left font-semibold text-white">Modules</th>
+              <th className="px-4 py-3 text-right font-semibold text-white">Amount</th>
+              <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
+              <th className="px-4 py-3 text-left font-semibold text-white">Date</th>
+              <th className="px-4 py-3 text-left font-semibold text-white">Actions</th>
             </tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {quotations.map((q: any) => {
+            <tbody>
+              {quotations.map((q: any, idx: number) => {
                 const modulesList = Array.isArray(q.softwareModules) ? q.softwareModules : [];
                 const moduleNames = modulesList.map((m: any) => typeof m === 'string' ? m : m.name || m.moduleCode || '');
                 return (
-                <tr key={q.id} className="hover:bg-slate-50">
+                <tr key={q.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                   <td className="px-4 py-3 font-medium text-slate-800">{q.quotationNumber}</td>
                   <td className="px-4 py-3"><p className="font-medium text-slate-800">{q.contactPerson}</p><p className="text-xs text-slate-500">{q.companyName}</p></td>
                   <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{moduleNames.slice(0, 3).map((m: string, i: number) => <span key={i} className={`px-2 py-0.5 rounded text-xs font-medium ${MODULE_COLORS[m] || 'bg-orange-100 text-orange-700'}`}>{m.charAt(0).toUpperCase() + m.slice(1).toLowerCase()}</span>)}{moduleNames.length > 3 && <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">+{moduleNames.length - 3}</span>}</div></td>

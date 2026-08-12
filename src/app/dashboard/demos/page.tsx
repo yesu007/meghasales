@@ -120,7 +120,7 @@ export default function DemosPage() {
   const [sortBy, setSortBy] = useState('scheduledDate');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
-  const size = 10;
+  const [size, setSize] = useState(10);
 
   // Debounce search
   useEffect(() => {
@@ -260,6 +260,15 @@ export default function DemosPage() {
     return sortDir === 'asc' ? <ChevronUpIcon className="h-3 w-3 text-amber-600" /> : <ChevronDownIcon className="h-3 w-3 text-amber-600" />;
   };
 
+  // Page numbers with ellipsis, e.g. 1 2 3 4 … 10
+  const getPageNumbers = (current: number, total: number): (number | 'ellipsis')[] => {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+    if (current <= 3) return [0, 1, 2, 3, 'ellipsis', total - 1];
+    if (current >= total - 4) return [0, 'ellipsis', total - 4, total - 3, total - 2, total - 1];
+    return [0, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total - 1];
+  };
+  const pageNumbers = getPageNumbers(page, totalPages || 1);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -352,34 +361,34 @@ export default function DemosPage() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
+                <thead className="bg-slate-900">
                   <tr>
                     <th className="px-4 py-3 text-left">
-                      <button onClick={() => handleSort('createdAt')} className="flex items-center gap-1 font-semibold text-slate-700">
+                      <button onClick={() => handleSort('createdAt')} className="flex items-center gap-1 font-semibold text-white">
                         Company <SortIcon col="createdAt" />
                       </button>
                     </th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Contact</th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Type</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Contact</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Type</th>
                     <th className="px-4 py-3 text-left">
-                      <button onClick={() => handleSort('scheduledDate')} className="flex items-center gap-1 font-semibold text-slate-700">
+                      <button onClick={() => handleSort('scheduledDate')} className="flex items-center gap-1 font-semibold text-white">
                         Scheduled <SortIcon col="scheduledDate" />
                       </button>
                     </th>
                     <th className="px-4 py-3 text-left">
-                      <button onClick={() => handleSort('status')} className="flex items-center gap-1 font-semibold text-slate-700">
+                      <button onClick={() => handleSort('status')} className="flex items-center gap-1 font-semibold text-white">
                         Status <SortIcon col="status" />
                       </button>
                     </th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden lg:table-cell">Assigned To</th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden xl:table-cell">Interest</th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden xl:table-cell">Next Action</th>
-                    <th className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Assigned To</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden xl:table-cell">Interest</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden xl:table-cell">Next Action</th>
+                    <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {demos.map((demo) => (
-                    <tr key={demo.id} className="hover:bg-slate-50 transition-colors">
+                <tbody>
+                  {demos.map((demo, idx) => (
+                    <tr key={demo.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                       <td className="px-4 py-3 font-medium text-slate-800">{demo.companyName}</td>
                       <td className="px-4 py-3 text-slate-600">{demo.contactPerson}</td>
                       <td className="px-4 py-3">
@@ -462,19 +471,47 @@ export default function DemosPage() {
                 </tbody>
               </table>
             </div>
-            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
-              <p className="text-sm text-slate-500">
-                Showing {page * size + 1}–{Math.min((page + 1) * size, totalElements)} of {totalElements}
-              </p>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40">
-                  <ChevronLeftIcon className="h-4 w-4 text-slate-600" />
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Rows per page</span>
+                <select
+                  value={size}
+                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
+                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
+                >
+                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  <ChevronLeftIcon className="h-4 w-4" /> Previous
                 </button>
-                <span className="text-sm font-medium text-slate-700">{page + 1} / {totalPages || 1}</span>
-                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40">
-                  <ChevronRightIcon className="h-4 w-4 text-slate-600" />
+                {pageNumbers.map((p, i) =>
+                  p === 'ellipsis' ? (
+                    <span key={`ellipsis-${i}`} className="px-2 text-sm text-slate-400">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === page ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                    >
+                      {p + 1}
+                    </button>
+                  )
+                )}
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  Next <ChevronRightIcon className="h-4 w-4" />
                 </button>
               </div>
+              <p className="text-sm text-slate-500">Showing {page * size + 1}–{Math.min((page + 1) * size, totalElements)} of {totalElements}</p>
             </div>
           </>
         )}

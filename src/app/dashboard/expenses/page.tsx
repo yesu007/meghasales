@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
@@ -28,6 +28,14 @@ interface ExpenseRow {
 }
 interface ExpenseListResponse { content: ExpenseRow[]; page: number; totalPages: number; totalElements: number }
 
+// Page numbers with ellipsis, e.g. 1 2 3 4 … 10
+function getPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+  if (current <= 3) return [0, 1, 2, 3, 'ellipsis', total - 1];
+  if (current >= total - 4) return [0, 'ellipsis', total - 4, total - 3, total - 2, total - 1];
+  return [0, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total - 1];
+}
+
 const STATUS_COLORS: Record<string, string> = {
   PENDING: 'bg-amber-100 text-amber-700',
   PAID: 'bg-green-100 text-green-700',
@@ -35,8 +43,8 @@ const STATUS_COLORS: Record<string, string> = {
 const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'UPI', 'OTHER'];
 const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
 
-async function fetchExpenses(status: string, page: number): Promise<ExpenseListResponse> {
-  const params = new URLSearchParams({ page: String(page), size: '15' });
+async function fetchExpenses(status: string, page: number, size: number): Promise<ExpenseListResponse> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (status) params.set('status', status);
   const res = await fetch(`/api/expenses?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch expenses');
@@ -62,13 +70,14 @@ export default function ExpensesPage() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(0);
+  const [size, setSize] = useState(10);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(blankForm);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
 
-  const { data, isLoading } = useQuery({ queryKey: ['expenses', statusFilter, page], queryFn: () => fetchExpenses(statusFilter, page) });
+  const { data, isLoading } = useQuery({ queryKey: ['expenses', statusFilter, page, size], queryFn: () => fetchExpenses(statusFilter, page, size) });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
 
@@ -134,6 +143,9 @@ export default function ExpensesPage() {
   });
 
   const expenses = data?.content || [];
+  const totalElements = data?.totalElements || 0;
+  const totalPages = data?.totalPages || 0;
+  const pageNumbers = getPageNumbers(page, totalPages || 1);
 
   return (
     <div className="space-y-4">
@@ -248,19 +260,19 @@ export default function ExpensesPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
+              <thead className="bg-slate-900">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Expense</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Category</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Date</th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-700">Amount</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Expense</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Date</th>
+                  <th className="px-4 py-3 text-right font-semibold text-white">Amount</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {expenses.map((e) => (
-                  <tr key={e.id} className="hover:bg-slate-50">
+              <tbody>
+                {expenses.map((e, idx) => (
+                  <tr key={e.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800">{e.expenseNumber}</p>
                       <p className="text-xs text-slate-400">{e.vendor || 'No vendor'}{e.referenceNumber ? ` · ${e.referenceNumber}` : ''}</p>
@@ -290,13 +302,48 @@ export default function ExpensesPage() {
           </div>
         )}
 
-        {data && data.totalPages > 1 && (
-          <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-between text-sm text-slate-500">
-            <span>Page {data.page + 1} of {data.totalPages} · {data.totalElements} total</span>
-            <div className="flex gap-2">
-              <button disabled={page === 0} onClick={() => setPage((p) => p - 1)} className="px-3 py-1 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">Prev</button>
-              <button disabled={page + 1 >= data.totalPages} onClick={() => setPage((p) => p + 1)} className="px-3 py-1 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">Next</button>
+        {expenses.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <span>Rows per page</span>
+              <select
+                value={size}
+                onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
+                className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
+              >
+                {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
             </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <ChevronLeftIcon className="h-4 w-4" /> Previous
+              </button>
+              {pageNumbers.map((p, i) =>
+                p === 'ellipsis' ? (
+                  <span key={`ellipsis-${i}`} className="px-2 text-sm text-slate-400">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === page ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                  >
+                    {p + 1}
+                  </button>
+                )
+              )}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                Next <ChevronRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-500">Showing {page * size + 1}–{Math.min((page + 1) * size, totalElements)} of {totalElements}</p>
           </div>
         )}
       </div>

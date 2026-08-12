@@ -74,7 +74,7 @@ export default function AuditLogPage() {
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(0);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const size = 20;
+  const [size, setSize] = useState(10);
 
   useEffect(() => {
     const t = setTimeout(() => { setSearch(searchInput); setPage(0); }, 400);
@@ -113,6 +113,15 @@ export default function AuditLogPage() {
   const totalPages = data?.totalPages || 0;
   const stats = data?.stats || { total: 0, create: 0, update: 0, delete: 0 };
   const activeFilters = [entityTypeFilter, actionFilter, userFilter, dateFrom, dateTo].filter(Boolean).length;
+
+  // Page numbers with ellipsis, e.g. 1 2 3 4 … 10
+  const getPageNumbers = (current: number, total: number): (number | 'ellipsis')[] => {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+    if (current <= 3) return [0, 1, 2, 3, 'ellipsis', total - 1];
+    if (current >= total - 4) return [0, 'ellipsis', total - 4, total - 3, total - 2, total - 1];
+    return [0, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total - 1];
+  };
+  const pageNumbers = getPageNumbers(page, totalPages || 1);
 
   const clearFilters = () => {
     setSearchInput(''); setSearch(''); setEntityTypeFilter(''); setActionFilter(''); setUserFilter('');
@@ -226,20 +235,20 @@ export default function AuditLogPage() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
+                <thead className="bg-slate-900">
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Timestamp</th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700">User</th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Action</th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Entity</th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Description</th>
-                    <th className="px-4 py-3 text-right font-semibold text-slate-700">Details</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Timestamp</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">User</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Action</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Entity</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Description</th>
+                    <th className="px-4 py-3 text-right font-semibold text-white">Details</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {logs.map((log) => (
+                <tbody>
+                  {logs.map((log, idx) => (
                     <Fragment key={log.id}>
-                      <tr className="hover:bg-slate-50 transition-colors">
+                      <tr className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                         <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{dayjs(log.createdAt).format('DD MMM YYYY, h:mm:ss A')}</td>
                         <td className="px-4 py-3 text-slate-700">{log.userName || 'System'}</td>
                         <td className="px-4 py-3">
@@ -286,19 +295,47 @@ export default function AuditLogPage() {
                 </tbody>
               </table>
             </div>
-            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
-              <p className="text-sm text-slate-500">
-                Showing {page * size + 1}–{Math.min((page + 1) * size, totalElements)} of {totalElements}
-              </p>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40">
-                  <ChevronLeftIcon className="h-4 w-4 text-slate-600" />
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Rows per page</span>
+                <select
+                  value={size}
+                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
+                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
+                >
+                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  <ChevronLeftIcon className="h-4 w-4" /> Previous
                 </button>
-                <span className="text-sm font-medium text-slate-700">{page + 1} / {totalPages || 1}</span>
-                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40">
-                  <ChevronRightIcon className="h-4 w-4 text-slate-600" />
+                {pageNumbers.map((p, i) =>
+                  p === 'ellipsis' ? (
+                    <span key={`ellipsis-${i}`} className="px-2 text-sm text-slate-400">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === page ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                    >
+                      {p + 1}
+                    </button>
+                  )
+                )}
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  Next <ChevronRightIcon className="h-4 w-4" />
                 </button>
               </div>
+              <p className="text-sm text-slate-500">Showing {page * size + 1}–{Math.min((page + 1) * size, totalElements)} of {totalElements}</p>
             </div>
           </>
         )}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
@@ -124,10 +124,24 @@ export default function LoansPage() {
         ) : loans.length === 0 ? (
           <p className="text-center py-16 text-slate-400">No loans yet</p>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {loans.map((loan) => (
-              <LoanRowView key={loan.id} loan={loan} draftRuns={draftRuns} expanded={expandedId === loan.id} onToggle={() => setExpandedId((id) => (id === loan.id ? null : loan.id))} />
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-900">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Employee</th>
+                  <th className="px-4 py-3 text-right font-semibold text-white">Principal</th>
+                  <th className="px-4 py-3 text-right font-semibold text-white">Monthly Installment</th>
+                  <th className="px-4 py-3 text-right font-semibold text-white">Outstanding</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loans.map((loan, idx) => (
+                  <LoanRowView key={loan.id} loan={loan} draftRuns={draftRuns} expanded={expandedId === loan.id} onToggle={() => setExpandedId((id) => (id === loan.id ? null : loan.id))} idx={idx} />
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -135,7 +149,7 @@ export default function LoansPage() {
   );
 }
 
-function LoanRowView({ loan, draftRuns, expanded, onToggle }: { loan: LoanRow; draftRuns: RunOption[]; expanded: boolean; onToggle: () => void }) {
+function LoanRowView({ loan, draftRuns, expanded, onToggle, idx }: { loan: LoanRow; draftRuns: RunOption[]; expanded: boolean; onToggle: () => void; idx: number }) {
   const queryClient = useQueryClient();
   const { data: detail } = useQuery({ queryKey: ['loan', loan.id], queryFn: () => fetchLoanDetail(loan.id), enabled: expanded });
 
@@ -153,54 +167,61 @@ function LoanRowView({ loan, draftRuns, expanded, onToggle }: { loan: LoanRow; d
   });
 
   return (
-    <div className="py-3 px-4">
-      <button onClick={onToggle} className="w-full flex items-center justify-between text-left">
-        <div>
+    <Fragment>
+      <tr
+        onClick={onToggle}
+        className={`cursor-pointer ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}
+      >
+        <td className="px-4 py-3">
           <p className="font-medium text-slate-800">{loan.employee.firstName} {loan.employee.lastName} <span className="text-xs text-slate-400 font-normal">({loan.employee.employeeCode})</span></p>
-          <p className="text-xs text-slate-400">₹{Number(loan.principal).toLocaleString('en-IN')} principal · ₹{Number(loan.monthlyInstallment).toLocaleString('en-IN')}/mo · {loan.reason || 'No reason given'}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-slate-600">₹{Number(loan.outstandingBalance).toLocaleString('en-IN')} outstanding</span>
-          <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[loan.status]}`}>{loan.status}</span>
-          {expanded ? <ChevronUpIcon className="h-4 w-4 text-slate-400" /> : <ChevronDownIcon className="h-4 w-4 text-slate-400" />}
-        </div>
-      </button>
+          <p className="text-xs text-slate-400">{loan.reason || 'No reason given'}</p>
+        </td>
+        <td className="px-4 py-3 text-right text-slate-600">₹{Number(loan.principal).toLocaleString('en-IN')}</td>
+        <td className="px-4 py-3 text-right text-slate-600">₹{Number(loan.monthlyInstallment).toLocaleString('en-IN')}</td>
+        <td className="px-4 py-3 text-right text-slate-700">₹{Number(loan.outstandingBalance).toLocaleString('en-IN')}</td>
+        <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[loan.status]}`}>{loan.status}</span></td>
+        <td className="px-4 py-3 text-right">{expanded ? <ChevronUpIcon className="h-4 w-4 text-slate-400 inline-block" /> : <ChevronDownIcon className="h-4 w-4 text-slate-400 inline-block" />}</td>
+      </tr>
       {expanded && (
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs font-medium text-slate-500 uppercase mb-2">Repayment History</p>
-            {detail?.repayments.length ? (
-              <table className="w-full text-sm">
-                <tbody className="divide-y divide-slate-100">
-                  {detail.repayments.map((r) => (
-                    <tr key={r.id}>
-                      <td className="py-1.5 text-slate-600">Run #{r.runId}</td>
-                      <td className="py-1.5 text-right text-slate-700">₹{Number(r.amount).toLocaleString('en-IN')}</td>
-                      <td className="py-1.5 text-right"><span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${r.status === 'APPLIED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{r.status}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : <p className="text-sm text-slate-400">No installments applied yet</p>}
-          </div>
-          {loan.status === 'ACTIVE' && (
-            <div>
-              <p className="text-xs font-medium text-slate-500 uppercase mb-2">Apply Installment to a Draft Run</p>
-              <div className="flex gap-2">
-                <select value={runId} onChange={(e) => setRunId(e.target.value)} className={inputCls}>
-                  <option value="">Select run</option>
-                  {draftRuns.map((r) => <option key={r.id} value={r.id}>{MONTH_NAMES[r.payPeriodMonth - 1]} {r.payPeriodYear}</option>)}
-                </select>
-                <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className={`${inputCls} max-w-[120px]`} />
+        <tr className="bg-slate-50">
+          <td colSpan={6} className="px-4 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs font-medium text-slate-500 uppercase mb-2">Repayment History</p>
+                {detail?.repayments.length ? (
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-slate-100">
+                      {detail.repayments.map((r) => (
+                        <tr key={r.id}>
+                          <td className="py-1.5 text-slate-600">Run #{r.runId}</td>
+                          <td className="py-1.5 text-right text-slate-700">₹{Number(r.amount).toLocaleString('en-IN')}</td>
+                          <td className="py-1.5 text-right"><span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${r.status === 'APPLIED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{r.status}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : <p className="text-sm text-slate-400">No installments applied yet</p>}
               </div>
-              <button onClick={() => runId && apply.mutate()} disabled={!runId || apply.isPending} className="mt-2 px-3 py-1.5 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-900 disabled:opacity-50">
-                {apply.isPending ? 'Applying...' : 'Apply'}
-              </button>
-              {draftRuns.length === 0 && <p className="text-xs text-slate-400 mt-1">No draft runs available right now.</p>}
+              {loan.status === 'ACTIVE' && (
+                <div>
+                  <p className="text-xs font-medium text-slate-500 uppercase mb-2">Apply Installment to a Draft Run</p>
+                  <div className="flex gap-2">
+                    <select value={runId} onChange={(e) => setRunId(e.target.value)} className={inputCls}>
+                      <option value="">Select run</option>
+                      {draftRuns.map((r) => <option key={r.id} value={r.id}>{MONTH_NAMES[r.payPeriodMonth - 1]} {r.payPeriodYear}</option>)}
+                    </select>
+                    <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className={`${inputCls} max-w-[120px]`} />
+                  </div>
+                  <button onClick={() => runId && apply.mutate()} disabled={!runId || apply.isPending} className="mt-2 px-3 py-1.5 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-900 disabled:opacity-50">
+                    {apply.isPending ? 'Applying...' : 'Apply'}
+                  </button>
+                  {draftRuns.length === 0 && <p className="text-xs text-slate-400 mt-1">No draft runs available right now.</p>}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </td>
+        </tr>
       )}
-    </div>
+    </Fragment>
   );
 }

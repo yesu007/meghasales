@@ -113,19 +113,19 @@ export default function LeaveApprovalsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
+              <thead className="bg-slate-900">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Employee</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Type</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Dates</th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-700">Days</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Employee</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Type</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Dates</th>
+                  <th className="px-4 py-3 text-right font-semibold text-white">Days</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {requests.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50">
+              <tbody>
+                {requests.map((r, idx) => (
+                  <tr key={r.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800">{r.employee.firstName} {r.employee.lastName}</p>
                       <p className="text-xs text-slate-400">{r.employee.employeeCode}{r.reason ? ` · ${r.reason}` : ''}</p>

@@ -553,24 +553,24 @@ export default function AdminTicketListPage() {
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
+              <thead className="bg-slate-900">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Ticket</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Category</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden md:table-cell">Assigned To</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden lg:table-cell">Due Date</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden xl:table-cell">Created</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Priority</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Ticket</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Assigned To</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Due Date</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white hidden xl:table-cell">Created</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Priority</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {tickets.map((t: any) => {
+              <tbody>
+                {tickets.map((t: any, idx: number) => {
                   const availableStatuses = (STATUSES as readonly TicketStatus[]).filter(
                     (s) => s === t.status || isValidStatusTransition(t.status, s)
                   );
                   return (
-                    <tr key={t.id} className="hover:bg-slate-50">
+                    <tr key={t.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                       <td className="px-4 py-3">
                         <Link href={`/dashboard/admin-ticket/${t.id}`} className="font-medium text-slate-800 hover:text-amber-600">
                           {t.ticketNo}
