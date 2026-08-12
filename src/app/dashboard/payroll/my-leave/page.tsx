@@ -14,6 +14,7 @@ interface MyRequest {
   days: string;
   reason: string | null;
   status: string;
+  decisionNote: string | null;
   leaveType: { name: string; isPaid: boolean };
 }
 
@@ -146,7 +147,10 @@ export default function MyLeavePage() {
                     <td className="px-4 py-3 text-slate-700">{r.leaveType.name}</td>
                     <td className="px-4 py-3 text-slate-600">{dayjs(r.startDate).format('DD MMM')} – {dayjs(r.endDate).format('DD MMM YYYY')}</td>
                     <td className="px-4 py-3 text-right text-slate-700">{r.days}</td>
-                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[r.status]}`}>{r.status}</span></td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[r.status]}`}>{r.status}</span>
+                      {r.decisionNote && <p className="text-xs text-slate-400 mt-1 max-w-[16rem]">{r.decisionNote}</p>}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       {(r.status === 'PENDING' || r.status === 'APPROVED') && (
                         <button onClick={() => cancel.mutate(r.id)} className="text-xs font-medium text-slate-500 hover:text-red-600">Cancel</button>

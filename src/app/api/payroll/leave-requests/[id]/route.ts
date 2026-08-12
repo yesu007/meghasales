@@ -57,12 +57,21 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (toStatus === 'CANCELLED' && !isOwner && !canApprove) {
       return NextResponse.json({ message: 'You can only cancel your own leave requests' }, { status: 403 });
     }
+    // An approver cancelling someone else's request is acting on their
+    // behalf without them having asked to withdraw it — unlike the owner's
+    // own "Cancel" (self-explanatory) or an APPROVED/REJECTED decision
+    // (decisionNote is offered but optional there), this one requires a
+    // reason so the employee isn't just told their approved leave vanished.
+    const isApproverCancellingOnBehalf = toStatus === 'CANCELLED' && canApprove && !isOwner;
+    if (isApproverCancellingOnBehalf && !body.decisionNote) {
+      return NextResponse.json({ message: 'A reason is required when cancelling a leave request on behalf of an employee' }, { status: 400 });
+    }
 
     const data: Record<string, unknown> = { status: toStatus, version: { increment: 1 } };
-    if (APPROVER_ONLY_STATUSES.includes(toStatus)) {
+    if (body.decisionNote) data.decisionNote = body.decisionNote;
+    if (APPROVER_ONLY_STATUSES.includes(toStatus) || isApproverCancellingOnBehalf) {
       data.approvedById = performedById;
       data.approvedAt = new Date();
-      if (body.decisionNote) data.decisionNote = body.decisionNote;
     }
 
     const updateResult = await prisma.leaveRequest.updateMany({ where: { id, version: existing.version }, data });

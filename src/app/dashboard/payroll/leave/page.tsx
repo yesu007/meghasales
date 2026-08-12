@@ -22,6 +22,7 @@ interface LeaveRequestRow {
   reason: string | null;
   status: string;
   appliedAt: string;
+  decisionNote: string | null;
   employee: { employeeCode: string; department: string | null; firstName: string; lastName: string };
   leaveType: { name: string; code: string; isPaid: boolean };
   departmentOverlap: { employeeId: number; name: string; status: string }[];
@@ -59,14 +60,25 @@ export default function LeaveApprovalsPage() {
   const { data: leaveTypes = [] } = useQuery({ queryKey: ['leave-types'], queryFn: fetchLeaveTypes });
 
   const decide = useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: 'APPROVED' | 'REJECTED' }) => {
-      const res = await fetch(`/api/payroll/leave-requests/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    mutationFn: async ({ id, status, decisionNote }: { id: number; status: 'APPROVED' | 'REJECTED' | 'CANCELLED'; decisionNote?: string }) => {
+      const res = await fetch(`/api/payroll/leave-requests/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, decisionNote }) });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to update request'); }
       return res.json();
     },
     onSuccess: (_, { status }) => { queryClient.invalidateQueries({ queryKey: ['leave-requests'] }); toast.success(`Request ${status.toLowerCase()}`); },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  // Cancelling someone else's request needs a reason (enforced server-side
+  // too) — window.prompt matches the app's existing lightweight pattern
+  // for one-off input (window.confirm for deletes) rather than a new modal
+  // component just for this.
+  const cancelOnBehalf = (row: LeaveRequestRow) => {
+    const reason = window.prompt(`Reason for cancelling ${row.employee.firstName} ${row.employee.lastName}'s leave request:`);
+    if (reason == null) return;
+    if (!reason.trim()) { toast.error('A reason is required'); return; }
+    decide.mutate({ id: row.id, status: 'CANCELLED', decisionNote: reason.trim() });
+  };
 
   const createType = useMutation({
     mutationFn: async () => {
@@ -126,14 +138,22 @@ export default function LeaveApprovalsPage() {
                     <td className="px-4 py-3 text-slate-600">{r.leaveType.name}{!r.leaveType.isPaid && <span className="ml-1 text-[10px] uppercase text-red-500">unpaid</span>}</td>
                     <td className="px-4 py-3 text-slate-600">{dayjs(r.startDate).format('DD MMM')} – {dayjs(r.endDate).format('DD MMM YYYY')}</td>
                     <td className="px-4 py-3 text-right text-slate-700">{r.days}</td>
-                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[r.status]}`}>{r.status}</span></td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[r.status]}`}>{r.status}</span>
+                      {r.decisionNote && <p className="text-xs text-slate-400 mt-1 max-w-[16rem]">{r.decisionNote}</p>}
+                    </td>
                     <td className="px-4 py-3 text-right">
-                      {r.status === 'PENDING' && (
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => decide.mutate({ id: r.id, status: 'APPROVED' })} className="text-xs font-medium text-green-700 hover:text-green-800">Approve</button>
-                          <button onClick={() => decide.mutate({ id: r.id, status: 'REJECTED' })} className="text-xs font-medium text-red-600 hover:text-red-700">Reject</button>
-                        </div>
-                      )}
+                      <div className="flex justify-end gap-2">
+                        {r.status === 'PENDING' && (
+                          <>
+                            <button onClick={() => decide.mutate({ id: r.id, status: 'APPROVED' })} className="text-xs font-medium text-green-700 hover:text-green-800">Approve</button>
+                            <button onClick={() => decide.mutate({ id: r.id, status: 'REJECTED' })} className="text-xs font-medium text-red-600 hover:text-red-700">Reject</button>
+                          </>
+                        )}
+                        {(r.status === 'PENDING' || r.status === 'APPROVED') && (
+                          <button onClick={() => cancelOnBehalf(r)} className="text-xs font-medium text-slate-500 hover:text-red-600">Cancel</button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
