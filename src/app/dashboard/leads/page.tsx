@@ -335,24 +335,27 @@ export default function LeadsPage() {
           one row on wider screens instead of stacking as separate mostly-empty
           full-width bands. */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <div>
+        <div>
+          {/* Tabs sit on the same row as the H1 — and are vertically centered
+              against that single line — instead of against the whole
+              two-line title+subtitle block, which threw the alignment off. */}
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Leads</h1>
-            <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Manage and track your leads pipeline</p>
-          </div>
-          <div className="overflow-x-auto">
-            <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
-              {VIEW_TABS.map((t) => (
-                <button
-                  key={t.value}
-                  onClick={() => changeView(t.value)}
-                  className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${view === t.value ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
-                >
-                  {t.label}
-                </button>
-              ))}
+            <div className="overflow-x-auto">
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+                {VIEW_TABS.map((t) => (
+                  <button
+                    key={t.value}
+                    onClick={() => changeView(t.value)}
+                    className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${view === t.value ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
+          <p className="text-slate-500 mt-1 text-sm sm:text-base">Manage and track your leads pipeline</p>
         </div>
         <div className="flex items-center justify-between gap-3 sm:justify-end">
           <button
