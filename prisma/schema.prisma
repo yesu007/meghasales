@@ -69,6 +69,7 @@ model User {
   auditLogs       AuditLog[]
   implementations Implementation[] @relation("ProjectManager")
   notifications   Notification[]
+  pushSubscriptions PushSubscription[]
 
   // Event Management
   createdEvents            Event[]                @relation("EventCreatedBy")
@@ -591,6 +592,26 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+
+// One browser/device subscription per row — a user who opts in on both
+// their phone and laptop gets two rows and a push fanned out to both.
+// endpoint is unique because the browser hands out one per subscription;
+// re-subscribing (e.g. after clearing site data) naturally lands a fresh
+// endpoint rather than colliding with the old one.
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 model StatusMaster {

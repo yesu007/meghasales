@@ -7,6 +7,7 @@ import { ClipboardDocumentCheckIcon, PlusIcon, MagnifyingGlassIcon, FunnelIcon, 
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { STATUSES, PRIORITIES, isValidStatusTransition, TicketStatus, Priority } from '@/lib/adminTicket/constants';
+import PushNotificationToggle from '@/components/PushNotificationToggle';
 
 const STATUS_COLORS: Record<string, string> = {
   OPEN: 'bg-blue-100 text-blue-700',
@@ -465,6 +466,7 @@ export default function AdminTicketListPage() {
           <p className="text-slate-500 mt-1">Office-admin obligations — compliance, renewals, facilities, and ad-hoc tasks</p>
         </div>
         <div className="flex items-center gap-3">
+          <PushNotificationToggle />
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-0.5">
             <button
               onClick={() => setView('list')}

@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const dispatchResult = await dispatchDueReminders();
     console.log(
       `Admin ticket cron: generated ${recurrenceResult.generated} occurrence(s), ` +
-        `dispatched ${dispatchResult.sent} reminder(s), ${dispatchResult.failed} failed, ${dispatchResult.skipped} skipped`
+        `dispatched ${dispatchResult.sent} reminder(s) (${dispatchResult.pushed} push), ${dispatchResult.failed} failed, ${dispatchResult.skipped} skipped`
     );
     return NextResponse.json({ ...recurrenceResult, ...dispatchResult });
   } catch (error: any) {
