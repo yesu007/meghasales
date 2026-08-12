@@ -446,6 +446,26 @@ async function main() {
   }
   console.log('  ✓ Payroll permissions granted to ADMIN, MANAGEMENT, FINANCE roles');
 
+  // Payroll Phase 4 — starting Tamil Nadu PT slabs (commonly-cited
+  // monthly-equivalent figures, NOT verified against a current government
+  // notification — editable via /dashboard/payroll/statutory). Only seeded
+  // if no TN slabs exist yet, so re-running this script never duplicates
+  // or clobbers rates someone has since edited through the UI.
+  const existingTnSlabs = await prisma.ptSlab.count({ where: { state: 'TN' } });
+  if (existingTnSlabs === 0) {
+    await prisma.ptSlab.createMany({
+      data: [
+        { state: 'TN', minGross: 0, maxGross: 21000, monthlyAmount: 0 },
+        { state: 'TN', minGross: 21001, maxGross: 30000, monthlyAmount: 135 },
+        { state: 'TN', minGross: 30001, maxGross: 45000, monthlyAmount: 315 },
+        { state: 'TN', minGross: 45001, maxGross: 60000, monthlyAmount: 690 },
+        { state: 'TN', minGross: 60001, maxGross: 75000, monthlyAmount: 1025 },
+        { state: 'TN', minGross: 75001, maxGross: null, monthlyAmount: 1250 },
+      ],
+    });
+    console.log('  ✓ Tamil Nadu PT slabs seeded');
+  }
+
   console.log('✅ Seeding complete!');
 }
 

@@ -12,6 +12,7 @@ interface SalaryComponent {
   type: 'EARNING' | 'DEDUCTION';
   calculationType: 'FLAT' | 'PERCENT_OF_BASIC';
   isStatutory: boolean;
+  statutoryType: 'PF' | 'ESI' | 'PT' | null;
   isActive: boolean;
 }
 
@@ -56,15 +57,16 @@ export default function SalaryStructuresPage() {
 
   // ---- Components ----
   const [showComponentForm, setShowComponentForm] = useState(false);
-  const [componentForm, setComponentForm] = useState({ name: '', code: '', type: 'EARNING', calculationType: 'FLAT' });
+  const blankComponentForm = { name: '', code: '', type: 'EARNING', calculationType: 'FLAT', statutoryType: '' };
+  const [componentForm, setComponentForm] = useState(blankComponentForm);
 
   const createComponent = useMutation({
     mutationFn: async (data: typeof componentForm) => {
-      const res = await fetch('/api/payroll/components', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      const res = await fetch('/api/payroll/components', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, statutoryType: data.statutoryType || null }) });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to create component'); }
       return res.json();
     },
-    onSuccess: () => { invalidateAll(); toast.success('Component created'); setShowComponentForm(false); setComponentForm({ name: '', code: '', type: 'EARNING', calculationType: 'FLAT' }); },
+    onSuccess: () => { invalidateAll(); toast.success('Component created'); setShowComponentForm(false); setComponentForm(blankComponentForm); },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -144,6 +146,12 @@ export default function SalaryStructuresPage() {
               <option value="FLAT">Flat amount</option>
               <option value="PERCENT_OF_BASIC">% of Basic</option>
             </select>
+            <select value={componentForm.statutoryType} onChange={(e) => setComponentForm((f) => ({ ...f, statutoryType: e.target.value }))} className={inputCls} title="Applies the matching statutory rule from Statutory Settings when this component is resolved">
+              <option value="">Not statutory</option>
+              <option value="PF">PF — capped at wage ceiling</option>
+              <option value="ESI">ESI — gated by gross threshold</option>
+              <option value="PT">PT — resolved by slab, ignores this row&apos;s value</option>
+            </select>
             <div className="col-span-2 sm:col-span-4 flex justify-end gap-2">
               <button type="button" onClick={() => setShowComponentForm(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
               <button type="submit" disabled={createComponent.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">Add</button>
@@ -159,7 +167,7 @@ export default function SalaryStructuresPage() {
             <tbody className="divide-y divide-slate-100">
               {components.map((c) => (
                 <tr key={c.id}>
-                  <td className="py-2 pr-4 text-slate-800">{c.name}{c.isStatutory && <span className="ml-1.5 text-[10px] uppercase text-slate-400">statutory</span>}</td>
+                  <td className="py-2 pr-4 text-slate-800">{c.name}{c.statutoryType && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase bg-slate-100 text-slate-500">{c.statutoryType}</span>}</td>
                   <td className="py-2 pr-4 font-mono text-xs text-slate-500">{c.code}</td>
                   <td className="py-2 pr-4"><span className={`px-2 py-0.5 rounded text-xs font-medium ${c.type === 'EARNING' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{c.type}</span></td>
                   <td className="py-2 pr-4 text-slate-500">{c.calculationType === 'FLAT' ? 'Flat' : '% of Basic'}</td>

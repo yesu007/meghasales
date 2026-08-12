@@ -1,13 +1,29 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import dayjs from 'dayjs';
 import { isValidRunStatusTransition, RunStatus } from './constants';
-import { computePayableDays, daysInMonth, resolveStructureLineItems, round2 } from './runEngine';
+import { computePayableDays, daysInMonth, resolveStructureLineItems, round2, StatutoryConfig } from './runEngine';
 
 export class OptimisticLockError extends Error {}
 export class InvalidStatusTransitionError extends Error {}
 export class RunNotEditableError extends Error {}
 
 type Client = Prisma.TransactionClient | PrismaClient;
+
+// Fetched once per run-generation/recalculation (not once per employee) —
+// CompanyProfile is a singleton and PtSlab is a short list, so this is one
+// cheap read shared across however many payslips get resolved.
+async function fetchStatutoryConfig(tx: Client): Promise<StatutoryConfig> {
+  const [profile, slabs] = await Promise.all([
+    tx.companyProfile.findFirst({ select: { pfWageCeiling: true, esiGrossThreshold: true } }),
+    tx.ptSlab.findMany({ where: { isActive: true }, orderBy: { minGross: 'asc' } }),
+  ]);
+
+  return {
+    pfWageCeiling: profile?.pfWageCeiling != null ? Number(profile.pfWageCeiling) : null,
+    esiGrossThreshold: profile?.esiGrossThreshold != null ? Number(profile.esiGrossThreshold) : null,
+    ptSlabs: slabs.map((s) => ({ minGross: Number(s.minGross), maxGross: s.maxGross != null ? Number(s.maxGross) : null, monthlyAmount: Number(s.monthlyAmount) })),
+  };
+}
 
 // Generates one Payslip per qualifying employee for the run's period.
 // Qualifying = ACTIVE/ON_NOTICE, or EXITED with a dateOfLeaving that falls
@@ -31,6 +47,7 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
       ],
     },
   });
+  const statutory = await fetchStatutoryConfig(tx);
 
   let created = 0;
   let skipped = 0;
@@ -54,7 +71,7 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
     const payableDays = computePayableDays({ year, month, totalDays, lopDays: 0, dateOfJoining: employee.dateOfJoining, dateOfLeaving: employee.dateOfLeaving });
     const ratio = totalDays > 0 ? payableDays / totalDays : 0;
 
-    const scaledItems = resolveStructureLineItems(assignment.structure.components).map((item) => ({ ...item, amount: round2(item.amount * ratio) }));
+    const scaledItems = resolveStructureLineItems(assignment.structure.components, statutory).map((item) => ({ ...item, amount: round2(item.amount * ratio) }));
     const grossEarnings = round2(scaledItems.filter((i) => i.type === 'EARNING').reduce((s, i) => s + i.amount, 0));
     const totalDeductions = round2(scaledItems.filter((i) => i.type === 'DEDUCTION').reduce((s, i) => s + i.amount, 0));
 
@@ -113,7 +130,8 @@ export async function recalculatePayslip(
   });
   const ratio = payslip.totalDays > 0 ? payableDays / payslip.totalDays : 0;
 
-  const scaledItems = resolveStructureLineItems(assignment.structure.components).map((item) => ({ ...item, amount: round2(item.amount * ratio) }));
+  const statutory = await fetchStatutoryConfig(tx);
+  const scaledItems = resolveStructureLineItems(assignment.structure.components, statutory).map((item) => ({ ...item, amount: round2(item.amount * ratio) }));
 
   await tx.payslipLineItem.deleteMany({ where: { payslipId, isAdjustment: false } });
   await tx.payslipLineItem.createMany({

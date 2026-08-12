@@ -26,9 +26,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (body.calculationType && !['FLAT', 'PERCENT_OF_BASIC'].includes(body.calculationType)) {
       return NextResponse.json({ message: 'calculationType must be FLAT or PERCENT_OF_BASIC' }, { status: 400 });
     }
+    if (body.statutoryType !== undefined && body.statutoryType !== null && !['PF', 'ESI', 'PT'].includes(body.statutoryType)) {
+      return NextResponse.json({ message: 'statutoryType must be PF, ESI, PT, or null' }, { status: 400 });
+    }
 
     const data: Record<string, unknown> = {};
-    for (const field of ['name', 'type', 'calculationType', 'isStatutory', 'isActive', 'sortOrder'] as const) {
+    for (const field of ['name', 'type', 'calculationType', 'isStatutory', 'isActive', 'sortOrder', 'statutoryType'] as const) {
       if (body[field] !== undefined) data[field] = body[field];
     }
 

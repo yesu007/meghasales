@@ -5,7 +5,7 @@ import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_TYPES: PayrollReportType[] = ['salary-register', 'department-cost', 'ytd-earnings'];
+const VALID_TYPES: PayrollReportType[] = ['salary-register', 'department-cost', 'ytd-earnings', 'pf-contribution', 'esi-contribution', 'pt-summary'];
 
 export async function GET(request: NextRequest) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });

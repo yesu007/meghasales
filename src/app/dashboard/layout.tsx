@@ -64,6 +64,7 @@ function getNavItems(canViewPayroll: boolean) {
             { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
             { href: '/dashboard/payroll/runs', label: 'Payroll Runs' },
             { href: '/dashboard/payroll/reports', label: 'Reports' },
+            { href: '/dashboard/payroll/statutory', label: 'Statutory Settings' },
           ],
         }]
       : []),

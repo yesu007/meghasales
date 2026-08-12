@@ -4,13 +4,21 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 
-type ReportType = 'salary-register' | 'department-cost' | 'ytd-earnings';
+type ReportType = 'salary-register' | 'department-cost' | 'ytd-earnings' | 'pf-contribution' | 'esi-contribution' | 'pt-summary';
 
 const REPORT_LABELS: Record<ReportType, string> = {
   'salary-register': 'Salary Register (one run)',
   'department-cost': 'Department Cost Summary',
   'ytd-earnings': 'YTD Earnings per Employee',
+  'pf-contribution': 'PF Contribution Statement (one run)',
+  'esi-contribution': 'ESI Contribution Statement (one run)',
+  'pt-summary': 'Professional Tax Summary (one run)',
 };
+
+// Everything except the two calendar-aggregation reports is scoped to a
+// single run, since that's what a statutory filing is actually for — one
+// month's remittance, not a running total.
+const RUN_SCOPED: ReportType[] = ['salary-register', 'pf-contribution', 'esi-contribution', 'pt-summary'];
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -42,7 +50,7 @@ export default function PayrollReportsPage() {
 
   const buildQuery = () => {
     const params = new URLSearchParams({ type });
-    if (type === 'salary-register') { if (runId) params.set('runId', runId); }
+    if (RUN_SCOPED.includes(type)) { if (runId) params.set('runId', runId); }
     else { params.set('year', year); if (month) params.set('month', month); }
     return params.toString();
   };
@@ -78,7 +86,7 @@ export default function PayrollReportsPage() {
             </select>
           </div>
 
-          {type === 'salary-register' ? (
+          {RUN_SCOPED.includes(type) ? (
             <div>
               <label className="block text-xs text-slate-500 mb-1">Payroll Run</label>
               <select value={runId} onChange={(e) => setRunId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
@@ -104,7 +112,7 @@ export default function PayrollReportsPage() {
             </>
           )}
 
-          <button onClick={viewReport} disabled={loading || (type === 'salary-register' && !runId)} className="px-4 py-2 min-h-[40px] bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+          <button onClick={viewReport} disabled={loading || (RUN_SCOPED.includes(type) && !runId)} className="px-4 py-2 min-h-[40px] bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
             {loading ? 'Loading...' : 'View Report'}
           </button>
 

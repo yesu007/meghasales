@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
+import { round2 } from '@/lib/payroll/runEngine';
 
-export type PayrollReportType = 'salary-register' | 'department-cost' | 'ytd-earnings';
+export type PayrollReportType = 'salary-register' | 'department-cost' | 'ytd-earnings' | 'pf-contribution' | 'esi-contribution' | 'pt-summary';
 
 export interface ReportColumn { key: string; label: string; align?: 'left' | 'right'; type?: 'currency' | 'number' | 'text' }
 export interface ReportResult { title: string; columns: ReportColumn[]; rows: Record<string, any>[] }
@@ -21,6 +22,12 @@ export async function buildReport(type: PayrollReportType, filters: ReportFilter
       return buildDepartmentCostReport(filters);
     case 'ytd-earnings':
       return buildYtdEarningsReport(filters);
+    case 'pf-contribution':
+      return buildPfContributionReport(filters);
+    case 'esi-contribution':
+      return buildEsiContributionReport(filters);
+    case 'pt-summary':
+      return buildPtSummaryReport(filters);
     default:
       throw new Error(`Unknown report type: ${type}`);
   }
@@ -128,5 +135,164 @@ async function buildYtdEarningsReport(filters: ReportFilters): Promise<ReportRes
       { key: 'net', label: 'Net Pay', align: 'right', type: 'currency' },
     ],
     rows: Object.values(byEmployee).sort((a, b) => b.net - a.net),
+  };
+}
+
+// The numbers a human re-types into the EPFO/ESIC portals — this doesn't
+// file anything itself. Employer contribution is reconstructed rather than
+// read from a stored line item (employer PF/ESI were deliberately never
+// modeled as payslip line items — that would incorrectly reduce net pay,
+// see CompanyProfile.pfEmployerRate's schema comment), so it's an estimate
+// derived from the same base the employee side was computed against, not
+// a second independently-tracked figure.
+async function buildPfContributionReport(filters: ReportFilters): Promise<ReportResult> {
+  if (!filters.runId) throw new Error('runId is required for the PF contribution report');
+  const runId = parseInt(filters.runId);
+
+  const [payslips, profile] = await Promise.all([
+    prisma.payslip.findMany({
+      where: { runId },
+      include: {
+        employee: { select: { employeeCode: true, uanNumber: true, user: { select: { firstName: true, lastName: true } } } },
+        lineItems: { include: { component: true } },
+      },
+    }),
+    prisma.companyProfile.findFirst({ select: { pfWageCeiling: true, pfEmployerRate: true } }),
+  ]);
+
+  const pfWageCeiling = profile?.pfWageCeiling != null ? Number(profile.pfWageCeiling) : null;
+  const employerRate = profile?.pfEmployerRate != null ? Number(profile.pfEmployerRate) : 12;
+
+  const rows = payslips
+    .map((p) => {
+      const pfItem = p.lineItems.find((li) => li.component?.statutoryType === 'PF');
+      if (!pfItem || Number(pfItem.amount) === 0) return null;
+
+      const basicItem = p.lineItems.find((li) => li.component?.code === 'BASIC');
+      const basicAmount = basicItem ? Number(basicItem.amount) : 0;
+      const totalDays = p.totalDays;
+      const payableDays = Number(p.payableDays);
+      // The ceiling is a full-month figure; the Basic line item is already
+      // pro-rated, so the ceiling has to be pro-rated by the same ratio to
+      // compare on the same footing (mirrors runEngine.ts's own approach
+      // of resolving full-month, then scaling the whole result).
+      const effectiveCeiling = pfWageCeiling != null && totalDays > 0 ? round2(pfWageCeiling * (payableDays / totalDays)) : null;
+      const cappedBasic = effectiveCeiling != null ? Math.min(basicAmount, effectiveCeiling) : basicAmount;
+      const employeeContribution = Number(pfItem.amount);
+      const employerContribution = round2((cappedBasic * employerRate) / 100);
+
+      return {
+        employeeCode: p.employee.employeeCode,
+        name: `${p.employee.user.firstName} ${p.employee.user.lastName}`,
+        uan: p.employee.uanNumber || '—',
+        employeeContribution,
+        employerContribution,
+        total: round2(employeeContribution + employerContribution),
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+
+  return {
+    title: 'PF Contribution Statement (employer share estimated)',
+    columns: [
+      { key: 'employeeCode', label: 'Employee Code' },
+      { key: 'name', label: 'Name' },
+      { key: 'uan', label: 'UAN' },
+      { key: 'employeeContribution', label: 'Employee PF', align: 'right', type: 'currency' },
+      { key: 'employerContribution', label: 'Employer PF (est.)', align: 'right', type: 'currency' },
+      { key: 'total', label: 'Total Remittance', align: 'right', type: 'currency' },
+    ],
+    rows,
+  };
+}
+
+async function buildEsiContributionReport(filters: ReportFilters): Promise<ReportResult> {
+  if (!filters.runId) throw new Error('runId is required for the ESI contribution report');
+  const runId = parseInt(filters.runId);
+
+  const [payslips, profile] = await Promise.all([
+    prisma.payslip.findMany({
+      where: { runId },
+      include: {
+        employee: { select: { employeeCode: true, esicNumber: true, user: { select: { firstName: true, lastName: true } } } },
+        lineItems: { include: { component: true } },
+      },
+    }),
+    prisma.companyProfile.findFirst({ select: { esiEmployerRate: true } }),
+  ]);
+
+  const employerRate = profile?.esiEmployerRate != null ? Number(profile.esiEmployerRate) : 3.25;
+
+  const rows = payslips
+    .map((p) => {
+      const esiItem = p.lineItems.find((li) => li.component?.statutoryType === 'ESI');
+      if (!esiItem || Number(esiItem.amount) === 0) return null; // not ESI-eligible this period (gross exceeded the threshold, or no ESI component at all)
+
+      // ESI, unlike PF, is computed on gross rather than Basic — and gross
+      // is already a column on the payslip itself, so no line-item lookup
+      // is needed to reconstruct the employer side's base.
+      const employeeContribution = Number(esiItem.amount);
+      const employerContribution = round2((Number(p.grossEarnings) * employerRate) / 100);
+
+      return {
+        employeeCode: p.employee.employeeCode,
+        name: `${p.employee.user.firstName} ${p.employee.user.lastName}`,
+        esicNumber: p.employee.esicNumber || '—',
+        employeeContribution,
+        employerContribution,
+        total: round2(employeeContribution + employerContribution),
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+
+  return {
+    title: 'ESI Contribution Statement (employer share estimated)',
+    columns: [
+      { key: 'employeeCode', label: 'Employee Code' },
+      { key: 'name', label: 'Name' },
+      { key: 'esicNumber', label: 'ESIC No.' },
+      { key: 'employeeContribution', label: 'Employee ESI', align: 'right', type: 'currency' },
+      { key: 'employerContribution', label: 'Employer ESI (est.)', align: 'right', type: 'currency' },
+      { key: 'total', label: 'Total Remittance', align: 'right', type: 'currency' },
+    ],
+    rows,
+  };
+}
+
+// PT has no employer side — it's a state tax on the employee, full stop —
+// so this is a straight list of what was actually deducted, for filing
+// against the company's PT registration.
+async function buildPtSummaryReport(filters: ReportFilters): Promise<ReportResult> {
+  if (!filters.runId) throw new Error('runId is required for the PT summary report');
+  const runId = parseInt(filters.runId);
+
+  const payslips = await prisma.payslip.findMany({
+    where: { runId },
+    include: {
+      employee: { select: { employeeCode: true, user: { select: { firstName: true, lastName: true } } } },
+      lineItems: { include: { component: true } },
+    },
+  });
+
+  const rows = payslips
+    .map((p) => {
+      const ptItem = p.lineItems.find((li) => li.component?.statutoryType === 'PT');
+      if (!ptItem || Number(ptItem.amount) === 0) return null;
+      return {
+        employeeCode: p.employee.employeeCode,
+        name: `${p.employee.user.firstName} ${p.employee.user.lastName}`,
+        amount: Number(ptItem.amount),
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+
+  return {
+    title: 'Professional Tax Summary',
+    columns: [
+      { key: 'employeeCode', label: 'Employee Code' },
+      { key: 'name', label: 'Name' },
+      { key: 'amount', label: 'PT Deducted', align: 'right', type: 'currency' },
+    ],
+    rows,
   };
 }

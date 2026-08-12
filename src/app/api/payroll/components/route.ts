@@ -36,6 +36,9 @@ export async function POST(request: NextRequest) {
     if (body.calculationType && !['FLAT', 'PERCENT_OF_BASIC'].includes(body.calculationType)) {
       return NextResponse.json({ message: 'calculationType must be FLAT or PERCENT_OF_BASIC' }, { status: 400 });
     }
+    if (body.statutoryType && !['PF', 'ESI', 'PT'].includes(body.statutoryType)) {
+      return NextResponse.json({ message: 'statutoryType must be PF, ESI, or PT' }, { status: 400 });
+    }
 
     const component = await prisma.salaryComponent.create({
       data: {
@@ -43,7 +46,8 @@ export async function POST(request: NextRequest) {
         code: body.code.toUpperCase().replace(/[^A-Z0-9_]/g, '_'),
         type: body.type,
         calculationType: body.calculationType || 'FLAT',
-        isStatutory: !!body.isStatutory,
+        isStatutory: !!body.isStatutory || !!body.statutoryType,
+        statutoryType: body.statutoryType || null,
         sortOrder: body.sortOrder != null ? Number(body.sortOrder) : 0,
       },
     });
