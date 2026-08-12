@@ -331,33 +331,30 @@ export default function LeadsPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header — title/subtitle, tabs, New Lead and Show Dashboard all share
-          one row on wider screens instead of stacking as separate mostly-empty
-          full-width bands. */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
+      {/* Header — title, tabs, New Lead and Show Dashboard are packed
+          together on the left instead of being split to opposite edges of
+          the row, which left a wide dead strip between the tabs and the
+          buttons on anything narrower than a very wide desktop. Any leftover
+          width now falls at the true right margin, not mid-row. */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           {/* Tabs sit on the same row as the H1 — and are vertically centered
               against that single line — instead of against the whole
               two-line title+subtitle block, which threw the alignment off. */}
-          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Leads</h1>
-            <div className="overflow-x-auto">
-              <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
-                {VIEW_TABS.map((t) => (
-                  <button
-                    key={t.value}
-                    onClick={() => changeView(t.value)}
-                    className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${view === t.value ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Leads</h1>
+          <div className="overflow-x-auto">
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+              {VIEW_TABS.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => changeView(t.value)}
+                  className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${view === t.value ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
           </div>
-          <p className="text-slate-500 mt-1 text-sm sm:text-base">Manage and track your leads pipeline</p>
-        </div>
-        <div className="flex items-center justify-between gap-3 sm:justify-end">
           <button
             onClick={toggleDashboard}
             className="flex items-center gap-1 px-2 min-h-[44px] text-sm text-slate-500 hover:text-amber-600 font-medium"
@@ -369,6 +366,7 @@ export default function LeadsPage() {
             <PlusIcon className="h-4 w-4" /> New Lead
           </button>
         </div>
+        <p className="text-slate-500 text-sm sm:text-base">Manage and track your leads pipeline</p>
       </div>
 
       {/* Summary widgets */}
