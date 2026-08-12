@@ -330,41 +330,42 @@ export default function LeadsPage() {
   const pageNumbers = getPageNumbers(page, totalPages || 1);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Leads</h1>
-          <p className="text-slate-500 mt-1 text-sm sm:text-base">Manage and track your leads pipeline</p>
-        </div>
-        <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 self-start sm:self-auto">
-          <PlusIcon className="h-4 w-4" /> New Lead
-        </button>
-      </div>
-
-      {/* View toggle + Dashboard show/hide — share one row instead of each
-          getting their own mostly-empty full-width band. */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="overflow-x-auto">
-          <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
-            {VIEW_TABS.map((t) => (
-              <button
-                key={t.value}
-                onClick={() => changeView(t.value)}
-                className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${view === t.value ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
-              >
-                {t.label}
-              </button>
-            ))}
+    <div className="space-y-4">
+      {/* Header — title/subtitle, tabs, New Lead and Show Dashboard all share
+          one row on wider screens instead of stacking as separate mostly-empty
+          full-width bands. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Leads</h1>
+            <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Manage and track your leads pipeline</p>
+          </div>
+          <div className="overflow-x-auto">
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+              {VIEW_TABS.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => changeView(t.value)}
+                  className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${view === t.value ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <button
-          onClick={toggleDashboard}
-          className="flex items-center gap-1 px-2 min-h-[44px] text-sm text-slate-500 hover:text-amber-600 font-medium self-start sm:self-auto"
-        >
-          {showDashboard ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
-          {showDashboard ? 'Hide Dashboard' : 'Show Dashboard'}
-        </button>
+        <div className="flex items-center justify-between gap-3 sm:justify-end">
+          <button
+            onClick={toggleDashboard}
+            className="flex items-center gap-1 px-2 min-h-[44px] text-sm text-slate-500 hover:text-amber-600 font-medium"
+          >
+            {showDashboard ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
+            {showDashboard ? 'Hide Dashboard' : 'Show Dashboard'}
+          </button>
+          <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+            <PlusIcon className="h-4 w-4" /> New Lead
+          </button>
+        </div>
       </div>
 
       {/* Summary widgets */}

@@ -180,7 +180,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Menu */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between md:justify-end px-4 sm:px-6 lg:px-8">
+        <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between md:justify-end px-4 sm:px-6 lg:px-8">
           <button onClick={() => setMobileNavOpen(true)} className="md:hidden p-2 -ml-2 text-slate-600 hover:text-slate-900" aria-label="Open menu">
             <Bars3Icon className="h-6 w-6" />
           </button>
@@ -221,7 +221,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-x-hidden overflow-y-auto">
+        <main className="flex-1 p-4 sm:p-5 lg:p-6 overflow-x-hidden overflow-y-auto">
           {children}
         </main>
       </div>
