@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, XMarkIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, XMarkIcon, PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import { generatePayslipPDF } from '@/lib/generatePayslipPDF';
 
 interface LineItem { id: number; label: string; type: string; amount: string; isAdjustment: boolean }
 interface PayslipRow {
@@ -18,7 +19,7 @@ interface PayslipRow {
   totalDeductions: string;
   netPay: string;
   version: number;
-  employee: { employeeCode: string; user: { firstName: string; lastName: string } };
+  employee: { employeeCode: string; department: string | null; designation: string | null; user: { firstName: string; lastName: string } };
   lineItems: LineItem[];
 }
 interface RunDetail {
@@ -124,7 +125,7 @@ export default function PayrollRunDetailPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {run.payslips.map((p) => (
-                  <PayslipRowView key={p.id} payslip={p} isDraft={isDraft} expanded={expandedId === p.id} onToggle={() => setExpandedId((e) => (e === p.id ? null : p.id))} onSaved={invalidate} />
+                  <PayslipRowView key={p.id} payslip={p} isDraft={isDraft} periodLabel={`${MONTH_NAMES[run.payPeriodMonth - 1]} ${run.payPeriodYear}`} expanded={expandedId === p.id} onToggle={() => setExpandedId((e) => (e === p.id ? null : p.id))} onSaved={invalidate} />
                 ))}
               </tbody>
               <tfoot>
@@ -143,7 +144,7 @@ export default function PayrollRunDetailPage() {
   );
 }
 
-function PayslipRowView({ payslip, isDraft, expanded, onToggle, onSaved }: { payslip: PayslipRow; isDraft: boolean; expanded: boolean; onToggle: () => void; onSaved: () => void }) {
+function PayslipRowView({ payslip, isDraft, periodLabel, expanded, onToggle, onSaved }: { payslip: PayslipRow; isDraft: boolean; periodLabel: string; expanded: boolean; onToggle: () => void; onSaved: () => void }) {
   const [lopDays, setLopDays] = useState(payslip.lopDays);
   const [adjustments, setAdjustments] = useState<Array<{ label: string; type: string; amount: string }>>(
     payslip.lineItems.filter((li) => li.isAdjustment).map((li) => ({ label: li.label, type: li.type, amount: li.amount }))
@@ -174,7 +175,35 @@ function PayslipRowView({ payslip, isDraft, expanded, onToggle, onSaved }: { pay
         <td className="px-4 py-3 text-right text-slate-700">₹{Number(payslip.grossEarnings).toLocaleString('en-IN')}</td>
         <td className="px-4 py-3 text-right text-slate-700">₹{Number(payslip.totalDeductions).toLocaleString('en-IN')}</td>
         <td className="px-4 py-3 text-right font-medium text-slate-800">₹{Number(payslip.netPay).toLocaleString('en-IN')}</td>
-        <td className="px-4 py-3 text-right">{expanded ? <ChevronUpIcon className="h-4 w-4 text-slate-400" /> : <ChevronDownIcon className="h-4 w-4 text-slate-400" />}</td>
+        <td className="px-4 py-3">
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                generatePayslipPDF({
+                  employeeName: `${payslip.employee.user.firstName} ${payslip.employee.user.lastName}`,
+                  employeeCode: payslip.employee.employeeCode,
+                  department: payslip.employee.department,
+                  designation: payslip.employee.designation,
+                  payPeriodLabel: periodLabel,
+                  totalDays: payslip.totalDays,
+                  payableDays: Number(payslip.payableDays),
+                  lopDays: Number(payslip.lopDays),
+                  lineItems: payslip.lineItems.map((li) => ({ label: li.label, type: li.type as 'EARNING' | 'DEDUCTION', amount: Number(li.amount) })),
+                  grossEarnings: Number(payslip.grossEarnings),
+                  totalDeductions: Number(payslip.totalDeductions),
+                  netPay: Number(payslip.netPay),
+                  fileName: `Payslip-${payslip.employee.employeeCode}-${periodLabel.replace(' ', '-')}.pdf`,
+                });
+              }}
+              className="p-1 text-slate-400 hover:text-amber-600"
+              title="Download PDF"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" />
+            </button>
+            {expanded ? <ChevronUpIcon className="h-4 w-4 text-slate-400" /> : <ChevronDownIcon className="h-4 w-4 text-slate-400" />}
+          </div>
+        </td>
       </tr>
       {expanded && (
         <tr>

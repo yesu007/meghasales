@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   HomeIcon,
@@ -18,6 +18,7 @@ import {
   ClipboardDocumentCheckIcon,
   BanknotesIcon,
   CurrencyRupeeIcon,
+  WalletIcon,
   ChevronDownIcon,
   Bars3Icon,
   XMarkIcon,
@@ -26,41 +27,56 @@ import { TEKFILO_LOGO } from '@/lib/logo';
 import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 
-const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
-  { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon },
-  { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon },
-  { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon },
-  { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon },
-  {
-    href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon,
-    children: [
-      { href: '/dashboard/accounting', label: 'Dashboard' },
-      { href: '/dashboard/accounting/pending-invoices', label: 'Pending Invoices' },
-      { href: '/dashboard/accounting/paid-invoices', label: 'Paid Invoices' },
-      { href: '/dashboard/accounting/payment-reminders', label: 'Payment Reminders' },
-      { href: '/dashboard/accounting/customer-ledger', label: 'Customer Ledger' },
-      { href: '/dashboard/accounting/reports', label: 'Reports' },
-    ],
-  },
-  ...(isAdminTicketModuleEnabled()
-    ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon }]
-    : []),
-  // Payroll plan — Phase 2 adds the Runs sub-page.
-  ...(isPayrollModuleEnabled()
-    ? [{
-        href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon,
-        children: [
-          { href: '/dashboard/payroll', label: 'Employees' },
-          { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
-          { href: '/dashboard/payroll/runs', label: 'Payroll Runs' },
-        ],
-      }]
-    : []),
-  { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
-  { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
-  { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon },
-];
+// A function rather than a module-level constant because the Payroll admin
+// section (unlike every other flag-gated entry here) also needs to check
+// the logged-in user's own permissions, not just the build-time feature
+// flag — "My Payslips" is deliberately the opposite: visible to anyone
+// once the module is on, since it only ever shows that person's own data.
+function getNavItems(canViewPayroll: boolean) {
+  return [
+    { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
+    { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon },
+    { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon },
+    { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon },
+    { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon },
+    {
+      href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon,
+      children: [
+        { href: '/dashboard/accounting', label: 'Dashboard' },
+        { href: '/dashboard/accounting/pending-invoices', label: 'Pending Invoices' },
+        { href: '/dashboard/accounting/paid-invoices', label: 'Paid Invoices' },
+        { href: '/dashboard/accounting/payment-reminders', label: 'Payment Reminders' },
+        { href: '/dashboard/accounting/customer-ledger', label: 'Customer Ledger' },
+        { href: '/dashboard/accounting/reports', label: 'Reports' },
+      ],
+    },
+    ...(isAdminTicketModuleEnabled()
+      ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon }]
+      : []),
+    // Admin section — gated by the flag AND view_payroll, since Employees/
+    // Salary Structures/Runs expose everyone's salary data, not just the
+    // viewer's own.
+    ...(isPayrollModuleEnabled() && canViewPayroll
+      ? [{
+          href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon,
+          children: [
+            { href: '/dashboard/payroll', label: 'Employees' },
+            { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
+            { href: '/dashboard/payroll/runs', label: 'Payroll Runs' },
+            { href: '/dashboard/payroll/reports', label: 'Reports' },
+          ],
+        }]
+      : []),
+    // Self-service — every logged-in user, no permission needed, since it
+    // only ever shows the viewer's own payslips.
+    ...(isPayrollModuleEnabled()
+      ? [{ href: '/dashboard/payroll/my-payslips', label: 'My Payslips', icon: WalletIcon }]
+      : []),
+    { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
+    { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
+    { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon },
+  ];
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -71,14 +87,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
+  const role = (session?.user as any)?.role;
+  const permissions: string[] = (session?.user as any)?.permissions || [];
+  const canViewPayroll = role === 'ADMIN' || permissions.includes('view_payroll');
+  // Memoized on the one primitive it actually depends on — otherwise
+  // navItems is a new array every render, and the effect below (which
+  // needs it in its deps to react to a session that resolves after first
+  // paint) would re-run and re-setState on every single render.
+  const navItems = useMemo(() => getNavItems(canViewPayroll), [canViewPayroll]);
+
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
   }, [status, router]);
 
   useEffect(() => {
-    const activeParent = NAV_ITEMS.find((item) => 'children' in item && item.children && pathname.startsWith(item.href));
+    const activeParent = navItems.find((item) => 'children' in item && item.children && pathname.startsWith(item.href));
     if (activeParent) setExpandedGroups((prev) => new Set(prev).add(activeParent.href));
-  }, [pathname]);
+    // navItems itself depends on session (canViewPayroll), so it needs to
+    // be in this list too — otherwise the Payroll group wouldn't
+    // auto-expand if the session (and thus the permission check) resolves
+    // after the initial render.
+  }, [pathname, navItems]);
 
   // Close the mobile nav drawer on navigation — otherwise it stays open
   // over the new page after tapping a link.
@@ -131,7 +160,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         <nav className="flex-1 py-4">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
 
             if ('children' in item && item.children) {

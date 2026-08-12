@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       include: {
         payslips: {
           include: {
-            employee: { select: { employeeCode: true, user: { select: { firstName: true, lastName: true } } } },
+            employee: { select: { employeeCode: true, department: true, designation: true, user: { select: { firstName: true, lastName: true } } } },
             lineItems: { orderBy: { id: 'asc' } },
           },
           orderBy: { id: 'asc' },
