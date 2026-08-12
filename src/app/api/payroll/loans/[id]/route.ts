@@ -16,7 +16,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const loan = await prisma.loan.findUnique({
       where: { id },
       include: {
-        employee: { select: { employeeCode: true, user: { select: { firstName: true, lastName: true } } } },
+        employee: { select: { employeeCode: true, firstName: true, lastName: true } },
         repayments: { orderBy: { createdAt: 'desc' } },
       },
     });

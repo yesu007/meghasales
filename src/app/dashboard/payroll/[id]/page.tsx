@@ -25,6 +25,9 @@ interface Assignment {
 interface EmployeeDetail {
   id: number;
   employeeCode: string;
+  firstName: string;
+  lastName: string;
+  email: string;
   department: string | null;
   designation: string | null;
   dateOfJoining: string | null;
@@ -42,7 +45,7 @@ interface EmployeeDetail {
   esiApplicable: boolean;
   ptApplicable: boolean;
   status: string;
-  user: { firstName: string; lastName: string; email: string; phone: string | null };
+  user: { phone: string | null } | null;
   salaryAssignments: Assignment[];
 }
 
@@ -70,6 +73,7 @@ export default function EmployeeDetailPage() {
   useEffect(() => {
     if (employee) {
       setForm({
+        firstName: employee.firstName, lastName: employee.lastName, email: employee.email,
         department: employee.department || '', designation: employee.designation || '',
         employmentType: employee.employmentType, panNumber: employee.panNumber || '',
         uanNumber: employee.uanNumber || '', esicNumber: employee.esicNumber || '',
@@ -116,8 +120,11 @@ export default function EmployeeDetailPage() {
         <Link href="/dashboard/payroll" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-amber-700 mb-2">
           <ArrowLeftIcon className="h-3.5 w-3.5" /> Back to Employees
         </Link>
-        <h1 className="text-xl sm:text-2xl font-bold text-slate-800">{employee.user.firstName} {employee.user.lastName}</h1>
-        <p className="text-slate-500 mt-0.5 text-sm">{employee.employeeCode} · {employee.user.email}{employee.user.phone ? ` · ${employee.user.phone}` : ''}</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-800">{employee.firstName} {employee.lastName}</h1>
+        <p className="text-slate-500 mt-0.5 text-sm">
+          {employee.employeeCode} · {employee.email}{employee.user?.phone ? ` · ${employee.user.phone}` : ''}
+          {!employee.user && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase bg-slate-100 text-slate-500">no login</span>}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -128,6 +135,9 @@ export default function EmployeeDetailPage() {
           >
             <h2 className="text-base font-semibold text-slate-800">HR &amp; Statutory Profile</h2>
             <div className="grid grid-cols-2 gap-4">
+              <Field label="First Name"><input value={form.firstName || ''} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} className={inputCls} /></Field>
+              <Field label="Last Name"><input value={form.lastName || ''} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} className={inputCls} /></Field>
+              <Field label="Email"><input type="email" value={form.email || ''} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputCls} /></Field>
               <Field label="Department"><input value={form.department || ''} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} className={inputCls} /></Field>
               <Field label="Designation"><input value={form.designation || ''} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} className={inputCls} /></Field>
               <Field label="Employment Type">

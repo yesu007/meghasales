@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     const requests = await prisma.leaveRequest.findMany({
       where: status ? { status } : {},
       include: {
-        employee: { select: { employeeCode: true, department: true, user: { select: { firstName: true, lastName: true } } } },
+        employee: { select: { employeeCode: true, department: true, firstName: true, lastName: true } },
         leaveType: { select: { name: true, code: true, isPaid: true } },
       },
       orderBy: { appliedAt: 'desc' },

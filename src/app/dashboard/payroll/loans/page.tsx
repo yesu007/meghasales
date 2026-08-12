@@ -16,7 +16,7 @@ interface LoanRow {
   reason: string | null;
   disbursedDate: string;
   status: string;
-  employee: { employeeCode: string; user: { firstName: string; lastName: string } };
+  employee: { employeeCode: string; firstName: string; lastName: string };
 }
 interface RunOption { id: number; payPeriodYear: number; payPeriodMonth: number; status: string }
 
@@ -156,7 +156,7 @@ function LoanRowView({ loan, draftRuns, expanded, onToggle }: { loan: LoanRow; d
     <div className="py-3 px-4">
       <button onClick={onToggle} className="w-full flex items-center justify-between text-left">
         <div>
-          <p className="font-medium text-slate-800">{loan.employee.user.firstName} {loan.employee.user.lastName} <span className="text-xs text-slate-400 font-normal">({loan.employee.employeeCode})</span></p>
+          <p className="font-medium text-slate-800">{loan.employee.firstName} {loan.employee.lastName} <span className="text-xs text-slate-400 font-normal">({loan.employee.employeeCode})</span></p>
           <p className="text-xs text-slate-400">₹{Number(loan.principal).toLocaleString('en-IN')} principal · ₹{Number(loan.monthlyInstallment).toLocaleString('en-IN')}/mo · {loan.reason || 'No reason given'}</p>
         </div>
         <div className="flex items-center gap-3">

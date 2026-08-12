@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     const loans = await prisma.loan.findMany({
       where: status ? { status } : {},
-      include: { employee: { select: { employeeCode: true, user: { select: { firstName: true, lastName: true } } } } },
+      include: { employee: { select: { employeeCode: true, firstName: true, lastName: true } } },
       orderBy: { createdAt: 'desc' },
     });
 

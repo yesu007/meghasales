@@ -39,7 +39,7 @@ async function buildSalaryRegisterReport(filters: ReportFilters): Promise<Report
 
   const payslips = await prisma.payslip.findMany({
     where: { runId },
-    include: { employee: { select: { employeeCode: true, department: true, designation: true, user: { select: { firstName: true, lastName: true } } } } },
+    include: { employee: { select: { employeeCode: true, department: true, designation: true, firstName: true, lastName: true} } },
     orderBy: { employeeId: 'asc' },
   });
 
@@ -57,7 +57,7 @@ async function buildSalaryRegisterReport(filters: ReportFilters): Promise<Report
     ],
     rows: payslips.map((p) => ({
       employeeCode: p.employee.employeeCode,
-      name: `${p.employee.user.firstName} ${p.employee.user.lastName}`,
+      name: `${p.employee.firstName} ${p.employee.lastName}`,
       department: p.employee.department || '—',
       designation: p.employee.designation || '—',
       payableDays: Number(p.payableDays),
@@ -109,13 +109,13 @@ async function buildYtdEarningsReport(filters: ReportFilters): Promise<ReportRes
 
   const payslips = await prisma.payslip.findMany({
     where: { run: { payPeriodYear: year, status: { in: FINAL_STATUSES } } },
-    include: { employee: { select: { employeeCode: true, user: { select: { firstName: true, lastName: true } } } } },
+    include: { employee: { select: { employeeCode: true, firstName: true, lastName: true} } },
   });
 
   const byEmployee: Record<number, { employeeCode: string; name: string; months: number; gross: number; deductions: number; net: number }> = {};
   for (const p of payslips) {
     if (!byEmployee[p.employeeId]) {
-      byEmployee[p.employeeId] = { employeeCode: p.employee.employeeCode, name: `${p.employee.user.firstName} ${p.employee.user.lastName}`, months: 0, gross: 0, deductions: 0, net: 0 };
+      byEmployee[p.employeeId] = { employeeCode: p.employee.employeeCode, name: `${p.employee.firstName} ${p.employee.lastName}`, months: 0, gross: 0, deductions: 0, net: 0 };
     }
     const bucket = byEmployee[p.employeeId];
     bucket.months += 1;
@@ -153,7 +153,7 @@ async function buildPfContributionReport(filters: ReportFilters): Promise<Report
     prisma.payslip.findMany({
       where: { runId },
       include: {
-        employee: { select: { employeeCode: true, uanNumber: true, user: { select: { firstName: true, lastName: true } } } },
+        employee: { select: { employeeCode: true, uanNumber: true, firstName: true, lastName: true} },
         lineItems: { include: { component: true } },
       },
     }),
@@ -183,7 +183,7 @@ async function buildPfContributionReport(filters: ReportFilters): Promise<Report
 
       return {
         employeeCode: p.employee.employeeCode,
-        name: `${p.employee.user.firstName} ${p.employee.user.lastName}`,
+        name: `${p.employee.firstName} ${p.employee.lastName}`,
         uan: p.employee.uanNumber || '—',
         employeeContribution,
         employerContribution,
@@ -214,7 +214,7 @@ async function buildEsiContributionReport(filters: ReportFilters): Promise<Repor
     prisma.payslip.findMany({
       where: { runId },
       include: {
-        employee: { select: { employeeCode: true, esicNumber: true, user: { select: { firstName: true, lastName: true } } } },
+        employee: { select: { employeeCode: true, esicNumber: true, firstName: true, lastName: true} },
         lineItems: { include: { component: true } },
       },
     }),
@@ -236,7 +236,7 @@ async function buildEsiContributionReport(filters: ReportFilters): Promise<Repor
 
       return {
         employeeCode: p.employee.employeeCode,
-        name: `${p.employee.user.firstName} ${p.employee.user.lastName}`,
+        name: `${p.employee.firstName} ${p.employee.lastName}`,
         esicNumber: p.employee.esicNumber || '—',
         employeeContribution,
         employerContribution,
@@ -269,7 +269,7 @@ async function buildPtSummaryReport(filters: ReportFilters): Promise<ReportResul
   const payslips = await prisma.payslip.findMany({
     where: { runId },
     include: {
-      employee: { select: { employeeCode: true, user: { select: { firstName: true, lastName: true } } } },
+      employee: { select: { employeeCode: true, firstName: true, lastName: true} },
       lineItems: { include: { component: true } },
     },
   });
@@ -280,7 +280,7 @@ async function buildPtSummaryReport(filters: ReportFilters): Promise<ReportResul
       if (!ptItem || Number(ptItem.amount) === 0) return null;
       return {
         employeeCode: p.employee.employeeCode,
-        name: `${p.employee.user.firstName} ${p.employee.user.lastName}`,
+        name: `${p.employee.firstName} ${p.employee.lastName}`,
         amount: Number(ptItem.amount),
       };
     })

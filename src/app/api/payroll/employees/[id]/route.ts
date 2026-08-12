@@ -16,7 +16,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const employee = await prisma.employee.findUnique({
       where: { id },
       include: {
-        user: { select: { firstName: true, lastName: true, email: true, phone: true } },
+        user: { select: { phone: true } }, // only for a linked login's phone — name/email live on Employee itself
         salaryAssignments: {
           orderBy: { effectiveFrom: 'desc' },
           include: { structure: { select: { id: true, name: true } } },
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 const EDITABLE_FIELDS = [
-  'department', 'designation', 'employmentType', 'panNumber', 'uanNumber', 'esicNumber',
+  'firstName', 'lastName', 'department', 'designation', 'employmentType', 'panNumber', 'uanNumber', 'esicNumber',
   'bankAccountNumber', 'bankIfsc', 'bankAccountHolder', 'bankName', 'taxRegime',
   'pfApplicable', 'esiApplicable', 'ptApplicable', 'status',
 ] as const;
@@ -55,6 +55,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
     for (const field of DATE_FIELDS) {
       if (body[field] !== undefined) data[field] = body[field] ? new Date(body[field]) : null;
+    }
+    if (body.email !== undefined) {
+      const email = String(body.email).trim().toLowerCase();
+      if (!email) return NextResponse.json({ message: 'email cannot be empty' }, { status: 400 });
+      if (email !== existing.email) {
+        const conflict = await prisma.employee.findFirst({ where: { email, id: { not: id } } });
+        if (conflict) return NextResponse.json({ message: 'Another employee already uses this email' }, { status: 409 });
+      }
+      data.email = email;
     }
 
     const employee = await prisma.employee.update({ where: { id }, data });

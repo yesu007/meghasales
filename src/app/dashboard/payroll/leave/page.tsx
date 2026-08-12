@@ -22,7 +22,7 @@ interface LeaveRequestRow {
   reason: string | null;
   status: string;
   appliedAt: string;
-  employee: { employeeCode: string; department: string | null; user: { firstName: string; lastName: string } };
+  employee: { employeeCode: string; department: string | null; firstName: string; lastName: string };
   leaveType: { name: string; code: string; isPaid: boolean };
 }
 
@@ -114,7 +114,7 @@ export default function LeaveApprovalsPage() {
                 {requests.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-slate-800">{r.employee.user.firstName} {r.employee.user.lastName}</p>
+                      <p className="font-medium text-slate-800">{r.employee.firstName} {r.employee.lastName}</p>
                       <p className="text-xs text-slate-400">{r.employee.employeeCode}{r.reason ? ` · ${r.reason}` : ''}</p>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{r.leaveType.name}{!r.leaveType.isPaid && <span className="ml-1 text-[10px] uppercase text-red-500">unpaid</span>}</td>

@@ -644,8 +644,17 @@ model PushSubscription {
 // a demo login) will never have one.
 model Employee {
   id                Int       @id @default(autoincrement())
-  userId            Int       @unique @map("user_id")
+  // Optional — most staff never need CRM login access, but still need a
+  // payroll record. When onboarding finds a User with a matching email,
+  // this gets linked automatically (enabling that person's self-service
+  // My Payslips/My Leave); otherwise the employee is payroll-only and HR-
+  // managed. firstName/lastName/email live on Employee itself rather than
+  // being read through this relation, precisely so they don't require it.
+  userId            Int?      @unique @map("user_id")
   employeeCode      String    @unique @map("employee_code")
+  firstName         String    @map("first_name")
+  lastName          String    @map("last_name")
+  email             String    @map("email")
   department        String?
   designation       String?
   dateOfJoining     DateTime? @map("date_of_joining")
@@ -666,7 +675,7 @@ model Employee {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  user               User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User?                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   salaryAssignments  SalaryStructureAssignment[]
   payslips           Payslip[]
   leaveRequests      LeaveRequest[]

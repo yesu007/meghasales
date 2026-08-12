@@ -8,18 +8,12 @@ import { Dialog, Transition } from '@headlessui/react';
 import { PlusIcon, XMarkIcon, InboxIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
-interface EligibleUser {
-  id: number;
-  firstName: string;
-  lastName: string;
-  email: string;
-}
-
 interface EmployeeRow {
   id: number;
   employeeCode: string;
   userName: string;
   userEmail: string;
+  hasLogin: boolean;
   department: string | null;
   designation: string | null;
   employmentType: string;
@@ -42,14 +36,8 @@ async function fetchEmployees(search: string): Promise<{ content: EmployeeRow[] 
   return res.json();
 }
 
-async function fetchEligibleUsers(): Promise<EligibleUser[]> {
-  const res = await fetch('/api/payroll/employees/eligible-users');
-  if (!res.ok) throw new Error('Failed to fetch eligible users');
-  return res.json();
-}
-
 const blankForm = {
-  userId: '', department: '', designation: '', dateOfJoining: '',
+  firstName: '', lastName: '', email: '', department: '', designation: '', dateOfJoining: '',
   employmentType: 'FULL_TIME', bankAccountNumber: '', bankIfsc: '', bankAccountHolder: '', bankName: '',
 };
 
@@ -63,12 +51,6 @@ export default function PayrollEmployeesPage() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['payroll-employees', search],
     queryFn: () => fetchEmployees(search),
-  });
-
-  const { data: eligibleUsers = [] } = useQuery({
-    queryKey: ['payroll-eligible-users'],
-    queryFn: fetchEligibleUsers,
-    enabled: drawerOpen,
   });
 
   const createMutation = useMutation({
@@ -86,7 +68,6 @@ export default function PayrollEmployeesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payroll-employees'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll-eligible-users'] });
       toast.success('Employee onboarded to payroll');
       setDrawerOpen(false);
       setForm(blankForm);
@@ -105,7 +86,6 @@ export default function PayrollEmployeesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payroll-employees'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll-eligible-users'] });
       toast.success('Employee removed from payroll');
     },
     onError: (err: Error) => toast.error(err.message),
@@ -171,6 +151,7 @@ export default function PayrollEmployeesPage() {
                   <tr key={e.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
                       <Link href={`/dashboard/payroll/${e.id}`} className="font-medium text-slate-800 hover:text-amber-700">{e.userName}</Link>
+                      {!e.hasLogin && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase bg-slate-100 text-slate-500" title="No CRM login — payroll-only record">no login</span>}
                       <div className="text-xs text-slate-400 mono">{e.employeeCode} · {e.userEmail}</div>
                     </td>
                     <td className="px-4 py-3 text-slate-600 hidden sm:table-cell">{[e.designation, e.department].filter(Boolean).join(', ') || '—'}</td>
@@ -219,24 +200,25 @@ export default function PayrollEmployeesPage() {
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
-                        if (!form.userId) { toast.error('Select a user'); return; }
+                        if (!form.firstName || !form.lastName || !form.email) { toast.error('First name, last name, and email are required'); return; }
                         createMutation.mutate(form);
                       }}
                       className="flex-1 px-6 py-4 space-y-4"
                     >
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">First Name *</label>
+                          <input value={form.firstName} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Last Name *</label>
+                          <input value={form.lastName} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                        </div>
+                      </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">User *</label>
-                        <select
-                          value={form.userId}
-                          onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                        >
-                          <option value="">Select a user without a payroll profile</option>
-                          {eligibleUsers.map((u) => (
-                            <option key={u.id} value={u.id}>{u.firstName} {u.lastName} — {u.email}</option>
-                          ))}
-                        </select>
-                        {eligibleUsers.length === 0 && <p className="text-xs text-slate-400 mt-1">Every active user already has a payroll profile.</p>}
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
+                        <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                        <p className="text-xs text-slate-400 mt-1">If this matches an existing CRM user&apos;s email, their account is linked automatically — enabling My Payslips/My Leave. Otherwise this is a payroll-only record with no login.</p>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>

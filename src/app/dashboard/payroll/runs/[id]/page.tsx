@@ -19,7 +19,7 @@ interface PayslipRow {
   totalDeductions: string;
   netPay: string;
   version: number;
-  employee: { employeeCode: string; department: string | null; designation: string | null; user: { firstName: string; lastName: string } };
+  employee: { employeeCode: string; department: string | null; designation: string | null; firstName: string; lastName: string };
   lineItems: LineItem[];
 }
 interface RunDetail {
@@ -169,7 +169,7 @@ function PayslipRowView({ payslip, isDraft, periodLabel, expanded, onToggle, onS
     <>
       <tr className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={onToggle}>
         <td className="px-4 py-3">
-          <p className="font-medium text-slate-800">{payslip.employee.user.firstName} {payslip.employee.user.lastName}</p>
+          <p className="font-medium text-slate-800">{payslip.employee.firstName} {payslip.employee.lastName}</p>
           <p className="text-xs text-slate-400">{payslip.employee.employeeCode} · {payslip.payableDays}/{payslip.totalDays} days</p>
         </td>
         <td className="px-4 py-3 text-right text-slate-700">₹{Number(payslip.grossEarnings).toLocaleString('en-IN')}</td>
@@ -181,7 +181,7 @@ function PayslipRowView({ payslip, isDraft, periodLabel, expanded, onToggle, onS
               onClick={(e) => {
                 e.stopPropagation();
                 generatePayslipPDF({
-                  employeeName: `${payslip.employee.user.firstName} ${payslip.employee.user.lastName}`,
+                  employeeName: `${payslip.employee.firstName} ${payslip.employee.lastName}`,
                   employeeCode: payslip.employee.employeeCode,
                   department: payslip.employee.department,
                   designation: payslip.employee.designation,

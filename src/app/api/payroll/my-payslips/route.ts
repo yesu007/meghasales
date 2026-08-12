@@ -26,7 +26,7 @@ export async function GET() {
     const userId = currentUserId(session);
     if (!userId) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
-    const employee = await prisma.employee.findUnique({ where: { userId }, include: { user: { select: { firstName: true, lastName: true } } } });
+    const employee = await prisma.employee.findUnique({ where: { userId } });
     if (!employee) return NextResponse.json({ employee: null, payslips: [] });
 
     const payslips = await prisma.payslip.findMany({
@@ -43,7 +43,7 @@ export async function GET() {
         employeeCode: employee.employeeCode,
         department: employee.department,
         designation: employee.designation,
-        name: `${employee.user.firstName} ${employee.user.lastName}`,
+        name: `${employee.firstName} ${employee.lastName}`,
       },
       payslips,
     });
