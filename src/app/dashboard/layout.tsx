@@ -28,61 +28,87 @@ import { TEKFILO_LOGO } from '@/lib/logo';
 import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 
-// A function rather than a module-level constant because the Payroll admin
-// section (unlike every other flag-gated entry here) also needs to check
-// the logged-in user's own permissions, not just the build-time feature
-// flag — "My Payslips" is deliberately the opposite: visible to anyone
-// once the module is on, since it only ever shows that person's own data.
-function getNavItems(canViewPayroll: boolean) {
+// Grouped into labeled sections (rather than one flat list) so the nav
+// reads as a map of the app instead of a dozen equally-weighted rows — and
+// nested under compact headers so the whole thing fits in less vertical
+// space. A function rather than a module-level constant because the
+// Payroll admin section (unlike every other flag-gated entry here) also
+// needs to check the logged-in user's own permissions, not just the
+// build-time feature flag — "My Payslips"/"My Leave" are deliberately the
+// opposite: visible to anyone once the module is on, since they only ever
+// show that person's own data.
+function getNavSections(canViewPayroll: boolean) {
   return [
-    { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
-    { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon },
-    { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon },
-    { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon },
-    { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon },
     {
-      href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon,
-      children: [
-        { href: '/dashboard/accounting', label: 'Dashboard' },
-        { href: '/dashboard/accounting/pending-invoices', label: 'Pending Invoices' },
-        { href: '/dashboard/accounting/paid-invoices', label: 'Paid Invoices' },
-        { href: '/dashboard/accounting/payment-reminders', label: 'Payment Reminders' },
-        { href: '/dashboard/accounting/customer-ledger', label: 'Customer Ledger' },
-        { href: '/dashboard/accounting/reports', label: 'Reports' },
+      title: null,
+      items: [{ href: '/dashboard', label: 'Dashboard', icon: HomeIcon }],
+    },
+    {
+      title: 'Sales',
+      items: [
+        { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon },
+        { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon },
+        { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon },
+        { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon },
       ],
     },
-    ...(isAdminTicketModuleEnabled()
-      ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon }]
-      : []),
-    // Admin section — gated by the flag AND view_payroll, since Employees/
-    // Salary Structures/Runs expose everyone's salary data, not just the
-    // viewer's own.
-    ...(isPayrollModuleEnabled() && canViewPayroll
-      ? [{
-          href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon,
+    {
+      title: 'Finance',
+      items: [
+        {
+          href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon,
           children: [
-            { href: '/dashboard/payroll', label: 'Employees' },
-            { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
-            { href: '/dashboard/payroll/runs', label: 'Payroll Runs' },
-            { href: '/dashboard/payroll/leave', label: 'Leave Requests' },
-            { href: '/dashboard/payroll/loans', label: 'Loans & Advances' },
-            { href: '/dashboard/payroll/reports', label: 'Reports' },
-            { href: '/dashboard/payroll/statutory', label: 'Statutory Settings' },
+            { href: '/dashboard/accounting', label: 'Dashboard' },
+            { href: '/dashboard/accounting/pending-invoices', label: 'Pending Invoices' },
+            { href: '/dashboard/accounting/paid-invoices', label: 'Paid Invoices' },
+            { href: '/dashboard/accounting/payment-reminders', label: 'Payment Reminders' },
+            { href: '/dashboard/accounting/customer-ledger', label: 'Customer Ledger' },
+            { href: '/dashboard/accounting/reports', label: 'Reports' },
           ],
-        }]
-      : []),
-    // Self-service — every logged-in user, no permission needed, since
-    // these only ever show the viewer's own payslips/leave.
-    ...(isPayrollModuleEnabled()
-      ? [
-          { href: '/dashboard/payroll/my-payslips', label: 'My Payslips', icon: WalletIcon },
-          { href: '/dashboard/payroll/my-leave', label: 'My Leave', icon: CalendarDaysIcon },
-        ]
-      : []),
-    { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
-    { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
-    { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon },
-  ];
+        },
+        // Admin section — gated by the flag AND view_payroll, since
+        // Employees/Salary Structures/Runs expose everyone's salary data,
+        // not just the viewer's own.
+        ...(isPayrollModuleEnabled() && canViewPayroll
+          ? [{
+              href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon,
+              children: [
+                { href: '/dashboard/payroll', label: 'Employees' },
+                { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
+                { href: '/dashboard/payroll/runs', label: 'Payroll Runs' },
+                { href: '/dashboard/payroll/leave', label: 'Leave Requests' },
+                { href: '/dashboard/payroll/loans', label: 'Loans & Advances' },
+                { href: '/dashboard/payroll/reports', label: 'Reports' },
+                { href: '/dashboard/payroll/statutory', label: 'Statutory Settings' },
+              ],
+            }]
+          : []),
+      ],
+    },
+    {
+      title: 'My Space',
+      items: isPayrollModuleEnabled()
+        ? [
+            { href: '/dashboard/payroll/my-payslips', label: 'My Payslips', icon: WalletIcon },
+            { href: '/dashboard/payroll/my-leave', label: 'My Leave', icon: CalendarDaysIcon },
+          ]
+        : [],
+    },
+    {
+      title: 'Administration',
+      items: [
+        ...(isAdminTicketModuleEnabled()
+          ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon }]
+          : []),
+        { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
+        { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
+        { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon },
+      ],
+    },
+    // Sections collapse away entirely when every item inside is gated off
+    // (e.g. "My Space" with the Payroll module disabled) rather than
+    // rendering a header over nothing.
+  ].filter((section) => section.items.length > 0);
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -98,10 +124,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const permissions: string[] = (session?.user as any)?.permissions || [];
   const canViewPayroll = role === 'ADMIN' || permissions.includes('view_payroll');
   // Memoized on the one primitive it actually depends on — otherwise
-  // navItems is a new array every render, and the effect below (which
+  // navSections is a new array every render, and the effect below (which
   // needs it in its deps to react to a session that resolves after first
   // paint) would re-run and re-setState on every single render.
-  const navItems = useMemo(() => getNavItems(canViewPayroll), [canViewPayroll]);
+  const navSections = useMemo(() => getNavSections(canViewPayroll), [canViewPayroll]);
+  const navItems = useMemo(() => navSections.flatMap((section) => section.items), [navSections]);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
@@ -153,76 +180,83 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Sidebar — static in-flow column at md+ (unchanged from before),
           a slide-in overlay drawer below md */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out overflow-y-auto md:static md:z-auto md:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-6 border-b border-slate-700 flex items-start justify-between">
+        <div className="p-4 border-b border-slate-700 flex items-start justify-between">
           <div>
-            <div className="bg-white rounded-lg px-3 py-2 inline-block">
+            <div className="bg-white rounded-lg px-2.5 py-1.5 inline-block">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={TEKFILO_LOGO} alt="Tekfilo" className="h-6 w-auto" />
+              <img src={TEKFILO_LOGO} alt="Tekfilo" className="h-5 w-auto" />
             </div>
-            <p className="text-xs text-slate-400 mt-2">MeghaSales CRM</p>
+            <p className="text-[11px] text-slate-400 mt-1.5">MeghaSales CRM</p>
           </div>
           <button onClick={() => setMobileNavOpen(false)} className="md:hidden p-2 -mr-2 -mt-1 text-slate-400 hover:text-white" aria-label="Close menu">
             <XMarkIcon className="h-6 w-6" />
           </button>
         </div>
 
-        <nav className="flex-1 py-4">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+        <nav className="flex-1 py-2 overflow-y-auto">
+          {navSections.map((section, sectionIdx) => (
+            <div key={section.title ?? 'top'} className={sectionIdx > 0 ? 'mt-1 pt-1 border-t border-slate-800/70' : ''}>
+              {section.title && (
+                <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.title}</p>
+              )}
+              {section.items.map((item) => {
+                const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
 
-            if ('children' in item && item.children) {
-              const isExpanded = expandedGroups.has(item.href);
-              return (
-                <div key={item.href}>
-                  <button
-                    onClick={() => setExpandedGroups((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(item.href)) next.delete(item.href); else next.add(item.href);
-                      return next;
-                    })}
-                    className={`w-full flex items-center gap-3 px-6 py-3 text-sm transition-colors ${
-                      isActive ? 'text-amber-400' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                if ('children' in item && item.children) {
+                  const isExpanded = expandedGroups.has(item.href);
+                  return (
+                    <div key={item.href}>
+                      <button
+                        onClick={() => setExpandedGroups((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(item.href)) next.delete(item.href); else next.add(item.href);
+                          return next;
+                        })}
+                        className={`w-full flex items-center gap-2.5 px-4 py-2 text-[13px] transition-colors ${
+                          isActive ? 'text-amber-400' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
+                        <span className="flex-1 text-left">{item.label}</span>
+                        <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                      </button>
+                      {isExpanded && (
+                        <div className="pb-0.5">
+                          {item.children.map((child) => {
+                            const isChildActive = pathname === child.href;
+                            return (
+                              <Link
+                                key={child.href}
+                                href={child.href}
+                                className={`block pl-10 pr-4 py-1.5 text-[13px] transition-colors ${
+                                  isChildActive ? 'bg-slate-800 text-amber-400 border-r-2 border-amber-400' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                                }`}
+                              >
+                                {child.label}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-2.5 px-4 py-2 text-[13px] transition-colors ${
+                      isActive ? 'bg-slate-800 text-amber-400 border-r-2 border-amber-400' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
                   >
-                    <item.icon className="h-5 w-5" />
-                    <span className="flex-1 text-left">{item.label}</span>
-                    <ChevronDownIcon className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                  </button>
-                  {isExpanded && (
-                    <div className="pb-1">
-                      {item.children.map((child) => {
-                        const isChildActive = pathname === child.href;
-                        return (
-                          <Link
-                            key={child.href}
-                            href={child.href}
-                            className={`block pl-12 pr-6 py-2 text-sm transition-colors ${
-                              isChildActive ? 'bg-slate-800 text-amber-400 border-r-2 border-amber-400' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                            }`}
-                          >
-                            {child.label}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            }
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-6 py-3 text-sm transition-colors ${
-                  isActive ? 'bg-slate-800 text-amber-400 border-r-2 border-amber-400' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <item.icon className="h-5 w-5" />
-                {item.label}
-              </Link>
-            );
-          })}
+                    <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
       </aside>
 
