@@ -466,6 +466,34 @@ async function main() {
     console.log('  ✓ Tamil Nadu PT slabs seeded');
   }
 
+  // Payroll Phase 5 (Attendance & Leave) — approve_leave permission,
+  // granted to the same three roles as every other payroll permission.
+  const approveLeavePermission = await prisma.permission.upsert({
+    where: { name: 'approve_leave' },
+    update: {},
+    create: { name: 'approve_leave', description: 'Approve or reject employee leave requests', module: 'PAYROLL' },
+  });
+  for (const role of payrollRoles) {
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: role.id, permissionId: approveLeavePermission.id } },
+      update: {},
+      create: { roleId: role.id, permissionId: approveLeavePermission.id },
+    });
+  }
+  console.log('  ✓ approve_leave permission granted to ADMIN, MANAGEMENT, FINANCE roles');
+
+  // Starter leave types — upsert by code so re-seeding never duplicates.
+  const leaveTypes = [
+    { name: 'Casual Leave', code: 'CASUAL', isPaid: true, annualQuota: 12 },
+    { name: 'Sick Leave', code: 'SICK', isPaid: true, annualQuota: 12 },
+    { name: 'Earned Leave', code: 'EARNED', isPaid: true, annualQuota: 15 },
+    { name: 'Loss of Pay', code: 'LOP', isPaid: false, annualQuota: null },
+  ];
+  for (const lt of leaveTypes) {
+    await prisma.leaveType.upsert({ where: { code: lt.code }, update: {}, create: lt });
+  }
+  console.log('  ✓ Leave types seeded');
+
   console.log('✅ Seeding complete!');
 }
 

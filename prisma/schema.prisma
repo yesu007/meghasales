@@ -669,6 +669,8 @@ model Employee {
   user               User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
   salaryAssignments  SalaryStructureAssignment[]
   payslips           Payslip[]
+  leaveRequests      LeaveRequest[]
+  loans              Loan[]
 
   @@map("employees")
 }
@@ -858,6 +860,108 @@ model PtSlab {
 
   @@index([state, isActive])
   @@map("pt_slabs")
+}
+
+// Payroll Phase 5 (Attendance & Leave) — a named leave type (Casual,
+// Sick, Earned, Loss of Pay, ...). annualQuota is null for an unlimited
+// type (LOP itself — anyone can take unpaid leave without a cap);
+// isPaid=false is what makes a type actually reduce payableDays in a
+// payroll run, via computeAutoLopDays() in leaveEngine.ts.
+model LeaveType {
+  id          Int      @id @default(autoincrement())
+  name        String
+  code        String   @unique
+  isPaid      Boolean  @default(true) @map("is_paid")
+  annualQuota Decimal? @db.Decimal(5, 1) @map("annual_quota")
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  requests LeaveRequest[]
+
+  @@map("leave_types")
+}
+
+// No separate LeaveBalance table — "days used" is always summed live from
+// APPROVED requests rather than tracked as a mutable running total, so
+// there's exactly one source of truth and nothing to keep in sync. Simple
+// linear workflow (PENDING -> APPROVED/REJECTED by an approver, or ->
+// CANCELLED by the employee themselves) rather than PayrollRun's full
+// reversible matrix — a rejected or cancelled leave request doesn't get
+// reopened, the employee just applies again. No holiday-calendar or
+// weekend exclusion in this phase — `days` is the calendar span the
+// employee (or the UI) states, start through end inclusive.
+model LeaveRequest {
+  id           Int       @id @default(autoincrement())
+  employeeId   Int       @map("employee_id")
+  leaveTypeId  Int       @map("leave_type_id")
+  startDate    DateTime  @map("start_date")
+  endDate      DateTime  @map("end_date")
+  days         Decimal   @db.Decimal(5, 1)
+  reason       String?
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  appliedAt    DateTime  @default(now()) @map("applied_at")
+  approvedById Int?      @map("approved_by")
+  approvedAt   DateTime? @map("approved_at")
+  decisionNote String?   @map("decision_note")
+  version      Int       @default(1)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@index([employeeId, startDate])
+  @@map("leave_requests")
+}
+
+// Payroll Phase 5 (Loans & Advances) — outstandingBalance starts equal to
+// principal and is only ever decremented when a run holding a repayment
+// reaches PROCESSED (see changeRunStatus in runService.ts), and added
+// back if that run is reopened to DRAFT — the same reversible-on-reopen
+// philosophy PayrollRun itself uses, so a loan's balance never drifts
+// out of sync with what was actually processed.
+model Loan {
+  id                 Int      @id @default(autoincrement())
+  employeeId         Int      @map("employee_id")
+  principal          Decimal  @db.Decimal(12, 2)
+  reason             String?
+  disbursedDate      DateTime @map("disbursed_date")
+  monthlyInstallment Decimal  @db.Decimal(12, 2) @map("monthly_installment")
+  outstandingBalance Decimal  @db.Decimal(12, 2) @map("outstanding_balance")
+  status             String   @default("ACTIVE") // ACTIVE | CLOSED | CANCELLED
+  createdById        Int?     @map("created_by")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  repayments LoanRepayment[]
+
+  @@map("loans")
+}
+
+// One row per "this loan had an installment applied to this run" — the
+// audit trail `Loan.outstandingBalance` is derived from, and what makes
+// the DRAFT->PROCESSED->DRAFT reversal in changeRunStatus safe: it's what
+// gets flipped between PENDING (tentative, added while the run is still
+// DRAFT) and APPLIED (the balance has actually been decremented). A
+// regenerate on a still-DRAFT run deletes PENDING rows for that run
+// (see /api/payroll/runs/[id]/regenerate) since the payslip line item
+// they refer to gets wiped too.
+model LoanRepayment {
+  id        Int      @id @default(autoincrement())
+  loanId    Int      @map("loan_id")
+  runId     Int      @map("run_id")
+  payslipId Int?     @map("payslip_id")
+  amount    Decimal  @db.Decimal(12, 2)
+  status    String   @default("PENDING") // PENDING | APPLIED
+  createdAt DateTime @default(now()) @map("created_at")
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@unique([loanId, runId])
+  @@map("loan_repayments")
 }
 
 model StatusMaster {

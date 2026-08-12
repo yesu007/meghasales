@@ -27,6 +27,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      // A regenerate only ever runs on a DRAFT run, so any LoanRepayment
+      // row for it is still PENDING (nothing gets to APPLIED before
+      // PROCESSED) — safe to drop along with the payslips they were
+      // logged against.
+      await tx.loanRepayment.deleteMany({ where: { runId: id, status: 'PENDING' } });
       await tx.payslip.deleteMany({ where: { runId: id } });
       return generateRunPayslips(tx, id, run.payPeriodYear, run.payPeriodMonth);
     });

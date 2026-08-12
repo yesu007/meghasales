@@ -2,6 +2,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import dayjs from 'dayjs';
 import { isValidRunStatusTransition, RunStatus } from './constants';
 import { computePayableDays, daysInMonth, resolveStructureLineItems, round2, StatutoryConfig } from './runEngine';
+import { computeAutoLopDays } from './leaveEngine';
 
 export class OptimisticLockError extends Error {}
 export class InvalidStatusTransitionError extends Error {}
@@ -68,7 +69,14 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
       continue;
     }
 
-    const payableDays = computePayableDays({ year, month, totalDays, lopDays: 0, dateOfJoining: employee.dateOfJoining, dateOfLeaving: employee.dateOfLeaving });
+    // Auto-computed from APPROVED unpaid-leave requests overlapping this
+    // period — Phase 5's Attendance & Leave replacing the "always starts
+    // at 0, HR fills it in by hand" behavior from Phase 2. Still just the
+    // starting value: recalculatePayslip's manual lopDays override (while
+    // the run is DRAFT) still works exactly as before, same interface, in
+    // case HR needs to correct it.
+    const autoLopDays = await computeAutoLopDays(tx, employee.id, periodStart, periodEnd);
+    const payableDays = computePayableDays({ year, month, totalDays, lopDays: autoLopDays, dateOfJoining: employee.dateOfJoining, dateOfLeaving: employee.dateOfLeaving });
     const ratio = totalDays > 0 ? payableDays / totalDays : 0;
 
     const scaledItems = resolveStructureLineItems(assignment.structure.components, statutory).map((item) => ({ ...item, amount: round2(item.amount * ratio) }));
@@ -82,7 +90,7 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
         assignmentId: assignment.id,
         totalDays,
         payableDays,
-        lopDays: 0,
+        lopDays: autoLopDays,
         grossEarnings,
         totalDeductions,
         netPay: round2(grossEarnings - totalDeductions),
@@ -194,5 +202,46 @@ export async function changeRunStatus(tx: Client, runId: number, toStatus: RunSt
     throw new OptimisticLockError('Payroll run was modified by someone else — reload and try again');
   }
 
+  await applyOrReverseLoanRepayments(tx, runId, fromStatus, toStatus);
+
   return tx.payrollRun.findUniqueOrThrow({ where: { id: runId } });
+}
+
+const COMMITTED_STATUSES: RunStatus[] = ['PROCESSED', 'PAID'];
+
+// A loan's outstandingBalance only actually moves once its run is
+// "committed" (PROCESSED or PAID) — not the moment an installment is
+// tentatively added to a still-DRAFT payslip (see loans/[id]/apply-to-run,
+// which only logs a PENDING LoanRepayment). Crossing the DRAFT/APPROVED
+// <-> PROCESSED/PAID boundary in either direction applies or reverses
+// every repayment logged against this run, symmetrically — reopening a
+// PROCESSED run back to DRAFT undoes the balance change exactly as
+// cleanly as committing it applied it, matching PayrollRun's own
+// reversible-status philosophy.
+async function applyOrReverseLoanRepayments(tx: Client, runId: number, fromStatus: RunStatus, toStatus: RunStatus): Promise<void> {
+  const wasCommitted = COMMITTED_STATUSES.includes(fromStatus);
+  const willBeCommitted = COMMITTED_STATUSES.includes(toStatus);
+  if (wasCommitted === willBeCommitted) return; // no boundary crossed
+
+  if (!wasCommitted && willBeCommitted) {
+    const pending = await tx.loanRepayment.findMany({ where: { runId, status: 'PENDING' }, include: { loan: true } });
+    for (const repayment of pending) {
+      const newBalance = round2(Number(repayment.loan.outstandingBalance) - Number(repayment.amount));
+      await tx.loan.update({
+        where: { id: repayment.loanId },
+        data: { outstandingBalance: Math.max(0, newBalance), status: newBalance <= 0 ? 'CLOSED' : repayment.loan.status },
+      });
+      await tx.loanRepayment.update({ where: { id: repayment.id }, data: { status: 'APPLIED' } });
+    }
+  } else {
+    const applied = await tx.loanRepayment.findMany({ where: { runId, status: 'APPLIED' }, include: { loan: true } });
+    for (const repayment of applied) {
+      const restoredBalance = round2(Number(repayment.loan.outstandingBalance) + Number(repayment.amount));
+      await tx.loan.update({
+        where: { id: repayment.loanId },
+        data: { outstandingBalance: restoredBalance, status: repayment.loan.status === 'CLOSED' ? 'ACTIVE' : repayment.loan.status },
+      });
+      await tx.loanRepayment.update({ where: { id: repayment.id }, data: { status: 'PENDING' } });
+    }
+  }
 }

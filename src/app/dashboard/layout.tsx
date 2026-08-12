@@ -19,6 +19,7 @@ import {
   BanknotesIcon,
   CurrencyRupeeIcon,
   WalletIcon,
+  CalendarDaysIcon,
   ChevronDownIcon,
   Bars3Icon,
   XMarkIcon,
@@ -63,15 +64,20 @@ function getNavItems(canViewPayroll: boolean) {
             { href: '/dashboard/payroll', label: 'Employees' },
             { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
             { href: '/dashboard/payroll/runs', label: 'Payroll Runs' },
+            { href: '/dashboard/payroll/leave', label: 'Leave Requests' },
+            { href: '/dashboard/payroll/loans', label: 'Loans & Advances' },
             { href: '/dashboard/payroll/reports', label: 'Reports' },
             { href: '/dashboard/payroll/statutory', label: 'Statutory Settings' },
           ],
         }]
       : []),
-    // Self-service — every logged-in user, no permission needed, since it
-    // only ever shows the viewer's own payslips.
+    // Self-service — every logged-in user, no permission needed, since
+    // these only ever show the viewer's own payslips/leave.
     ...(isPayrollModuleEnabled()
-      ? [{ href: '/dashboard/payroll/my-payslips', label: 'My Payslips', icon: WalletIcon }]
+      ? [
+          { href: '/dashboard/payroll/my-payslips', label: 'My Payslips', icon: WalletIcon },
+          { href: '/dashboard/payroll/my-leave', label: 'My Leave', icon: CalendarDaysIcon },
+        ]
       : []),
     { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
     { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
