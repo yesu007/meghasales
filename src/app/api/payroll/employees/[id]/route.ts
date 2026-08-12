@@ -66,3 +66,33 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({ message: error.message || 'Failed to update employee' }, { status: 400 });
   }
 }
+
+// Only removable if they were never actually run through payroll — once
+// a Payslip exists, the FK is RESTRICT (not CASCADE) specifically so this
+// can't silently erase paid-run history. That's what "Mark as Exited"
+// (the status field, PATCH above) is for instead; this DELETE is for
+// undoing a wrong onboarding, not offboarding a real employee.
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
+  const denied = await requirePermission('manage_employees');
+  if (denied) return denied;
+
+  try {
+    const id = parseInt(params.id);
+    const existing = await prisma.employee.findUnique({ where: { id } });
+    if (!existing) return NextResponse.json({ message: 'Employee not found' }, { status: 404 });
+
+    const payslipCount = await prisma.payslip.count({ where: { employeeId: id } });
+    if (payslipCount > 0) {
+      return NextResponse.json({ message: `Cannot delete — this employee has ${payslipCount} payslip(s) on record. Set their status to Exited instead.` }, { status: 409 });
+    }
+
+    await prisma.employee.delete({ where: { id } });
+    await logAudit({ action: 'DELETE', entityType: 'EMPLOYEE', entityId: id, oldValue: existing, description: `Employee ${existing.employeeCode} removed from payroll`, request });
+
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    console.error('DELETE /api/payroll/employees/[id] error:', error);
+    return NextResponse.json({ message: error.message || 'Failed to delete employee' }, { status: 400 });
+  }
+}

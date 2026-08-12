@@ -2,9 +2,10 @@
 
 import { useState, Fragment } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, Transition } from '@headlessui/react';
-import { PlusIcon, XMarkIcon, InboxIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, XMarkIcon, InboxIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 interface EligibleUser {
@@ -53,6 +54,7 @@ const blankForm = {
 };
 
 export default function PayrollEmployeesPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -91,6 +93,29 @@ export default function PayrollEmployeesPage() {
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/payroll/employees/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to delete employee');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll-employees'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll-eligible-users'] });
+      toast.success('Employee removed from payroll');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleDelete = (emp: EmployeeRow) => {
+    if (window.confirm(`Remove ${emp.userName} (${emp.employeeCode}) from payroll? This cannot be undone.`)) {
+      deleteMutation.mutate(emp.id);
+    }
+  };
 
   const employees = data?.content || [];
 
@@ -138,6 +163,7 @@ export default function PayrollEmployeesPage() {
                   <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden sm:table-cell">Department / Designation</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700 hidden md:table-cell">Salary Structure</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -155,6 +181,16 @@ export default function PayrollEmployeesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[e.status] || 'bg-slate-100 text-slate-600'}`}>{e.status.replace('_', ' ')}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => router.push(`/dashboard/payroll/${e.id}`)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                          <PencilIcon className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => handleDelete(e)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
