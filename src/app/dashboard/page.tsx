@@ -91,22 +91,22 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-slate-800">
+        <h1 className="text-lg sm:text-xl font-bold text-slate-800">
           Welcome back, {session?.user?.name?.split(' ')[0]}
         </h1>
-        <p className="text-slate-500 mt-1 text-sm sm:text-base">Here&apos;s your CRM overview</p>
+        <p className="text-slate-500 mt-0.5 text-sm">Here&apos;s your CRM overview</p>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {kpis.map((kpi) => (
-          <div key={kpi.label} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <p className="text-sm text-slate-500">{kpi.label}</p>
-            <p className={`text-3xl font-bold mt-2 ${kpi.color.split(' ')[1]}`}>
+          <div key={kpi.label} className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-slate-500">{kpi.label}</p>
+            <p className={`text-xl sm:text-2xl font-bold mt-1 ${kpi.color.split(' ')[1]}`}>
               {isLoading ? (
-                <span className="inline-block h-8 w-12 bg-slate-100 rounded animate-pulse align-middle" />
+                <span className="inline-block h-6 w-10 bg-slate-100 rounded animate-pulse align-middle" />
               ) : (
                 kpi.value ?? 0
               )}
@@ -116,9 +116,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Lead Lookup */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-800">Lead Lookup</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-slate-800">Lead Lookup</h2>
           <p className="text-sm text-slate-500 mt-0.5">Find a lead to view its current status and full history of status changes and interactions.</p>
         </div>
         <div className="max-w-md">
@@ -162,9 +162,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick Actions */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 className="text-lg font-semibold text-slate-800 mb-4">Quick Actions</h2>
-        <div className="flex flex-wrap gap-3">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+        <h2 className="text-base sm:text-lg font-semibold text-slate-800 mb-3">Quick Actions</h2>
+        <div className="flex flex-wrap gap-2 sm:gap-3">
           <a href="/dashboard/leads" className="flex items-center px-4 py-2 min-h-[44px] bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
             Manage Leads
           </a>

@@ -371,22 +371,22 @@ export default function LeadsPage() {
 
       {/* Summary widgets */}
       {showDashboard && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-            <p className="text-sm text-slate-500">Total New Leads</p>
-            <p className="text-3xl font-bold mt-2 text-slate-700">{stats?.totalNew ?? '—'}</p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-slate-500">Total New Leads</p>
+            <p className="text-xl sm:text-2xl font-bold mt-1 text-slate-700">{stats?.totalNew ?? '—'}</p>
           </div>
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-            <p className="text-sm text-slate-500">Pending Follow-up</p>
-            <p className="text-3xl font-bold mt-2 text-orange-600">{stats?.pendingFollowUp ?? '—'}</p>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-slate-500">Pending Follow-up</p>
+            <p className="text-xl sm:text-2xl font-bold mt-1 text-orange-600">{stats?.pendingFollowUp ?? '—'}</p>
           </div>
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-            <p className="text-sm text-slate-500">Overdue Follow-ups</p>
-            <p className="text-3xl font-bold mt-2 text-red-600">{stats?.overdueFollowUp ?? '—'}</p>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-slate-500">Overdue Follow-ups</p>
+            <p className="text-xl sm:text-2xl font-bold mt-1 text-red-600">{stats?.overdueFollowUp ?? '—'}</p>
           </div>
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-            <p className="text-sm text-slate-500">Converted This Month</p>
-            <p className="text-3xl font-bold mt-2 text-green-600">{stats?.convertedThisMonth ?? '—'}</p>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-slate-500">Converted This Month</p>
+            <p className="text-xl sm:text-2xl font-bold mt-1 text-green-600">{stats?.convertedThisMonth ?? '—'}</p>
           </div>
         </div>
       )}
