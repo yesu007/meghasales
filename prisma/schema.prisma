@@ -70,6 +70,7 @@ model User {
   implementations Implementation[] @relation("ProjectManager")
   notifications   Notification[]
   pushSubscriptions PushSubscription[]
+  employee          Employee?
 
   // Event Management
   createdEvents            Event[]                @relation("EventCreatedBy")
@@ -564,6 +565,13 @@ model CompanyProfile {
   supplierStateCode     String?  @default("TN") @map("supplier_state_code")
   defaultCountryId      Int?     @map("default_country_id")
   isActive              Boolean  @default(true) @map("is_active")
+  // Payroll statutory identifiers — the business's own GST/PAN/bank details
+  // already exist above; these four are specifically what Payroll's Phase 4
+  // compliance reports (PF/ESI/PT/TDS) need and nothing else in the app uses.
+  tanNumber             String?  @map("tan_number")
+  pfEstablishmentCode   String?  @map("pf_establishment_code")
+  esiEstablishmentCode  String?  @map("esi_establishment_code")
+  ptRegistrationNumber  String?  @map("pt_registration_number")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 
@@ -612,6 +620,43 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+// Payroll Phase 0 — the payroll-eligible HR profile for an existing User.
+// Kept as its own 1:1 table rather than columns on User: User is pure
+// identity/auth (see its own fields) and every other module already reads
+// it that way, so bolting salary/bank/statutory fields directly onto it
+// would leak payroll-sensitive data into every query that just needs a
+// name for a dropdown. A User only gets an Employee row once someone
+// actually onboards them into payroll (Phase 1) — plenty of Users (e.g.
+// a demo login) will never have one.
+model Employee {
+  id                Int       @id @default(autoincrement())
+  userId            Int       @unique @map("user_id")
+  employeeCode      String    @unique @map("employee_code")
+  department        String?
+  designation       String?
+  dateOfJoining     DateTime? @map("date_of_joining")
+  dateOfLeaving     DateTime? @map("date_of_leaving")
+  employmentType    String    @default("FULL_TIME") @map("employment_type") // FULL_TIME | PART_TIME | CONTRACT | INTERN
+  panNumber         String?   @map("pan_number")
+  uanNumber         String?   @map("uan_number") // PF Universal Account Number
+  esicNumber        String?   @map("esic_number")
+  bankAccountNumber String?   @map("bank_account_number")
+  bankIfsc          String?   @map("bank_ifsc")
+  bankAccountHolder String?   @map("bank_account_holder")
+  bankName          String?   @map("bank_name")
+  taxRegime         String    @default("NEW") @map("tax_regime") // OLD | NEW
+  pfApplicable      Boolean   @default(true) @map("pf_applicable")
+  esiApplicable     Boolean   @default(false) @map("esi_applicable")
+  ptApplicable      Boolean   @default(true) @map("pt_applicable")
+  status            String    @default("ACTIVE") // ACTIVE | ON_NOTICE | EXITED
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("employees")
 }
 
 model StatusMaster {

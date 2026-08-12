@@ -17,12 +17,14 @@ import {
   ClipboardDocumentListIcon,
   ClipboardDocumentCheckIcon,
   BanknotesIcon,
+  CurrencyRupeeIcon,
   ChevronDownIcon,
   Bars3Icon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
 import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
+import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
@@ -43,6 +45,11 @@ const NAV_ITEMS = [
   },
   ...(isAdminTicketModuleEnabled()
     ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon }]
+    : []),
+  // Phase 0 of the payroll plan — flag defaults off, so this stays invisible
+  // until there's an actual /dashboard/payroll page to link to (Phase 1).
+  ...(isPayrollModuleEnabled()
+    ? [{ href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon }]
     : []),
   { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
   { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },

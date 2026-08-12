@@ -419,6 +419,33 @@ async function main() {
   }
   console.log('  ✓ Admin Ticket categories seeded');
 
+  // Payroll module permissions — feature-flagged (FEATURE_PAYROLL), Phase 0
+  // of the payroll plan. Full grant to ADMIN/MANAGEMENT/FINANCE, mirroring
+  // the Accounting grant above exactly (same three roles, no read-only
+  // split, no new role) rather than Admin Ticket's ADMIN/DEVOPS-manage +
+  // MANAGEMENT-view-only pattern.
+  const payrollPermissions = [
+    { name: 'view_payroll', description: 'View employee payroll profiles, salary structures, and payroll runs', module: 'PAYROLL' },
+    { name: 'manage_employees', description: 'Create/edit employee HR and payroll profiles', module: 'PAYROLL' },
+    { name: 'manage_salary_structures', description: 'Create/edit salary components, structures, and employee assignments', module: 'PAYROLL' },
+    { name: 'run_payroll', description: 'Generate and edit a draft payroll run', module: 'PAYROLL' },
+    { name: 'approve_payroll', description: 'Approve, process, and mark a payroll run as paid', module: 'PAYROLL' },
+  ];
+  const createdPayrollPermissions = await Promise.all(
+    payrollPermissions.map((p) => prisma.permission.upsert({ where: { name: p.name }, update: {}, create: p }))
+  );
+  const payrollRoles = [roles[0], roles[1], roles[4]]; // ADMIN, MANAGEMENT, FINANCE
+  for (const role of payrollRoles) {
+    for (const permission of createdPayrollPermissions) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+        update: {},
+        create: { roleId: role.id, permissionId: permission.id },
+      });
+    }
+  }
+  console.log('  ✓ Payroll permissions granted to ADMIN, MANAGEMENT, FINANCE roles');
+
   console.log('✅ Seeding complete!');
 }
 
