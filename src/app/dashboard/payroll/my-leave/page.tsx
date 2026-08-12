@@ -52,7 +52,12 @@ export default function MyLeavePage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to apply'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['my-leave'] }); toast.success('Leave request submitted'); setForm(blankForm); },
+    onSuccess: (data: { departmentOverlapWarning?: string | null }) => {
+      queryClient.invalidateQueries({ queryKey: ['my-leave'] });
+      toast.success('Leave request submitted');
+      if (data.departmentOverlapWarning) toast(data.departmentOverlapWarning, { icon: '⚠️', duration: 8000 });
+      setForm(blankForm);
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 

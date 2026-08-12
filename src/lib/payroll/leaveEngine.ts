@@ -54,3 +54,43 @@ export async function computeAutoLopDays(tx: Client, employeeId: number, periodS
   });
   return computeAutoLopDaysFromRequests(requests, periodStart, periodEnd);
 }
+
+export interface DepartmentOverlapColleague {
+  employeeId: number;
+  name: string;
+  status: string;
+}
+
+// Flags when a leave request shares its dates with one or more OTHER
+// employees in the same department who are already PENDING/APPROVED for
+// that window — e.g. two of three testers out the same week. department
+// is matched exactly (it's free-text on Employee, not an enum) and a
+// null/blank department never matches anything, since there's no group to
+// cross-check against. Used both at apply-time (to notify the applier and
+// every approve_leave holder) and on the approval queue (to flag it for
+// whoever is about to decide).
+export async function findOverlappingDepartmentColleagues(
+  tx: Client,
+  department: string,
+  employeeId: number,
+  startDate: Date,
+  endDate: Date
+): Promise<DepartmentOverlapColleague[]> {
+  const rows = await tx.leaveRequest.findMany({
+    where: {
+      status: { in: ['PENDING', 'APPROVED'] },
+      startDate: { lte: endDate },
+      endDate: { gte: startDate },
+      employee: { id: { not: employeeId }, department },
+    },
+    include: { employee: { select: { id: true, firstName: true, lastName: true } } },
+  });
+
+  const seen = new Map<number, DepartmentOverlapColleague>();
+  for (const r of rows) {
+    if (!seen.has(r.employee.id)) {
+      seen.set(r.employee.id, { employeeId: r.employee.id, name: `${r.employee.firstName} ${r.employee.lastName}`, status: r.status });
+    }
+  }
+  return Array.from(seen.values());
+}

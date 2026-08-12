@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
+import { findOverlappingDepartmentColleagues } from '@/lib/payroll/leaveEngine';
+import { isPushConfigured, sendPushToUser } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,9 +103,72 @@ export async function POST(request: NextRequest) {
       data: { employeeId: employee.id, leaveTypeId: leaveType.id, startDate: start, endDate: end, days: Number(days), reason: reason || null },
     });
 
-    return NextResponse.json(leaveRequest, { status: 201 });
+    const departmentOverlapWarning = await notifyDepartmentOverlapIfAny(employee, leaveRequest.id, start, end);
+
+    return NextResponse.json({ ...leaveRequest, departmentOverlapWarning }, { status: 201 });
   } catch (error: any) {
     console.error('POST /api/payroll/leave-requests/mine error:', error);
     return NextResponse.json({ message: error.message || 'Failed to apply for leave' }, { status: 400 });
   }
+}
+
+// Best-effort — notification/push failures must never fail the leave
+// application itself, so this runs after the request row is already
+// committed. Notifies the applier (so they know their leave may need
+// extra coordination) and every approve_leave holder (so the person about
+// to decide sees the staffing risk up front, not after the fact). Returns
+// the applier-facing message so the UI can also surface it inline on
+// submit, not just via the notification bell.
+async function notifyDepartmentOverlapIfAny(
+  employee: { id: number; userId: number | null; department: string | null; firstName: string; lastName: string },
+  leaveRequestId: number,
+  start: Date,
+  end: Date
+): Promise<string | null> {
+  if (!employee.department) return null;
+
+  const colleagues = await findOverlappingDepartmentColleagues(prisma, employee.department, employee.id, start, end);
+  if (colleagues.length === 0) return null;
+
+  const names = colleagues.map((c) => c.name).join(', ');
+  const applierMessage = `${colleagues.length} other ${employee.department} employee${colleagues.length === 1 ? ' is' : 's are'} already on leave overlapping your requested dates: ${names}.`;
+  const approverMessage = `${employee.firstName} ${employee.lastName}'s leave request overlaps with ${colleagues.length} other ${employee.department} employee${colleagues.length === 1 ? '' : 's'} already on leave: ${names}.`;
+
+  const approvers = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      OR: [{ role: { name: 'ADMIN' } }, { role: { permissions: { some: { permission: { name: 'approve_leave' } } } } }],
+    },
+    select: { id: true },
+  });
+
+  const recipients = new Map<number, string>();
+  if (employee.userId) recipients.set(employee.userId, applierMessage);
+  for (const approver of approvers) {
+    if (approver.id !== employee.userId) recipients.set(approver.id, approverMessage);
+  }
+
+  await prisma.notification.createMany({
+    data: Array.from(recipients.entries()).map(([userId, message]) => ({
+      userId,
+      title: 'Multiple department leave overlap',
+      message,
+      type: 'LEAVE_DEPARTMENT_OVERLAP',
+      channel: 'IN_APP',
+      entityType: 'LEAVE_REQUEST',
+      entityId: leaveRequestId,
+    })),
+  });
+
+  if (isPushConfigured()) {
+    for (const [userId, message] of Array.from(recipients.entries())) {
+      try {
+        await sendPushToUser(userId, { title: 'Multiple department leave overlap', body: message, url: '/dashboard/payroll/leave' });
+      } catch (error) {
+        console.error(`Push send failed for user ${userId}:`, error);
+      }
+    }
+  }
+
+  return applierMessage;
 }

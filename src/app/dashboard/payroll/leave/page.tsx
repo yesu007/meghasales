@@ -24,6 +24,7 @@ interface LeaveRequestRow {
   appliedAt: string;
   employee: { employeeCode: string; department: string | null; firstName: string; lastName: string };
   leaveType: { name: string; code: string; isPaid: boolean };
+  departmentOverlap: { employeeId: number; name: string; status: string }[];
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -116,6 +117,11 @@ export default function LeaveApprovalsPage() {
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800">{r.employee.firstName} {r.employee.lastName}</p>
                       <p className="text-xs text-slate-400">{r.employee.employeeCode}{r.reason ? ` · ${r.reason}` : ''}</p>
+                      {r.departmentOverlap.length > 0 && (
+                        <p className="text-xs text-amber-600 font-medium mt-0.5" title={r.departmentOverlap.map((c) => c.name).join(', ')}>
+                          ⚠ {r.departmentOverlap.length} other{r.departmentOverlap.length === 1 ? '' : 's'} from {r.employee.department} already on leave
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{r.leaveType.name}{!r.leaveType.isPaid && <span className="ml-1 text-[10px] uppercase text-red-500">unpaid</span>}</td>
                     <td className="px-4 py-3 text-slate-600">{dayjs(r.startDate).format('DD MMM')} – {dayjs(r.endDate).format('DD MMM YYYY')}</td>
