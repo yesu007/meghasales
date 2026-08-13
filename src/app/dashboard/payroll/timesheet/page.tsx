@@ -199,16 +199,32 @@ export default function TimeAndAttendancePage() {
             </div>
 
             {/* Day strip — a visual marker of the period, not an entry grid (hours are entered as monthly totals below). Weekends muted, today ringed. */}
-            <div className="flex gap-0.5 overflow-x-auto pb-1">
-              {Array.from({ length: daysInThisMonth }, (_, i) => i + 1).map((d) => {
-                const isWeekend = [0, 6].includes(dayjs(`${year}-${month}-${d}`).day());
-                const isToday = todayInPeriod === d;
-                return (
-                  <div key={d} className={`flex-1 min-w-[24px] text-center text-[11px] py-1.5 rounded font-medium ${isToday ? 'ring-2 ring-offset-1 ring-slate-800' : ''} ${isWeekend ? 'bg-rose-100 text-rose-500' : 'bg-emerald-500 text-white'}`}>
-                    {d}
-                  </div>
-                );
-              })}
+            <div className="space-y-2">
+              <div className="flex gap-1.5 overflow-x-auto pb-1 px-0.5">
+                {Array.from({ length: daysInThisMonth }, (_, i) => i + 1).map((d) => {
+                  const isWeekend = [0, 6].includes(dayjs(`${year}-${month}-${d}`).day());
+                  const isToday = todayInPeriod === d;
+                  return (
+                    <div
+                      key={d}
+                      className={`flex-1 min-w-[30px] text-center text-[11px] font-semibold py-2 rounded-xl transition-all duration-150 ${
+                        isToday
+                          ? 'bg-white text-slate-800 ring-2 ring-amber-400 ring-offset-1 shadow-sm scale-105'
+                          : isWeekend
+                          ? 'bg-rose-50 text-rose-300 hover:bg-rose-100'
+                          : 'bg-gradient-to-b from-emerald-400 to-emerald-500 text-white shadow-sm shadow-emerald-100 hover:shadow-md hover:-translate-y-0.5'
+                      }`}
+                    >
+                      {d}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-4 text-[11px] text-slate-400 px-0.5">
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-gradient-to-b from-emerald-400 to-emerald-500" /> Working day</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-100" /> Weekend</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-white ring-2 ring-amber-400" /> Today</span>
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-3 flex-wrap">
