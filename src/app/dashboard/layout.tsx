@@ -78,7 +78,7 @@ function getNavSections(canViewPayroll: boolean) {
                 { href: '/dashboard/payroll', label: 'Employees' },
                 { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
                 { href: '/dashboard/payroll/runs', label: 'Payroll Runs' },
-                { href: '/dashboard/payroll/leave', label: 'Leave Requests' },
+                { href: '/dashboard/payroll/timesheet', label: 'Time & Attendance' },
                 { href: '/dashboard/payroll/loans', label: 'Loans & Advances' },
                 { href: '/dashboard/payroll/reports', label: 'Reports' },
                 { href: '/dashboard/payroll/statutory', label: 'Statutory Settings' },
