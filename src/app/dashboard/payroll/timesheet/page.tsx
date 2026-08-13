@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import LeaveRequestsPanel from '@/components/payroll/LeaveRequestsPanel';
 import LeaveTypesPanel from '@/components/payroll/LeaveTypesPanel';
+import { isWeeklyOff, type SaturdayPolicy } from '@/lib/payroll/saturdayPolicy';
 
 interface TimesheetEmployeeRow {
   employeeId: number;
@@ -60,6 +61,12 @@ async function fetchHolidays(): Promise<Holiday[]> {
   if (!res.ok) throw new Error('Failed to fetch holidays');
   return res.json();
 }
+async function fetchSaturdayPolicy(): Promise<SaturdayPolicy> {
+  const res = await fetch('/api/payroll/statutory-settings');
+  if (!res.ok) throw new Error('Failed to fetch statutory settings');
+  const data = await res.json();
+  return (data.weeklyOffSaturdays || 'SECOND_FOURTH') as SaturdayPolicy;
+}
 
 type TabKey = 'timesheet' | 'requests' | 'policy';
 const TABS: { key: TabKey; label: string; icon: typeof ClipboardDocumentListIcon }[] = [
@@ -83,6 +90,7 @@ export default function TimeAndAttendancePage() {
 
   const { data, isLoading } = useQuery({ queryKey: ['timesheet', year, month], queryFn: () => fetchTimesheet(year, month) });
   const { data: holidays = [] } = useQuery({ queryKey: ['holidays'], queryFn: fetchHolidays, enabled: settingsOpen });
+  const { data: saturdayPolicy = 'SECOND_FOURTH' } = useQuery({ queryKey: ['saturday-policy'], queryFn: fetchSaturdayPolicy });
 
   const period = data?.period;
   const isSubmitted = period?.status === 'SUBMITTED';
@@ -198,7 +206,7 @@ export default function TimeAndAttendancePage() {
               </div>
             </div>
 
-            {/* Day strip — a visual marker of the period, not an entry grid (hours are entered as monthly totals below). Weekends muted, today ringed. */}
+            {/* Day strip — a visual marker of the period, not an entry grid (hours are entered as monthly totals below). Sunday plus whichever Saturdays the company's weekly-off policy claims (Settings > Statutory Settings) are muted; today is ringed. */}
             <div className="space-y-2">
               {/* py-2 (not just pb-1) reserves room inside the scroll box for the
                   "today" ring-offset — overflow-x-auto forces overflow-y to clip too
@@ -208,7 +216,7 @@ export default function TimeAndAttendancePage() {
                   is what clipped it in the first place; the ring+shadow is enough. */}
               <div className="flex gap-1.5 overflow-x-auto py-2 px-0.5">
                 {Array.from({ length: daysInThisMonth }, (_, i) => i + 1).map((d) => {
-                  const isWeekend = [0, 6].includes(dayjs(`${year}-${month}-${d}`).day());
+                  const isWeekend = isWeeklyOff(dayjs(`${year}-${month}-${d}`).toDate(), saturdayPolicy);
                   const isToday = todayInPeriod === d;
                   return (
                     <div
@@ -228,7 +236,7 @@ export default function TimeAndAttendancePage() {
               </div>
               <div className="flex items-center gap-4 text-[11px] text-slate-400 px-0.5">
                 <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-gradient-to-b from-emerald-400 to-emerald-500" /> Working day</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-100" /> Weekend</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-100" /> Weekly off</span>
                 <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-white ring-2 ring-amber-400" /> Today</span>
               </div>
             </div>

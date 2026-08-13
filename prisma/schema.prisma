@@ -585,6 +585,13 @@ model CompanyProfile {
   pfEmployerRate        Decimal? @default(12) @db.Decimal(5, 2) @map("pf_employer_rate")
   esiGrossThreshold     Decimal? @default(21000) @db.Decimal(12, 2) @map("esi_gross_threshold")
   esiEmployerRate       Decimal? @default(3.25) @db.Decimal(5, 2) @map("esi_employer_rate")
+  // Time & Attendance — which Saturdays are a weekly off, not every-Saturday
+  // (the common alternate-Saturday policy at Indian companies). Sunday is
+  // always off regardless of this setting; only Saturday's treatment
+  // varies. NONE | ALL | FIRST_THIRD | SECOND_FOURTH — see
+  // isWeeklyOff() in timesheetEngine.ts for how each is interpreted.
+  // Defaults to SECOND_FOURTH, the most common convention.
+  weeklyOffSaturdays    String   @default("SECOND_FOURTH") @map("weekly_off_saturdays")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 

@@ -14,7 +14,15 @@ interface StatutorySettings {
   pfEstablishmentCode: string | null;
   esiEstablishmentCode: string | null;
   ptRegistrationNumber: string | null;
+  weeklyOffSaturdays: string | null;
 }
+
+const SATURDAY_POLICY_OPTIONS = [
+  { value: 'SECOND_FOURTH', label: '2nd & 4th Saturday off (most common)' },
+  { value: 'FIRST_THIRD', label: '1st & 3rd Saturday off' },
+  { value: 'ALL', label: 'Every Saturday off' },
+  { value: 'NONE', label: 'No Saturdays off — 6-day week' },
+];
 
 interface PtSlab {
   id: number;
@@ -52,6 +60,7 @@ export default function StatutorySettingsPage() {
         esiGrossThreshold: settings.esiGrossThreshold ?? '', esiEmployerRate: settings.esiEmployerRate ?? '',
         tanNumber: settings.tanNumber ?? '', pfEstablishmentCode: settings.pfEstablishmentCode ?? '',
         esiEstablishmentCode: settings.esiEstablishmentCode ?? '', ptRegistrationNumber: settings.ptRegistrationNumber ?? '',
+        weeklyOffSaturdays: settings.weeklyOffSaturdays || 'SECOND_FOURTH',
       });
     }
   }, [settings]);
@@ -118,6 +127,17 @@ export default function StatutorySettingsPage() {
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">ESI Employer Rate (%)</label>
             <input type="number" step="0.01" value={form.esiEmployerRate || ''} onChange={(e) => setForm((f) => ({ ...f, esiEmployerRate: e.target.value }))} className={inputCls} />
+          </div>
+        </div>
+
+        <div className="pt-3 border-t border-slate-100">
+          <p className="text-xs font-medium text-slate-500 uppercase mb-3">Time &amp; Attendance</p>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Saturday weekly-off policy</label>
+            <select value={form.weeklyOffSaturdays || 'SECOND_FOURTH'} onChange={(e) => setForm((f) => ({ ...f, weeklyOffSaturdays: e.target.value }))} className={inputCls}>
+              {SATURDAY_POLICY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <p className="text-xs text-slate-400 mt-1">Controls which Saturdays show as a day off on the Time &amp; Attendance timesheet. Sunday is always off.</p>
           </div>
         </div>
 

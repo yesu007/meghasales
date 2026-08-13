@@ -11,6 +11,12 @@ export function periodRange(year: number, month: number): { start: Date; end: Da
   return { start: first.startOf('month').toDate(), end: first.endOf('month').toDate() };
 }
 
+// Re-exported so existing server-side consumers of this module don't need a
+// second import — the "isWeeklyOff needs no Prisma" split lives in
+// saturdayPolicy.ts, which the Time & Attendance client page imports
+// directly instead, to keep @prisma/client out of its browser bundle.
+export { isWeeklyOff, type SaturdayPolicy } from './saturdayPolicy';
+
 interface LeaveOverlapInput {
   startDate: Date;
   endDate: Date;

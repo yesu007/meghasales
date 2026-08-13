@@ -6,7 +6,7 @@ import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 
 export const dynamic = 'force-dynamic';
 
-const FIELDS = ['pfWageCeiling', 'pfEmployerRate', 'esiGrossThreshold', 'esiEmployerRate', 'tanNumber', 'pfEstablishmentCode', 'esiEstablishmentCode', 'ptRegistrationNumber'] as const;
+const FIELDS = ['pfWageCeiling', 'pfEmployerRate', 'esiGrossThreshold', 'esiEmployerRate', 'tanNumber', 'pfEstablishmentCode', 'esiEstablishmentCode', 'ptRegistrationNumber', 'weeklyOffSaturdays'] as const;
 
 export async function GET() {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
