@@ -4,7 +4,7 @@ import { round2 } from './runEngine';
 
 type Client = Prisma.TransactionClient | PrismaClient;
 
-const HOURS_PER_DAY = 8;
+export const HOURS_PER_DAY = 8;
 
 export function periodRange(year: number, month: number): { start: Date; end: Date } {
   const first = dayjs(`${year}-${String(month).padStart(2, '0')}-01`);

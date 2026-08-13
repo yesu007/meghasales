@@ -5,7 +5,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { periodRange, computeLeaveHours, computePaidHolidayHours } from '@/lib/payroll/timesheetEngine';
+import { periodRange, computeLeaveHours, computePaidHolidayHours, HOURS_PER_DAY } from '@/lib/payroll/timesheetEngine';
 import { round2 } from '@/lib/payroll/runEngine';
 
 export const dynamic = 'force-dynamic';
@@ -47,7 +47,8 @@ export async function GET(request: NextRequest) {
         const overtimeHours = entry ? Number(entry.overtimeHours) : 0;
         const { sickLeaveHours, ptoHours } = await computeLeaveHours(prisma, emp.id, start, end);
         const paidHolidayHours = computePaidHolidayHours(holidays, start, end, emp);
-        const totalHours = round2(regularHours + overtimeHours + sickLeaveHours + ptoHours + paidHolidayHours);
+        const totalHours = regularHours + overtimeHours + sickLeaveHours + ptoHours + paidHolidayHours;
+        const totalDays = round2(totalHours / HOURS_PER_DAY);
 
         return {
           employeeId: emp.id,
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
           sickLeaveHours,
           ptoHours,
           paidHolidayHours,
-          totalHours,
+          totalDays,
         };
       })
     );

@@ -27,7 +27,7 @@ interface TimesheetEmployeeRow {
   sickLeaveHours: number;
   ptoHours: number;
   paidHolidayHours: number;
-  totalHours: number;
+  totalDays: number;
 }
 interface TimesheetResponse {
   period: { year: number; month: number; status: string; submittedAt: string | null };
@@ -274,7 +274,7 @@ export default function TimeAndAttendancePage() {
                       <th className="px-4 py-3 text-right font-semibold text-white">Sick Leave</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">PTO</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Paid Holiday</th>
-                      <th className="px-4 py-3 text-right font-semibold text-white">Total hour</th>
+                      <th className="px-4 py-3 text-right font-semibold text-white">Total Days</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -318,7 +318,7 @@ export default function TimeAndAttendancePage() {
                           <td className="px-4 py-3 text-right text-slate-600">{fmtHours(row.sickLeaveHours)}</td>
                           <td className="px-4 py-3 text-right text-slate-600">{fmtHours(row.ptoHours)}</td>
                           <td className="px-4 py-3 text-right text-slate-600">{fmtHours(row.paidHolidayHours)}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-slate-800">{row.totalHours} Hours</td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-800">{row.totalDays} Days</td>
                         </tr>
                       );
                     })}
