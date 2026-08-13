@@ -326,30 +326,50 @@ export default function TimeAndAttendancePage() {
       {tab === 'policy' && <LeaveTypesPanel />}
 
       {settingsOpen && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setSettingsOpen(false)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
-              <h3 className="text-base font-semibold text-slate-800">Holiday Calendar</h3>
-              <button onClick={() => setSettingsOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded"><XMarkIcon className="h-5 w-5" /></button>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px] z-50 flex items-center justify-center p-4" onClick={() => setSettingsOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <span className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+                  <CalendarDaysIcon className="h-5 w-5 text-amber-600" />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-800">Holiday Calendar</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Company holidays feed the Paid Holiday column</p>
+                </div>
+              </div>
+              <button onClick={() => setSettingsOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"><XMarkIcon className="h-5 w-5" /></button>
             </div>
-            <div className="p-5 space-y-4">
-              <p className="text-xs text-slate-500">Company holidays feed the Paid Holiday column above — 8 hours credited per holiday that falls in an employee&apos;s period and employment window.</p>
-              <form onSubmit={(e) => { e.preventDefault(); if (!holidayForm.date || !holidayForm.name) { toast.error('Date and name are required'); return; } addHoliday.mutate(); }} className="flex flex-col sm:flex-row gap-2">
-                <input type="date" value={holidayForm.date} onChange={(e) => setHolidayForm((f) => ({ ...f, date: e.target.value }))} className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
-                <input placeholder="Holiday name" value={holidayForm.name} onChange={(e) => setHolidayForm((f) => ({ ...f, name: e.target.value }))} className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
-                <button type="submit" disabled={addHoliday.isPending} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50"><PlusIcon className="h-4 w-4" /> Add</button>
+            <div className="p-6 space-y-5">
+              <p className="text-sm text-slate-500 bg-amber-50/60 border border-amber-100 rounded-xl px-4 py-3">8 hours are credited per holiday that falls inside an employee&apos;s pay period and employment window.</p>
+              <form onSubmit={(e) => { e.preventDefault(); if (!holidayForm.date || !holidayForm.name) { toast.error('Date and name are required'); return; } addHoliday.mutate(); }} className="flex flex-col sm:flex-row gap-3">
+                <input type="date" value={holidayForm.date} onChange={(e) => setHolidayForm((f) => ({ ...f, date: e.target.value }))} className="sm:w-48 px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
+                <input placeholder="Holiday name" value={holidayForm.name} onChange={(e) => setHolidayForm((f) => ({ ...f, name: e.target.value }))} className="flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
+                <button type="submit" disabled={addHoliday.isPending} className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-medium hover:bg-amber-700 disabled:opacity-50 shadow-sm shadow-amber-200"><PlusIcon className="h-4 w-4" /> Add</button>
               </form>
-              <div className="divide-y divide-slate-100 border-t border-slate-100">
-                {holidays.length === 0 && <p className="text-sm text-slate-400 py-4 text-center">No holidays added yet</p>}
-                {holidays.map((h) => (
-                  <div key={h.id} className="flex items-center justify-between py-2">
-                    <div>
-                      <p className="text-sm text-slate-800">{h.name}</p>
-                      <p className="text-xs text-slate-400">{dayjs(h.date).format('DD MMM YYYY')}</p>
-                    </div>
-                    <button onClick={() => removeHoliday.mutate(h.id)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"><TrashIcon className="h-4 w-4" /></button>
+              <div className="space-y-1.5">
+                {holidays.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                    <CalendarDaysIcon className="h-10 w-10 text-slate-200" />
+                    <p className="text-sm text-slate-400">No holidays added yet</p>
                   </div>
-                ))}
+                ) : (
+                  holidays.map((h) => (
+                    <div key={h.id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:border-slate-100 hover:bg-slate-50 transition-colors group">
+                      <div className="flex items-center gap-3">
+                        <span className="h-10 w-10 rounded-lg bg-emerald-50 flex flex-col items-center justify-center flex-shrink-0 leading-none">
+                          <span className="text-[10px] font-medium text-emerald-500 uppercase">{dayjs(h.date).format('MMM')}</span>
+                          <span className="text-sm font-bold text-emerald-700">{dayjs(h.date).format('DD')}</span>
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{h.name}</p>
+                          <p className="text-xs text-slate-400">{dayjs(h.date).format('dddd, DD MMM YYYY')}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => removeHoliday.mutate(h.id)} className="p-2 rounded-lg text-slate-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"><TrashIcon className="h-4 w-4" /></button>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
