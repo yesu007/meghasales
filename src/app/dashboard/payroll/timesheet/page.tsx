@@ -200,19 +200,25 @@ export default function TimeAndAttendancePage() {
 
             {/* Day strip — a visual marker of the period, not an entry grid (hours are entered as monthly totals below). Weekends muted, today ringed. */}
             <div className="space-y-2">
-              <div className="flex gap-1.5 overflow-x-auto pb-1 px-0.5">
+              {/* py-2 (not just pb-1) reserves room inside the scroll box for the
+                  "today" ring-offset — overflow-x-auto forces overflow-y to clip too
+                  (a CSS quirk: one axis non-visible coerces the other), so anything
+                  that would render outside the row's own padding gets cut off. No
+                  scale on today's pill for the same reason — growing past the box
+                  is what clipped it in the first place; the ring+shadow is enough. */}
+              <div className="flex gap-1.5 overflow-x-auto py-2 px-0.5">
                 {Array.from({ length: daysInThisMonth }, (_, i) => i + 1).map((d) => {
                   const isWeekend = [0, 6].includes(dayjs(`${year}-${month}-${d}`).day());
                   const isToday = todayInPeriod === d;
                   return (
                     <div
                       key={d}
-                      className={`flex-1 min-w-[30px] text-center text-[11px] font-semibold py-2 rounded-xl transition-all duration-150 ${
+                      className={`flex-1 min-w-[30px] text-center text-[11px] font-semibold py-2 rounded-xl transition-shadow duration-150 ${
                         isToday
-                          ? 'bg-white text-slate-800 ring-2 ring-amber-400 ring-offset-1 shadow-sm scale-105'
+                          ? 'bg-white text-slate-800 ring-2 ring-amber-400 ring-offset-1 shadow-sm'
                           : isWeekend
                           ? 'bg-rose-50 text-rose-300 hover:bg-rose-100'
-                          : 'bg-gradient-to-b from-emerald-400 to-emerald-500 text-white shadow-sm shadow-emerald-100 hover:shadow-md hover:-translate-y-0.5'
+                          : 'bg-gradient-to-b from-emerald-400 to-emerald-500 text-white shadow-sm shadow-emerald-100 hover:shadow-md'
                       }`}
                     >
                       {d}
