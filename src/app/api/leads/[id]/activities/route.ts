@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('view_leads');
+  if (denied) return denied;
+
   try {
     const leadId = parseInt(params.id);
     const activities = await prisma.leadActivity.findMany({

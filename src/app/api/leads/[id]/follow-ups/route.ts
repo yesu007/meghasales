@@ -5,10 +5,14 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { validateFollowUpInput } from '@/lib/leadFollowUp';
 import { suggestStatusAfterFollowUp } from '@/lib/leadStatus';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('view_leads');
+  if (denied) return denied;
+
   try {
     const leadId = parseInt(params.id);
 
@@ -68,6 +72,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_leads');
+  if (denied) return denied;
+
   try {
     const leadId = parseInt(params.id);
     const body = await request.json();
@@ -79,7 +86,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (validationError) return NextResponse.json({ message: validationError }, { status: 400 });
 
     const session = await getServerSession(authOptions);
-    const loggedById = session?.user ? parseInt((session.user as any).id, 10) : null;
+    const loggedById = session?.user ? parseInt(session.user.id, 10) : null;
 
     const followUpDate = new Date(body.followUpDate);
     const nextFollowUpDate = body.nextFollowUpDate ? new Date(body.nextFollowUpDate) : null;

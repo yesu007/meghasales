@@ -3,10 +3,14 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { logAudit } from '@/lib/audit';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  const denied = await requireAnyPermission(['view_users', 'manage_users']);
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '0');
@@ -32,7 +36,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (roleId) AND.push({ roleId: parseInt(roleId) });
+    if (roleId) AND.push({ roles: { some: { roleId: parseInt(roleId) } } });
     if (isActive === 'true') AND.push({ isActive: true });
     if (isActive === 'false') AND.push({ isActive: false });
 
@@ -57,7 +61,7 @@ export async function GET(request: NextRequest) {
           isActive: true,
           lastLoginAt: true,
           createdAt: true,
-          role: { select: { id: true, name: true } },
+          roles: { include: { role: { select: { id: true, name: true } } } },
         },
       }),
       prisma.user.count({ where }),
@@ -73,8 +77,7 @@ export async function GET(request: NextRequest) {
       isActive: user.isActive,
       lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,
-      roleId: user.role.id,
-      roleName: user.role.name,
+      roles: user.roles.map((ur) => ur.role),
     }));
 
     return NextResponse.json({
@@ -92,11 +95,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requirePermission('manage_users');
+  if (denied) return denied;
+
   try {
     const body = await request.json();
+    const roleIds: number[] = Array.isArray(body.roleIds) ? body.roleIds.map((id: any) => parseInt(id)) : [];
 
-    if (!body.email || !body.firstName || !body.lastName || !body.password || !body.roleId) {
-      return NextResponse.json({ message: 'email, firstName, lastName, password, and roleId are required' }, { status: 400 });
+    if (!body.email || !body.firstName || !body.lastName || !body.password || roleIds.length === 0) {
+      return NextResponse.json({ message: 'email, firstName, lastName, password, and at least one role are required' }, { status: 400 });
     }
 
     // Check if email already exists
@@ -114,8 +121,8 @@ export async function POST(request: NextRequest) {
         lastName: body.lastName,
         phone: body.phone || null,
         password: hashedPassword,
-        roleId: parseInt(body.roleId),
         isActive: body.isActive !== false,
+        roles: { create: roleIds.map((roleId) => ({ roleId })) },
       },
       select: {
         id: true,
@@ -125,13 +132,17 @@ export async function POST(request: NextRequest) {
         phone: true,
         isActive: true,
         createdAt: true,
-        role: { select: { name: true } },
+        roles: { include: { role: { select: { id: true, name: true } } } },
       },
     });
 
-    await logAudit({ action: 'CREATE', entityType: 'USER', entityId: user.id, newValue: user, description: `User created: ${user.email}`, request });
+    // Flattened to the same { id, name } shape GET /api/users uses, rather
+    // than the raw UserRole join rows.
+    const responseUser = { ...user, roles: user.roles.map((ur) => ur.role) };
 
-    return NextResponse.json(user, { status: 201 });
+    await logAudit({ action: 'CREATE', entityType: 'USER', entityId: user.id, newValue: responseUser, description: `User created: ${user.email}`, request });
+
+    return NextResponse.json(responseUser, { status: 201 });
   } catch (error: any) {
     console.error('POST /api/users error:', error);
     return NextResponse.json({ message: error.message || 'Failed to create user' }, { status: 400 });

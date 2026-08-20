@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { invoiceFieldsFromQuotation, nextInvoiceNumber } from '@/lib/invoiceFromQuotation';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +47,9 @@ async function generateInvoiceForQuotation(tx: Prisma.TransactionClient, quotati
 }
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('view_quotations');
+  if (denied) return denied;
+
   try {
     const quotation = await prisma.quotation.findUnique({
       where: { id: parseInt(params.id) },
@@ -61,6 +65,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_quotations');
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const id = parseInt(params.id);
@@ -129,6 +136,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_quotations');
+  if (denied) return denied;
+
   try {
     const id = parseInt(params.id);
     const existing = await prisma.quotation.findUnique({ where: { id } });

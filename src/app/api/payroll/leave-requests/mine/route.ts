@@ -137,7 +137,10 @@ async function notifyDepartmentOverlapIfAny(
   const approvers = await prisma.user.findMany({
     where: {
       isActive: true,
-      OR: [{ role: { name: 'ADMIN' } }, { role: { permissions: { some: { permission: { name: 'approve_leave' } } } } }],
+      OR: [
+        { roles: { some: { role: { name: 'ADMIN' } } } },
+        { roles: { some: { role: { permissions: { some: { permission: { name: 'approve_leave' } } } } } } },
+      ],
     },
     select: { id: true },
   });

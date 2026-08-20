@@ -179,7 +179,10 @@ async function resolveRecipientUserIds(
       if (!recipientRef) return [];
       const roleId = parseInt(recipientRef, 10);
       if (Number.isNaN(roleId)) return [];
-      const users = await tx.user.findMany({ where: { roleId, isActive: true }, select: { id: true } });
+      // User<->Role is many-to-many (user_roles) — "everyone with this
+      // role" now means "everyone with a user_roles row for it", not a
+      // scalar roleId column on users.
+      const users = await tx.user.findMany({ where: { isActive: true, roles: { some: { roleId } } }, select: { id: true } });
       return users.map((u) => u.id);
     }
     case 'EXPLICIT': {

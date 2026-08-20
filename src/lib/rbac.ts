@@ -2,42 +2,33 @@ import { Session } from 'next-auth';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { NextResponse } from 'next/server';
+import { hasPermission, hasAnyPermission } from '@/lib/permissions';
 
-// Pure ADMIN-bypass-or-permission-membership check, factored out so both the
-// HTTP-route guards below and non-HTTP consumers (e.g. the assistant tool
-// registry in src/lib/assistant/registry.ts, which can't return a
-// NextResponse) share one source of truth instead of duplicating this logic.
+// Thin server-side wrappers around the pure logic in src/lib/permissions.ts
+// (which also backs client-side UI gating via src/hooks/usePermissions.ts) —
+// kept here, rather than duplicated, so a user with multiple roles is
+// handled correctly by every caller at once.
 export function checkPermission(session: Session | null, permission: string): boolean {
   if (!session) return false;
-  const role = (session.user as any)?.role;
-  const permissions: string[] = (session.user as any)?.permissions || [];
-
-  // ADMIN is treated as implicitly all-permissioned, matching its seeded
-  // "Full system access" description — a safety net independent of
-  // whichever RolePermission grants happen to exist in a given database.
-  return role === 'ADMIN' || permissions.includes(permission);
+  return hasPermission(session.user.roles || [], session.user.permissions || [], permission);
 }
 
-// Same as checkPermission, but passes if the session holds ANY of the listed
-// permissions — e.g. discussion-create is allowed for either the full
-// manage_lead_events grant or the narrower add_lead_discussion grant.
 export function checkAnyPermission(session: Session | null, permissions: string[]): boolean {
   if (!session) return false;
-  const role = (session.user as any)?.role;
-  const granted: string[] = (session.user as any)?.permissions || [];
-
-  return role === 'ADMIN' || permissions.some((p) => granted.includes(p));
+  return hasAnyPermission(session.user.roles || [], session.user.permissions || [], permissions);
 }
 
-// The Role/Permission/RolePermission schema and session.user.permissions
-// (populated at login in src/lib/auth.ts) have existed since early in this
-// project but were never actually checked anywhere — every route in the
-// app is currently open to any authenticated (or even unauthenticated,
-// since nothing checks the session either) request. The Accounting module
-// is the first real consumer of this system, so this stays scoped to
-// /api/accounting/* only rather than retrofitting checks onto unrelated
-// existing routes.
-//
+// Bare "must be logged in" gate, no specific permission required — for
+// reference/lookup endpoints (currencies, status master, quotation config)
+// that every role needs but which aren't a permission-worthy action.
+export async function requireAuth(): Promise<NextResponse | null> {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
+  return null;
+}
+
 // Usage in a route handler:
 //   const denied = await requirePermission('manage_invoices');
 //   if (denied) return denied;

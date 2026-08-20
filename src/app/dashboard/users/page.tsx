@@ -18,6 +18,7 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // Title-cases a SNAKE_CASE role name for display, e.g. BUSINESS_ANALYST -> "Business Analyst"
 function roleLabel(name: string): string {
@@ -39,8 +40,7 @@ interface User {
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
-  roleId: number;
-  roleName: string;
+  roles: RoleOption[];
 }
 
 async function fetchUsers(params: Record<string, string>) {
@@ -58,6 +58,8 @@ async function fetchRoles(): Promise<RoleOption[]> {
 
 export default function UsersPage() {
   const queryClient = useQueryClient();
+  const { has: hasPermission } = usePermissions();
+  const canManageUsers = hasPermission('manage_users');
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const [searchInput, setSearchInput] = useState('');
@@ -98,7 +100,7 @@ export default function UsersPage() {
     if (isRolesError) toast.error('Failed to load roles');
   }, [isRolesError]);
 
-  const blankForm = { firstName: '', lastName: '', email: '', phone: '', password: '', roleId: '' };
+  const blankForm = { firstName: '', lastName: '', email: '', phone: '', password: '', roleIds: [] as number[] };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -113,8 +115,15 @@ export default function UsersPage() {
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) errs.email = 'Enter a valid email address';
     if (!editingId && !data.password) errs.password = 'Password is required';
     else if (data.password && data.password.length < 8) errs.password = 'Password must be at least 8 characters';
-    if (!data.roleId) errs.roleId = 'Role is required';
+    if (data.roleIds.length === 0) errs.roleIds = 'At least one role is required';
     return errs;
+  };
+
+  const toggleRole = (roleId: number) => {
+    setForm((f) => ({
+      ...f,
+      roleIds: f.roleIds.includes(roleId) ? f.roleIds.filter((id) => id !== roleId) : [...f.roleIds, roleId],
+    }));
   };
 
   const saveMutation = useMutation({
@@ -146,7 +155,7 @@ export default function UsersPage() {
       email: user.email,
       phone: user.phone || '',
       password: '',
-      roleId: String(user.roleId),
+      roleIds: user.roles.map((r) => r.id),
     });
     setEditingId(user.id);
     setDrawerOpen(true);
@@ -203,9 +212,11 @@ export default function UsersPage() {
           <h1 className="text-2xl font-bold text-slate-800">Users</h1>
           <p className="text-slate-500 mt-1">Manage user accounts and access</p>
         </div>
-        <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-          <PlusIcon className="h-4 w-4" /> Add User
-        </button>
+        {canManageUsers && (
+          <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+            <PlusIcon className="h-4 w-4" /> Add User
+          </button>
+        )}
       </div>
 
       {/* Search & Filters */}
@@ -310,17 +321,27 @@ export default function UsersPage() {
                       <td className="px-4 py-3 text-slate-600">{user.email}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{user.phone || '—'}</td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
-                          {user.roleName}
-                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {user.roles.map((r) => (
+                            <span key={r.id} className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                              {roleLabel(r.name)}
+                            </span>
+                          ))}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => toggleActive(user.id, user.isActive)}
-                          className={`px-2 py-0.5 rounded text-xs font-medium ${user.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
-                        >
-                          {user.isActive ? 'Active' : 'Inactive'}
-                        </button>
+                        {canManageUsers ? (
+                          <button
+                            onClick={() => toggleActive(user.id, user.isActive)}
+                            className={`px-2 py-0.5 rounded text-xs font-medium ${user.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+                          >
+                            {user.isActive ? 'Active' : 'Inactive'}
+                          </button>
+                        ) : (
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${user.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {user.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">
                         {user.lastLoginAt ? dayjs(user.lastLoginAt).format('DD MMM, h:mm A') : 'Never'}
@@ -329,14 +350,18 @@ export default function UsersPage() {
                         {dayjs(user.createdAt).format('DD MMM YYYY')}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => openEdit(user)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => deleteUser(user.id, user.fullName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        </div>
+                        {canManageUsers ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={() => openEdit(user)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                            <button onClick={() => deleteUser(user.id, user.fullName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -467,16 +492,21 @@ export default function UsersPage() {
                           {formErrors.password && <p className="text-xs text-red-600 mt-1">{formErrors.password}</p>}
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Role *</label>
-                          <select
-                            value={form.roleId}
-                            onChange={(e) => setForm(f => ({ ...f, roleId: e.target.value }))}
-                            className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.roleId ? 'border-red-400' : 'border-slate-300'}`}
-                          >
-                            <option value="">Select role</option>
-                            {roles.map(r => <option key={r.id} value={r.id}>{roleLabel(r.name)}</option>)}
-                          </select>
-                          {formErrors.roleId && <p className="text-xs text-red-600 mt-1">{formErrors.roleId}</p>}
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Roles *</label>
+                          <div className={`grid grid-cols-2 gap-2 p-3 border rounded-lg ${formErrors.roleIds ? 'border-red-400' : 'border-slate-300'}`}>
+                            {roles.map(r => (
+                              <label key={r.id} className="flex items-center gap-2 text-sm text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={form.roleIds.includes(r.id)}
+                                  onChange={() => toggleRole(r.id)}
+                                  className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                />
+                                {roleLabel(r.name)}
+                              </label>
+                            ))}
+                          </div>
+                          {formErrors.roleIds && <p className="text-xs text-red-600 mt-1">{formErrors.roleIds}</p>}
                         </div>
                       </div>
                       <div className="flex justify-end gap-3 pt-4 border-t">

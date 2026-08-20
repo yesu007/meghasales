@@ -1,22 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  const currentUserId = parseInt(session.user.id, 10);
+
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '0');
     const size = parseInt(searchParams.get('size') || '20');
     const isRead = searchParams.get('isRead') || '';
     const type = searchParams.get('type') || '';
-    const userId = searchParams.get('userId') || '';
 
-    const where: Prisma.NotificationWhereInput = {};
+    // Notifications are personal — always scoped to the caller's own id,
+    // never to a client-supplied userId (previously anyone could read
+    // anyone else's notifications by passing their id in the query string).
+    const where: Prisma.NotificationWhereInput = { userId: currentUserId };
     const AND: Prisma.NotificationWhereInput[] = [];
 
-    if (userId) AND.push({ userId: parseInt(userId) });
     if (isRead === 'true') AND.push({ isRead: true });
     if (isRead === 'false') AND.push({ isRead: false });
     if (type) AND.push({ type: type });
@@ -67,25 +74,29 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  const currentUserId = parseInt(session.user.id, 10);
+
   try {
     const body = await request.json();
 
-    // Mark as read
+    // Mark as read — always scoped to the caller's own notifications, never
+    // a client-supplied userId.
     if (body.markAllRead) {
-      const where: Prisma.NotificationWhereInput = { isRead: false };
-      if (body.userId) where.userId = parseInt(body.userId);
       await prisma.notification.updateMany({
-        where,
+        where: { userId: currentUserId, isRead: false },
         data: { isRead: true, readAt: new Date() },
       });
       return NextResponse.json({ message: 'All marked as read' });
     }
 
     if (body.id) {
-      await prisma.notification.update({
-        where: { id: parseInt(body.id) },
+      const result = await prisma.notification.updateMany({
+        where: { id: parseInt(body.id), userId: currentUserId },
         data: { isRead: true, readAt: new Date() },
       });
+      if (result.count === 0) return NextResponse.json({ message: 'Notification not found' }, { status: 404 });
       return NextResponse.json({ message: 'Marked as read' });
     }
 

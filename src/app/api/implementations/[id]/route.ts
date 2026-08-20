@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('view_implementations');
+  if (denied) return denied;
+
   try {
     const impl = await prisma.implementation.findUnique({
       where: { id: parseInt(params.id) },
@@ -21,6 +25,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_implementations');
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const id = parseInt(params.id);
@@ -51,6 +58,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_implementations');
+  if (denied) return denied;
+
   try {
     const id = parseInt(params.id);
     const existing = await prisma.implementation.findUnique({ where: { id } });

@@ -6,10 +6,14 @@ import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
 import { isFollowUpOverdue } from '@/lib/leadFollowUp';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  const denied = await requirePermission('view_leads');
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '0');
@@ -124,6 +128,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requirePermission('manage_leads');
+  if (denied) return denied;
+
   try {
     const body = await request.json();
 
@@ -132,7 +139,7 @@ export async function POST(request: NextRequest) {
     }
 
     const session = await getServerSession(authOptions);
-    const isAdmin = (session?.user as any)?.role === 'ADMIN';
+    const isAdmin = (session?.user?.roles || []).includes('ADMIN');
     let countryFields;
     try {
       countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { isAdmin, overrideCurrencyCode: body.currencyCode });

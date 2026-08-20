@@ -39,7 +39,7 @@ describe('createAssistantTool', () => {
 
   it('returns permission_denied and never calls the handler when the session lacks the permission', async () => {
     getServerSession.mockResolvedValue({
-      user: { id: '1', role: 'SALES', permissions: ['some_other_permission'] },
+      user: { id: '1', roles: ['SALES'], permissions: ['some_other_permission'] },
     });
     const { tool, handler } = makeTool();
 
@@ -51,26 +51,26 @@ describe('createAssistantTool', () => {
 
   it('calls the handler with derived context when the session holds the permission', async () => {
     getServerSession.mockResolvedValue({
-      user: { id: '42', role: 'SALES', permissions: ['manage_test_thing'] },
+      user: { id: '42', roles: ['SALES'], permissions: ['manage_test_thing'] },
     });
     const { tool, handler } = makeTool();
 
     const result = await tool.execute!({ value: 'x' }, fakeCallOptions);
 
     expect(result).toEqual({ echoed: 'x' });
-    expect(handler).toHaveBeenCalledWith({ value: 'x' }, { userId: 42, role: 'SALES' });
+    expect(handler).toHaveBeenCalledWith({ value: 'x' }, { userId: 42, roles: ['SALES'] });
   });
 
   it('calls the handler for ADMIN even without the specific permission (implicit bypass)', async () => {
     getServerSession.mockResolvedValue({
-      user: { id: '1', role: 'ADMIN', permissions: [] },
+      user: { id: '1', roles: ['ADMIN'], permissions: [] },
     });
     const { tool, handler } = makeTool();
 
     const result = await tool.execute!({ value: 'x' }, fakeCallOptions);
 
     expect(result).toEqual({ echoed: 'x' });
-    expect(handler).toHaveBeenCalledWith({ value: 'x' }, { userId: 1, role: 'ADMIN' });
+    expect(handler).toHaveBeenCalledWith({ value: 'x' }, { userId: 1, roles: ['ADMIN'] });
   });
 });
 

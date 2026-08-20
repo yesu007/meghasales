@@ -102,7 +102,7 @@ interface CurrencyOption {
 
 export default function LeadsPage() {
   const { data: session } = useSession();
-  const isAdmin = (session?.user as any)?.role === 'ADMIN';
+  const isAdmin = (session?.user?.roles || []).includes('ADMIN');
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);

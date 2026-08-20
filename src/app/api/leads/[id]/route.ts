@@ -5,10 +5,14 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
 import { leadStatusLabel } from '@/lib/leadStatus';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('view_leads');
+  if (denied) return denied;
+
   try {
     const lead = await prisma.lead.findUnique({
       where: { id: parseInt(params.id) },
@@ -22,6 +26,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_leads');
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const id = parseInt(params.id);
@@ -32,11 +39,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const statusChanged = !!body.status && body.status !== existing.status;
 
     const session = await getServerSession(authOptions);
-    const performedById = session?.user ? parseInt((session.user as any).id, 10) : null;
+    const performedById = session?.user ? parseInt(session.user.id, 10) : null;
 
     let countryFields: Awaited<ReturnType<typeof resolveLeadCountryFields>> | null = null;
     if (body.countryId !== undefined) {
-      const isAdmin = (session?.user as any)?.role === 'ADMIN';
+      const isAdmin = (session?.user?.roles || []).includes('ADMIN');
       try {
         countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { isAdmin, overrideCurrencyCode: body.currencyCode });
       } catch (e: any) {
@@ -95,6 +102,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_leads');
+  if (denied) return denied;
+
   try {
     const id = parseInt(params.id);
     const existing = await prisma.lead.findUnique({ where: { id } });

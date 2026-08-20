@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requireAuth } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 // GET /api/quotation-config/modules
 export async function GET(request: NextRequest) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const type = searchParams.get('type');
 

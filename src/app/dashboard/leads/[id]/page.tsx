@@ -49,10 +49,10 @@ export default function LeadDetailPage() {
   const id = params.id as string;
   const { data: session } = useSession();
   const queryClient = useQueryClient();
-  const role = (session?.user as any)?.role;
-  const permissions: string[] = (session?.user as any)?.permissions || [];
-  const canManage = role === 'ADMIN' || permissions.includes('manage_lead_events');
-  const canView = role === 'ADMIN' || permissions.includes('view_lead_events');
+  const roles = session?.user?.roles || [];
+  const permissions = session?.user?.permissions || [];
+  const canManage = roles.includes('ADMIN') || permissions.includes('manage_lead_events');
+  const canView = roles.includes('ADMIN') || permissions.includes('view_lead_events');
   const canAddDiscussion = canManage || permissions.includes('add_lead_discussion');
 
   const { data: lead, isLoading, isError } = useQuery({

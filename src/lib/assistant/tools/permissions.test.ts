@@ -14,7 +14,7 @@ import { readPendingInvoices } from './readPendingInvoices';
 const fakeCallOptions = { toolCallId: 'test-call', messages: [] } as any;
 
 const sessionWithOnly = (permission: string) => ({
-  user: { id: '1', role: 'SALES', permissions: [permission] },
+  user: { id: '1', roles: ['SALES'], permissions: [permission] },
 });
 
 describe.each([

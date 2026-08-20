@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export interface AssistantToolContext {
   userId: number;
-  role: string;
+  roles: string[];
 }
 
 export type AssistantToolDenial =

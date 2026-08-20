@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Decimal } from '@prisma/client/runtime/library';
 import { resolveTaxRates, computeTaxTotals, type TaxRate } from '@/lib/taxCalculation';
+import { requireAuth } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 const DEFAULT_SUPPLIER_STATE = 'TN';
 
 export async function POST(request: NextRequest) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { moduleCodes, clientCountry, clientState, discountPercentage = 0, addonCodes = [], moduleOverrides, serviceOverrides, taxInclusive = false } = body;

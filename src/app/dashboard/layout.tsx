@@ -28,17 +28,35 @@ import {
 import { TEKFILO_LOGO } from '@/lib/logo';
 import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
+import { hasAnyPermission } from '@/lib/permissions';
+
+interface NavChild {
+  href: string;
+  label: string;
+}
+
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  permission?: string | string[];
+  children?: NavChild[];
+}
+
+interface NavSection {
+  title: string | null;
+  items: NavItem[];
+}
 
 // Grouped into labeled sections (rather than one flat list) so the nav
 // reads as a map of the app instead of a dozen equally-weighted rows — and
 // nested under compact headers so the whole thing fits in less vertical
-// space. A function rather than a module-level constant because the
-// Payroll admin section (unlike every other flag-gated entry here) also
-// needs to check the logged-in user's own permissions, not just the
-// build-time feature flag — "My Payslips"/"My Leave" are deliberately the
-// opposite: visible to anyone once the module is on, since they only ever
-// show that person's own data.
-function getNavSections(canViewPayroll: boolean) {
+// space. Each item can carry a `permission` (single string or array —
+// array means "any of"); an item with none is always visible once its
+// section is reached (e.g. Dashboard home, personal Notifications).
+// Feature flags (isPayrollModuleEnabled, isAdminTicketModuleEnabled) are a
+// separate, build-time AND-condition on top of the permission check.
+function getNavItems(): NavSection[] {
   return [
     {
       title: null,
@@ -47,17 +65,17 @@ function getNavSections(canViewPayroll: boolean) {
     {
       title: 'Sales',
       items: [
-        { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon },
-        { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon },
-        { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon },
-        { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon },
+        { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon, permission: 'view_leads' },
+        { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon, permission: 'view_quotations' },
+        { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon, permission: 'view_demos' },
+        { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon, permission: 'view_implementations' },
       ],
     },
     {
       title: 'Finance',
       items: [
         {
-          href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon,
+          href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon, permission: 'view_accounting',
           children: [
             { href: '/dashboard/accounting', label: 'Dashboard' },
             { href: '/dashboard/accounting/pending-invoices', label: 'Pending Invoices' },
@@ -67,13 +85,13 @@ function getNavSections(canViewPayroll: boolean) {
             { href: '/dashboard/accounting/reports', label: 'Reports' },
           ],
         },
-        { href: '/dashboard/expenses', label: 'Expenses', icon: ReceiptPercentIcon },
-        // Admin section — gated by the flag AND view_payroll, since
+        { href: '/dashboard/expenses', label: 'Expenses', icon: ReceiptPercentIcon, permission: 'view_expenses' },
         // Employees/Salary Structures/Runs expose everyone's salary data,
-        // not just the viewer's own.
-        ...(isPayrollModuleEnabled() && canViewPayroll
+        // not just the viewer's own, so this needs view_payroll on top of
+        // the module being enabled at all.
+        ...(isPayrollModuleEnabled()
           ? [{
-              href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon,
+              href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon, permission: 'view_payroll',
               children: [
                 { href: '/dashboard/payroll', label: 'Employees' },
                 { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
@@ -100,17 +118,34 @@ function getNavSections(canViewPayroll: boolean) {
       title: 'Administration',
       items: [
         ...(isAdminTicketModuleEnabled()
-          ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon }]
+          ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon, permission: 'view_admin_tickets' }]
           : []),
-        { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
+        { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon, permission: ['view_users', 'manage_users'] },
+        { href: '/dashboard/roles', label: 'Roles', icon: Cog6ToothIcon, permission: ['view_roles', 'manage_roles'] },
         { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
-        { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon },
+        { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon, permission: 'view_audit_logs' },
       ],
     },
+  ];
+}
+
+// Filters the declarative nav table above by the logged-in user's roles/
+// permissions, then drops any section left with zero items — replaces the
+// one-off canViewPayroll check with the same rule applied to every item.
+function getNavSections(roles: string[], permissions: string[]) {
+  return getNavItems()
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (!('permission' in item) || !item.permission) return true;
+        const required = Array.isArray(item.permission) ? item.permission : [item.permission];
+        return hasAnyPermission(roles, permissions, required);
+      }),
+    }))
     // Sections collapse away entirely when every item inside is gated off
     // (e.g. "My Space" with the Payroll module disabled) rather than
     // rendering a header over nothing.
-  ].filter((section) => section.items.length > 0);
+    .filter((section) => section.items.length > 0);
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -122,14 +157,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const role = (session?.user as any)?.role;
-  const permissions: string[] = (session?.user as any)?.permissions || [];
-  const canViewPayroll = role === 'ADMIN' || permissions.includes('view_payroll');
-  // Memoized on the one primitive it actually depends on — otherwise
-  // navSections is a new array every render, and the effect below (which
-  // needs it in its deps to react to a session that resolves after first
-  // paint) would re-run and re-setState on every single render.
-  const navSections = useMemo(() => getNavSections(canViewPayroll), [canViewPayroll]);
+  const roles = session?.user?.roles || [];
+  const permissions = session?.user?.permissions || [];
+  // session.user.roles/permissions are new array references every render
+  // (even when unchanged), so memoize on a joined string of their contents
+  // instead — otherwise navSections/navItems would be new arrays every
+  // render, and the effect below (which needs navItems in its deps to react
+  // to a session that resolves after first paint) would re-run and
+  // re-setState every single render.
+  const rolesKey = roles.join(',');
+  const permissionsKey = permissions.join(',');
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately
+  // keyed on the joined strings above, not the roles/permissions arrays
+  // themselves (see comment above).
+  const navSections = useMemo(() => getNavSections(roles, permissions), [rolesKey, permissionsKey]);
   const navItems = useMemo(() => navSections.flatMap((section) => section.items), [navSections]);
 
   useEffect(() => {
@@ -279,7 +320,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
               <div className="text-left hidden sm:block">
                 <p className="text-sm font-medium text-slate-800">{session.user?.name}</p>
-                <p className="text-xs text-slate-500">{(session.user as any)?.role}</p>
+                <p className="text-xs text-slate-500">{roles.join(', ')}</p>
               </div>
               <ChevronDownIcon className={`h-4 w-4 text-slate-500 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
             </button>

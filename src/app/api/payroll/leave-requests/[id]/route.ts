@@ -4,17 +4,13 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
+import { checkPermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 function currentUserId(session: any): number | null {
   const id = session?.user ? parseInt(session.user.id, 10) : NaN;
   return Number.isFinite(id) ? id : null;
-}
-function checkPermission(session: any, permission: string): boolean {
-  const role = session?.user?.role;
-  const permissions: string[] = session?.user?.permissions || [];
-  return role === 'ADMIN' || permissions.includes(permission);
 }
 
 // A linear workflow, not AdminTicket/PayrollRun's reversible matrix —

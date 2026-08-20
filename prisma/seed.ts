@@ -21,22 +21,34 @@ async function main() {
   ]);
   console.log(`  ✓ ${roles.length} roles`);
 
-  // Default admin user
+  // Default users — User<->Role is many-to-many (user_roles), so each seed
+  // user gets its role via a nested UserRole create rather than a roleId
+  // column. `update: {}` on the user upsert leaves an existing user's roles
+  // untouched on re-seed (an admin may have since changed them via the UI).
   const hashedPassword = await bcrypt.hash('admin123', 10);
   await prisma.user.upsert({
     where: { email: 'admin@tekfilo.com' },
     update: {},
-    create: { email: 'admin@tekfilo.com', password: hashedPassword, firstName: 'Admin', lastName: 'User', roleId: roles[0].id },
+    create: {
+      email: 'admin@tekfilo.com', password: hashedPassword, firstName: 'Admin', lastName: 'User',
+      roles: { create: [{ roleId: roles[0].id }] },
+    },
   });
   await prisma.user.upsert({
     where: { email: 'ba@tekfilo.com' },
     update: {},
-    create: { email: 'ba@tekfilo.com', password: hashedPassword, firstName: 'BA', lastName: 'User', roleId: roles[2].id },
+    create: {
+      email: 'ba@tekfilo.com', password: hashedPassword, firstName: 'BA', lastName: 'User',
+      roles: { create: [{ roleId: roles[2].id }] },
+    },
   });
   await prisma.user.upsert({
     where: { email: 'sales@tekfilo.com' },
     update: {},
-    create: { email: 'sales@tekfilo.com', password: hashedPassword, firstName: 'Sales', lastName: 'User', roleId: roles[6].id },
+    create: {
+      email: 'sales@tekfilo.com', password: hashedPassword, firstName: 'Sales', lastName: 'User',
+      roles: { create: [{ roleId: roles[6].id }] },
+    },
   });
   console.log('  ✓ Users seeded');
 

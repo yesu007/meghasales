@@ -23,9 +23,9 @@ export function createAssistantTool<TInput>(config: AssistantToolConfig<TInput>)
         return { error: 'permission_denied' as const, permission: config.permission };
       }
 
-      const userId = parseInt((session.user as any).id, 10);
-      const role = (session.user as any).role;
-      return config.handler(input, { userId, role });
+      const userId = parseInt(session.user.id, 10);
+      const roles = session.user.roles || [];
+      return config.handler(input, { userId, roles });
     },
   });
 }

@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 // Audit logs are append-only — written internally via logAudit(), never through this API.
 // Only GET is exposed here.
 export async function GET(request: NextRequest) {
+  const denied = await requirePermission('view_audit_logs');
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '0');

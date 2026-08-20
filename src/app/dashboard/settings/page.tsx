@@ -196,7 +196,7 @@ function CountryMasterManager() {
 
 export default function SettingsPage() {
   const { data: session } = useSession();
-  const isAdmin = (session?.user as any)?.role === 'ADMIN';
+  const isAdmin = (session?.user?.roles || []).includes('ADMIN');
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('company');
 

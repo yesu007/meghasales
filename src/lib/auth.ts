@@ -19,10 +19,14 @@ export const authOptions: NextAuthOptions = {
         const user = await prisma.user.findUnique({
           where: { email: credentials.email },
           include: {
-            role: {
+            roles: {
               include: {
-                permissions: {
-                  include: { permission: true },
+                role: {
+                  include: {
+                    permissions: {
+                      include: { permission: true },
+                    },
+                  },
                 },
               },
             },
@@ -44,12 +48,20 @@ export const authOptions: NextAuthOptions = {
           data: { lastLoginAt: new Date() },
         });
 
+        // A user can hold more than one role — roles is the unique set of
+        // role names, permissions the unique union of every grant across
+        // all of them.
+        const roles = Array.from(new Set(user.roles.map((ur) => ur.role.name)));
+        const permissions = Array.from(
+          new Set(user.roles.flatMap((ur) => ur.role.permissions.map((rp) => rp.permission.name)))
+        );
+
         return {
           id: String(user.id),
           email: user.email,
           name: `${user.firstName} ${user.lastName}`,
-          role: user.role.name,
-          permissions: user.role.permissions.map((rp) => rp.permission.name),
+          roles,
+          permissions,
         };
       },
     }),
@@ -62,16 +74,16 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as any).role;
-        token.permissions = (user as any).permissions;
+        token.roles = user.roles;
+        token.permissions = user.permissions;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = token.id;
-        (session.user as any).role = token.role;
-        (session.user as any).permissions = token.permissions;
+        session.user.id = token.id;
+        session.user.roles = token.roles;
+        session.user.permissions = token.permissions;
       }
       return session;
     },

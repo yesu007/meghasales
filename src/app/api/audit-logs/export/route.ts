@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,9 @@ function csvEscape(value: unknown): string {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await requirePermission('view_audit_logs');
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';

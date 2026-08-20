@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 // Dashboard summary widgets for the Leads page: Total New / Pending
 // Follow-up / Overdue Follow-ups / Converted this month.
 export async function GET(request: NextRequest) {
+  const denied = await requirePermission('view_leads');
+  if (denied) return denied;
+
   try {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
