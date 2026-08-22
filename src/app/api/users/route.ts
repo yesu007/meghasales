@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { logAudit } from '@/lib/audit';
 import { requireAnyPermission, requirePermission } from '@/lib/rbac';
+import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
+import { nextEmployeeCode } from '@/lib/payroll/employeeCode';
 
 export const dynamic = 'force-dynamic';
 
@@ -106,41 +108,70 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'email, firstName, lastName, password, and at least one role are required' }, { status: 400 });
     }
 
+    const email = body.email.trim().toLowerCase();
+
     // Check if email already exists
-    const existing = await prisma.user.findUnique({ where: { email: body.email } });
+    const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return NextResponse.json({ message: 'Email already exists' }, { status: 409 });
     }
 
     const hashedPassword = await bcrypt.hash(body.password, 10);
 
-    const user = await prisma.user.create({
-      data: {
-        email: body.email,
-        firstName: body.firstName,
-        lastName: body.lastName,
-        phone: body.phone || null,
-        password: hashedPassword,
-        isActive: body.isActive !== false,
-        roles: { create: roleIds.map((roleId) => ({ roleId })) },
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        isActive: true,
-        createdAt: true,
-        roles: { include: { role: { select: { id: true, name: true } } } },
-      },
+    const { user, linkedEmployee } = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email,
+          firstName: body.firstName,
+          lastName: body.lastName,
+          phone: body.phone || null,
+          password: hashedPassword,
+          isActive: body.isActive !== false,
+          roles: { create: roleIds.map((roleId) => ({ roleId })) },
+        },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          isActive: true,
+          createdAt: true,
+          roles: { include: { role: { select: { id: true, name: true } } } },
+        },
+      });
+
+      // Every system user is also staff — mirror the reverse link payroll
+      // onboarding already does by email (see POST /api/payroll/employees)
+      // so a newly created user shows up in the Employee module too,
+      // instead of only being discoverable by manually onboarding them
+      // there. Gated on the feature flag so a disabled payroll module
+      // behaves exactly as if this employee record never existed.
+      let linkedEmployee = false;
+      if (isPayrollModuleEnabled()) {
+        const existingEmployee = await tx.employee.findFirst({ where: { email } });
+        if (existingEmployee) {
+          if (!existingEmployee.userId) {
+            await tx.employee.update({ where: { id: existingEmployee.id }, data: { userId: user.id } });
+            linkedEmployee = true;
+          }
+        } else {
+          const employeeCode = await nextEmployeeCode(tx);
+          await tx.employee.create({
+            data: { userId: user.id, employeeCode, firstName: user.firstName, lastName: user.lastName, email },
+          });
+          linkedEmployee = true;
+        }
+      }
+
+      return { user, linkedEmployee };
     });
 
     // Flattened to the same { id, name } shape GET /api/users uses, rather
     // than the raw UserRole join rows.
     const responseUser = { ...user, roles: user.roles.map((ur) => ur.role) };
 
-    await logAudit({ action: 'CREATE', entityType: 'USER', entityId: user.id, newValue: responseUser, description: `User created: ${user.email}`, request });
+    await logAudit({ action: 'CREATE', entityType: 'USER', entityId: user.id, newValue: responseUser, description: `User created: ${user.email}${linkedEmployee ? ' — linked to employee record' : ''}`, request });
 
     return NextResponse.json(responseUser, { status: 201 });
   } catch (error: any) {
