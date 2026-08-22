@@ -7,6 +7,10 @@
     {
       "path": "/api/admin-ticket/reminders/generate",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/reminders/deadlines/generate",
+      "schedule": "0 8 * * *"
     }
   ]
 }

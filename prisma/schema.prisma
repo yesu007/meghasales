@@ -640,6 +640,47 @@ model Notification {
   @@map("notifications")
 }
 
+// Dedup key for the deadline-reminder dispatcher (events, lead follow-ups,
+// event-discussion action items) — one row per (entity, stage) actually
+// delivered, so the once-daily cron and the on-demand dispatch hooked into
+// the leads list route never re-send the same escalation on every run.
+// NOTIFIED fires once an item is discovered inside the reminder window;
+// EMAILED fires once it's within 24h of its due date. No FK to a specific
+// entity table since entityType spans three unrelated models.
+model DeadlineReminderLog {
+  id         Int      @id @default(autoincrement())
+  entityType String   @map("entity_type") // EVENT | LEAD_FOLLOW_UP | EVENT_DISCUSSION
+  entityId   Int      @map("entity_id")
+  stage      String // NOTIFIED | EMAILED
+  sentAt     DateTime @default(now()) @map("sent_at")
+
+  @@unique([entityType, entityId, stage])
+  @@map("deadline_reminder_logs")
+}
+
+// Singleton (single active row) SMTP configuration for outbound mail —
+// currently only used for the deadline-reminder email escalation. Zoho
+// Mail is the only provider the settings UI exposes, but the shape is
+// plain SMTP so any provider works. smtpPassword is a Zoho app-specific
+// password stored so the server can authenticate — the settings API never
+// returns it, only whether one is set, mirroring how User password updates
+// already omit the value on read.
+model EmailConfig {
+  id           Int      @id @default(autoincrement())
+  smtpHost     String   @default("smtp.zoho.com") @map("smtp_host")
+  smtpPort     Int      @default(465) @map("smtp_port")
+  smtpSecure   Boolean  @default(true) @map("smtp_secure") // true = implicit TLS (port 465), false = STARTTLS (587)
+  smtpUser     String?  @map("smtp_user")
+  smtpPassword String?  @map("smtp_password")
+  fromEmail    String?  @map("from_email")
+  fromName     String?  @default("MeghaSales") @map("from_name")
+  isActive     Boolean  @default(false) @map("is_active")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  updatedById  Int?     @map("updated_by_id") // loose ref to User.id, same convention as AdminTicketActivity.performedById
+
+  @@map("email_config")
+}
+
 // One browser/device subscription per row — a user who opts in on both
 // their phone and laptop gets two rows and a push fanned out to both.
 // endpoint is unique because the browser hands out one per subscription;

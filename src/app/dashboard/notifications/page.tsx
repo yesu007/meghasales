@@ -23,6 +23,9 @@ const NOTIFICATION_TYPES = [
   { value: 'DEMO', label: 'Demo' },
   { value: 'QUOTATION', label: 'Quotation' },
   { value: 'IMPLEMENTATION', label: 'Implementation' },
+  { value: 'EVENT_REMINDER', label: 'Event Reminder' },
+  { value: 'FOLLOW_UP_REMINDER', label: 'Follow-up Reminder' },
+  { value: 'DEADLINE_REMINDER', label: 'Deadline Reminder' },
   { value: 'SYSTEM', label: 'System' },
 ];
 
@@ -31,6 +34,9 @@ const TYPE_COLORS: Record<string, string> = {
   DEMO: 'bg-purple-100 text-purple-700',
   QUOTATION: 'bg-amber-100 text-amber-700',
   IMPLEMENTATION: 'bg-green-100 text-green-700',
+  EVENT_REMINDER: 'bg-cyan-100 text-cyan-700',
+  FOLLOW_UP_REMINDER: 'bg-orange-100 text-orange-700',
+  DEADLINE_REMINDER: 'bg-red-100 text-red-700',
   SYSTEM: 'bg-slate-100 text-slate-700',
 };
 

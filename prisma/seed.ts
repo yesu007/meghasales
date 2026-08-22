@@ -307,6 +307,20 @@ async function main() {
   });
   console.log('  ✓ manage_countries permission seeded and granted to ADMIN');
 
+  // Email (Zoho SMTP) settings permission — same belt-and-suspenders
+  // pattern as manage_countries above.
+  const manageEmailSettingsPermission = await prisma.permission.upsert({
+    where: { name: 'manage_email_settings' },
+    update: {},
+    create: { name: 'manage_email_settings', description: 'Configure the outbound SMTP (Zoho Mail) settings used for deadline-reminder emails', module: 'SETTINGS' },
+  });
+  await prisma.rolePermission.upsert({
+    where: { roleId_permissionId: { roleId: roles[0].id, permissionId: manageEmailSettingsPermission.id } },
+    update: {},
+    create: { roleId: roles[0].id, permissionId: manageEmailSettingsPermission.id },
+  });
+  console.log('  ✓ manage_email_settings permission seeded and granted to ADMIN');
+
   // Lead Events permissions — Event Management feature (Events/Documents/
   // Discussions on a CONFIRMED lead). ADMIN gets all three explicitly
   // (belt-and-suspenders alongside requirePermission()'s ADMIN bypass);

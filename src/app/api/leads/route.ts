@@ -7,12 +7,24 @@ import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
 import { isFollowUpOverdue } from '@/lib/leadFollowUp';
 import { requirePermission } from '@/lib/rbac';
+import { dispatchDeadlineReminders } from '@/lib/deadlineReminders';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const denied = await requirePermission('view_leads');
   if (denied) return denied;
+
+  // On-demand dispatch, same pattern as the admin-ticket tickets list —
+  // Vercel Hobby crons only run once a day, so the leads list (hit by
+  // every dashboard-home visit too) doubles as the trigger that catches
+  // events/follow-ups/deadlines crossing the 24h email threshold between
+  // cron ticks. Best-effort: a dispatch hiccup must not block the list.
+  try {
+    await dispatchDeadlineReminders();
+  } catch (error) {
+    console.error('GET /api/leads on-demand deadline dispatch error:', error);
+  }
 
   try {
     const { searchParams } = new URL(request.url);

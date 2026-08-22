@@ -194,6 +194,175 @@ function CountryMasterManager() {
   );
 }
 
+interface EmailConfigData {
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string | null;
+  smtpPasswordSet: boolean;
+  fromEmail: string | null;
+  fromName: string | null;
+  isActive: boolean;
+}
+
+const blankEmailForm = { smtpHost: 'smtp.zoho.com', smtpPort: 465, smtpSecure: true, smtpUser: '', smtpPassword: '', fromEmail: '', fromName: 'MeghaSales', isActive: false };
+
+// Separate from the company-profile form above — different backing model
+// (EmailConfig), different save action, so it gets its own query/mutation
+// rather than being folded into the single "Save Changes" button at the
+// bottom of the page.
+function EmailSettingsManager() {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState(blankEmailForm);
+  const [testTo, setTestTo] = useState('');
+
+  const { data: config, isLoading, isError } = useQuery<EmailConfigData>({
+    queryKey: ['email-config'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/email-config');
+      if (!res.ok) throw new Error('Failed to fetch email settings');
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (isError) toast.error('Failed to load email settings');
+  }, [isError]);
+
+  useEffect(() => {
+    if (config) {
+      setForm({
+        smtpHost: config.smtpHost || 'smtp.zoho.com',
+        smtpPort: config.smtpPort ?? 465,
+        smtpSecure: config.smtpSecure,
+        smtpUser: config.smtpUser || '',
+        smtpPassword: '',
+        fromEmail: config.fromEmail || '',
+        fromName: config.fromName || 'MeghaSales',
+        isActive: config.isActive,
+      });
+    }
+  }, [config]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: typeof form) => {
+      const res = await fetch('/api/settings/email-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to save email settings');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['email-config'] });
+      toast.success('Email settings saved!');
+    },
+    onError: () => toast.error('Failed to save email settings'),
+  });
+
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/settings/email-config/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testTo ? { to: testTo } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to send test email');
+      return data;
+    },
+    onSuccess: (data) => toast.success(`Test email sent to ${data.to}`),
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  if (isLoading) {
+    return <p className="text-sm text-slate-500">Loading email settings...</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold text-slate-800 mb-1">Email (Zoho Mail)</h2>
+      <p className="text-sm text-slate-500 mb-4">
+        SMTP credentials used to send deadline-reminder emails (events, follow-ups, and action-item deadlines within 24 hours of their due date).
+        In-app notifications always fire regardless of this configuration — email is an additional escalation channel.
+      </p>
+
+      <div className="flex items-center gap-2 mb-2">
+        <input
+          type="checkbox"
+          id="email-active"
+          checked={form.isActive}
+          onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
+          className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+        />
+        <label htmlFor="email-active" className="text-sm font-medium text-slate-700">Enable email sending</label>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">SMTP Host</label>
+          <input value={form.smtpHost} onChange={(e) => setForm((f) => ({ ...f, smtpHost: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">SMTP Port</label>
+          <input type="number" value={form.smtpPort} onChange={(e) => setForm((f) => ({ ...f, smtpPort: parseInt(e.target.value, 10) || 0 }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Zoho Mail Address</label>
+          <input type="email" value={form.smtpUser} onChange={(e) => setForm((f) => ({ ...f, smtpUser: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" placeholder="notifications@yourcompany.com" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Zoho App Password {config?.smtpPasswordSet && <span className="text-xs font-normal text-green-600">(set — leave blank to keep)</span>}
+          </label>
+          <input type="password" value={form.smtpPassword} onChange={(e) => setForm((f) => ({ ...f, smtpPassword: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" placeholder={config?.smtpPasswordSet ? '••••••••' : 'Generate in Zoho Mail → App Passwords'} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">From Email</label>
+          <input type="email" value={form.fromEmail} onChange={(e) => setForm((f) => ({ ...f, fromEmail: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">From Name</label>
+          <input value={form.fromName} onChange={(e) => setForm((f) => ({ ...f, fromName: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+        </div>
+      </div>
+
+      <div className="flex justify-end pt-2">
+        <button
+          type="button"
+          onClick={() => saveMutation.mutate(form)}
+          disabled={saveMutation.isPending}
+          className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
+        >
+          {saveMutation.isPending ? 'Saving...' : 'Save Email Settings'}
+        </button>
+      </div>
+
+      <div className="pt-4 border-t border-slate-100">
+        <p className="text-xs font-medium text-slate-500 uppercase mb-2">Test</p>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="email"
+            value={testTo}
+            onChange={(e) => setTestTo(e.target.value)}
+            placeholder="Send to (defaults to your own email)"
+            className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+          />
+          <button
+            type="button"
+            onClick={() => testMutation.mutate()}
+            disabled={testMutation.isPending}
+            className="px-4 py-2 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 disabled:opacity-50"
+          >
+            {testMutation.isPending ? 'Sending...' : 'Send Test Email'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { data: session } = useSession();
   const isAdmin = (session?.user?.roles || []).includes('ADMIN');
@@ -290,7 +459,7 @@ export default function SettingsPage() {
     { id: 'finance', label: 'Finance' },
     { id: 'branding', label: 'Branding' },
     { id: 'terms', label: 'Terms & Policies' },
-    ...(isAdmin ? [{ id: 'regional', label: 'Regional' }] : []),
+    ...(isAdmin ? [{ id: 'regional', label: 'Regional' }, { id: 'email', label: 'Email (Zoho)' }] : []),
   ];
 
   if (isLoading) {
@@ -611,6 +780,8 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+
+          {activeTab === 'email' && isAdmin && <EmailSettingsManager />}
         </div>
 
         {/* Save Button */}
