@@ -16,28 +16,37 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
+    const page = parseInt(searchParams.get('page') || '0');
+    const size = parseInt(searchParams.get('size') || '10');
 
-    const employees = await prisma.employee.findMany({
-      where: {
-        ...(status ? { status } : {}),
-        ...(search
-          ? {
-              OR: [
-                { employeeCode: { contains: search, mode: 'insensitive' } },
-                { department: { contains: search, mode: 'insensitive' } },
-                { designation: { contains: search, mode: 'insensitive' } },
-                { firstName: { contains: search, mode: 'insensitive' } },
-                { lastName: { contains: search, mode: 'insensitive' } },
-                { email: { contains: search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      include: {
-        salaryAssignments: { where: { effectiveTo: null }, take: 1, include: { structure: { select: { name: true } } } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const where = {
+      ...(status ? { status } : {}),
+      ...(search
+        ? {
+            OR: [
+              { employeeCode: { contains: search, mode: 'insensitive' as const } },
+              { department: { contains: search, mode: 'insensitive' as const } },
+              { designation: { contains: search, mode: 'insensitive' as const } },
+              { firstName: { contains: search, mode: 'insensitive' as const } },
+              { lastName: { contains: search, mode: 'insensitive' as const } },
+              { email: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const [employees, totalElements] = await Promise.all([
+      prisma.employee.findMany({
+        where,
+        include: {
+          salaryAssignments: { where: { effectiveTo: null }, take: 1, include: { structure: { select: { name: true } } } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: page * size,
+        take: size,
+      }),
+      prisma.employee.count({ where }),
+    ]);
 
     const content = employees.map((e) => {
       const current = e.salaryAssignments[0];
@@ -52,7 +61,14 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ content, totalElements: content.length });
+    return NextResponse.json({
+      content,
+      page,
+      size,
+      totalElements,
+      totalPages: Math.ceil(totalElements / size),
+      last: (page + 1) * size >= totalElements,
+    });
   } catch (error) {
     console.error('GET /api/payroll/employees error:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });

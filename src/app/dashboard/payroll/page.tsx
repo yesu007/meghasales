@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, Fragment } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, Transition } from '@headlessui/react';
-import { PlusIcon, XMarkIcon, InboxIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, XMarkIcon, InboxIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 interface EmployeeRow {
@@ -28,12 +28,28 @@ const STATUS_COLORS: Record<string, string> = {
   EXITED: 'bg-slate-100 text-slate-500',
 };
 
-async function fetchEmployees(search: string): Promise<{ content: EmployeeRow[] }> {
-  const params = new URLSearchParams();
+interface EmployeesResponse {
+  content: EmployeeRow[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+async function fetchEmployees(search: string, page: number, size: number): Promise<EmployeesResponse> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (search) params.set('search', search);
   const res = await fetch(`/api/payroll/employees?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch employees');
   return res.json();
+}
+
+// Page numbers with ellipsis, e.g. 1 2 3 4 … 10
+function getPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+  if (current <= 3) return [0, 1, 2, 3, 'ellipsis', total - 1];
+  if (current >= total - 4) return [0, 'ellipsis', total - 4, total - 3, total - 2, total - 1];
+  return [0, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total - 1];
 }
 
 const blankForm = {
@@ -44,13 +60,22 @@ const blankForm = {
 export default function PayrollEmployeesPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(10);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState(blankForm);
 
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setPage(0); }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['payroll-employees', search],
-    queryFn: () => fetchEmployees(search),
+    queryKey: ['payroll-employees', search, page, size],
+    queryFn: () => fetchEmployees(search, page, size),
+    placeholderData: (prev: any) => prev,
   });
 
   const createMutation = useMutation({
@@ -98,6 +123,9 @@ export default function PayrollEmployeesPage() {
   };
 
   const employees = data?.content || [];
+  const totalElements = data?.totalElements || 0;
+  const totalPages = data?.totalPages || 0;
+  const pageNumbers = getPageNumbers(page, totalPages || 1);
 
   return (
     <div className="space-y-4">
@@ -115,8 +143,8 @@ export default function PayrollEmployeesPage() {
         <input
           type="text"
           placeholder="Search by name, employee code, department..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
         />
       </div>
@@ -135,6 +163,7 @@ export default function PayrollEmployeesPage() {
             <p className="text-sm text-slate-400 mt-1">Onboard a user to start building payroll</p>
           </div>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-900">
@@ -178,6 +207,49 @@ export default function PayrollEmployeesPage() {
               </tbody>
             </table>
           </div>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <span>Rows per page</span>
+              <select
+                value={size}
+                onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
+                className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
+              >
+                {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <ChevronLeftIcon className="h-4 w-4" /> Previous
+              </button>
+              {pageNumbers.map((p, i) =>
+                p === 'ellipsis' ? (
+                  <span key={`ellipsis-${i}`} className="px-2 text-sm text-slate-400">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === page ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                  >
+                    {p + 1}
+                  </button>
+                )
+              )}
+              <button
+                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                Next <ChevronRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-500">Showing {page * size + 1}–{Math.min((page + 1) * size, totalElements)} of {totalElements}</p>
+          </div>
+          </>
         )}
       </div>
 
