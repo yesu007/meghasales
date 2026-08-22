@@ -22,13 +22,29 @@ export interface MailPayload {
   text?: string;
 }
 
+export interface SmtpConfigInput {
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPassword: string;
+  fromEmail: string;
+  fromName?: string | null;
+}
+
 // Throws on misconfiguration or a transport failure — callers that treat
 // email as a best-effort escalation (see deadlineReminders.ts) are
 // responsible for catching, exactly like sendPushToUser's callers do for
 // push. No caching of the transporter: config can change between calls.
-export async function sendMail(payload: MailPayload): Promise<void> {
-  const config = await getEmailConfig();
-  if (!config?.isActive || !config.smtpHost || !config.smtpUser || !config.smtpPassword || !config.fromEmail) {
+//
+// configOverride lets the settings-page "Send Test Email" action test
+// whatever's currently typed into the form, rather than only whatever was
+// last saved — a password typed but not yet saved should still be
+// testable, and skipping the isActive check here means a test send works
+// before "Enable email sending" has even been checked.
+export async function sendMail(payload: MailPayload, configOverride?: SmtpConfigInput): Promise<void> {
+  const config = configOverride ?? (await getEmailConfig());
+  if (!config || !config.smtpHost || !config.smtpUser || !config.smtpPassword || !config.fromEmail || (!configOverride && !(config as any).isActive)) {
     throw new Error('Email is not configured');
   }
 

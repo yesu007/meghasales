@@ -263,10 +263,13 @@ function EmailSettingsManager() {
 
   const testMutation = useMutation({
     mutationFn: async () => {
+      // Sends whatever is currently in the form, not only what's already
+      // saved — otherwise "Send Test Email" silently tests stale saved
+      // credentials if clicked before "Save Email Settings".
       const res = await fetch('/api/settings/email-config/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(testTo ? { to: testTo } : {}),
+        body: JSON.stringify({ ...form, ...(testTo ? { to: testTo } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to send test email');
