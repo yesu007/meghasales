@@ -79,14 +79,14 @@ model User {
   roles UserRole[]
 
   // Relations
-  assignedLeads   Lead[]           @relation("AssignedBA")
-  createdLeads    Lead[]           @relation("CreatedBy")
-  leadActivities  LeadActivity[]
-  loggedFollowUps LeadFollowUp[]   @relation("LeadFollowUpLoggedBy")
-  assignedDemos   Demo[]
-  auditLogs       AuditLog[]
-  implementations Implementation[] @relation("ProjectManager")
-  notifications   Notification[]
+  assignedLeads     Lead[]             @relation("AssignedBA")
+  createdLeads      Lead[]             @relation("CreatedBy")
+  leadActivities    LeadActivity[]
+  loggedFollowUps   LeadFollowUp[]     @relation("LeadFollowUpLoggedBy")
+  assignedDemos     Demo[]
+  auditLogs         AuditLog[]
+  implementations   Implementation[]   @relation("ProjectManager")
+  notifications     Notification[]
   pushSubscriptions PushSubscription[]
   employee          Employee?
 
@@ -144,7 +144,7 @@ model Lead {
   // overdue follow-ups without a per-row subquery against lead_follow_ups.
   lastFollowUpDate DateTime? @map("last_follow_up_date")
   nextFollowUpDate DateTime? @map("next_follow_up_date")
-  followUpCount    Int      @default(0) @map("follow_up_count")
+  followUpCount    Int       @default(0) @map("follow_up_count")
 
   assignedBa      User?            @relation("AssignedBA", fields: [assignedBaId], references: [id])
   createdBy       User?            @relation("CreatedBy", fields: [createdById], references: [id])
@@ -599,10 +599,10 @@ model CompanyProfile {
   // which would incorrectly reduce net pay) purely so compliance reports
   // can show the employer's contribution alongside what was actually
   // deducted from the employee.
-  pfWageCeiling         Decimal? @default(15000) @db.Decimal(12, 2) @map("pf_wage_ceiling")
-  pfEmployerRate        Decimal? @default(12) @db.Decimal(5, 2) @map("pf_employer_rate")
-  esiGrossThreshold     Decimal? @default(21000) @db.Decimal(12, 2) @map("esi_gross_threshold")
-  esiEmployerRate       Decimal? @default(3.25) @db.Decimal(5, 2) @map("esi_employer_rate")
+  pfWageCeiling         Decimal? @default(15000) @map("pf_wage_ceiling") @db.Decimal(12, 2)
+  pfEmployerRate        Decimal? @default(12) @map("pf_employer_rate") @db.Decimal(5, 2)
+  esiGrossThreshold     Decimal? @default(21000) @map("esi_gross_threshold") @db.Decimal(12, 2)
+  esiEmployerRate       Decimal? @default(3.25) @map("esi_employer_rate") @db.Decimal(5, 2)
   // Time & Attendance — which Saturdays are a weekly off, not every-Saturday
   // (the common alternate-Saturday policy at Indian companies). Sunday is
   // always off regardless of this setting; only Saturday's treatment
@@ -742,12 +742,12 @@ model Employee {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  user               User?                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  salaryAssignments  SalaryStructureAssignment[]
-  payslips           Payslip[]
-  leaveRequests      LeaveRequest[]
-  loans              Loan[]
-  timesheetEntries   TimesheetEntry[]
+  user              User?                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  salaryAssignments SalaryStructureAssignment[]
+  payslips          Payslip[]
+  leaveRequests     LeaveRequest[]
+  loans             Loan[]
+  timesheetEntries  TimesheetEntry[]
 
   @@map("employees")
 }
@@ -830,7 +830,7 @@ model SalaryStructureAssignment {
   id            Int       @id @default(autoincrement())
   employeeId    Int       @map("employee_id")
   structureId   Int       @map("structure_id")
-  ctcAnnual     Decimal   @db.Decimal(14, 2) @map("ctc_annual")
+  ctcAnnual     Decimal   @map("ctc_annual") @db.Decimal(14, 2)
   effectiveFrom DateTime  @map("effective_from")
   effectiveTo   DateTime? @map("effective_to")
   createdById   Int?      @map("created_by")
@@ -882,11 +882,11 @@ model Payslip {
   employeeId      Int      @map("employee_id")
   assignmentId    Int?     @map("assignment_id")
   totalDays       Int      @map("total_days")
-  payableDays     Decimal  @db.Decimal(4, 1) @map("payable_days")
-  lopDays         Decimal  @default(0) @db.Decimal(4, 1) @map("lop_days")
-  grossEarnings   Decimal  @db.Decimal(14, 2) @map("gross_earnings")
-  totalDeductions Decimal  @db.Decimal(14, 2) @map("total_deductions")
-  netPay          Decimal  @db.Decimal(14, 2) @map("net_pay")
+  payableDays     Decimal  @map("payable_days") @db.Decimal(4, 1)
+  lopDays         Decimal  @default(0) @map("lop_days") @db.Decimal(4, 1)
+  grossEarnings   Decimal  @map("gross_earnings") @db.Decimal(14, 2)
+  totalDeductions Decimal  @map("total_deductions") @db.Decimal(14, 2)
+  netPay          Decimal  @map("net_pay") @db.Decimal(14, 2)
   version         Int      @default(1)
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
@@ -905,13 +905,13 @@ model Payslip {
 // payslip still reads correctly even if the component is later renamed or
 // deactivated.
 model PayslipLineItem {
-  id           Int      @id @default(autoincrement())
-  payslipId    Int      @map("payslip_id")
-  componentId  Int?     @map("component_id")
+  id           Int     @id @default(autoincrement())
+  payslipId    Int     @map("payslip_id")
+  componentId  Int?    @map("component_id")
   label        String
   type         String // EARNING | DEDUCTION
-  amount       Decimal  @db.Decimal(12, 2)
-  isAdjustment Boolean  @default(false) @map("is_adjustment")
+  amount       Decimal @db.Decimal(12, 2)
+  isAdjustment Boolean @default(false) @map("is_adjustment")
 
   payslip   Payslip          @relation(fields: [payslipId], references: [id], onDelete: Cascade)
   component SalaryComponent? @relation(fields: [componentId], references: [id])
@@ -928,9 +928,9 @@ model PayslipLineItem {
 model PtSlab {
   id            Int      @id @default(autoincrement())
   state         String   @default("TN")
-  minGross      Decimal  @db.Decimal(12, 2) @map("min_gross")
-  maxGross      Decimal? @db.Decimal(12, 2) @map("max_gross")
-  monthlyAmount Decimal  @db.Decimal(12, 2) @map("monthly_amount")
+  minGross      Decimal  @map("min_gross") @db.Decimal(12, 2)
+  maxGross      Decimal? @map("max_gross") @db.Decimal(12, 2)
+  monthlyAmount Decimal  @map("monthly_amount") @db.Decimal(12, 2)
   effectiveFrom DateTime @default(now()) @map("effective_from")
   isActive      Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at")
@@ -949,7 +949,7 @@ model LeaveType {
   name        String
   code        String   @unique
   isPaid      Boolean  @default(true) @map("is_paid")
-  annualQuota Decimal? @db.Decimal(5, 1) @map("annual_quota")
+  annualQuota Decimal? @map("annual_quota") @db.Decimal(5, 1)
   isActive    Boolean  @default(true) @map("is_active")
   sortOrder   Int      @default(0) @map("sort_order")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -1005,8 +1005,8 @@ model Loan {
   principal          Decimal  @db.Decimal(12, 2)
   reason             String?
   disbursedDate      DateTime @map("disbursed_date")
-  monthlyInstallment Decimal  @db.Decimal(12, 2) @map("monthly_installment")
-  outstandingBalance Decimal  @db.Decimal(12, 2) @map("outstanding_balance")
+  monthlyInstallment Decimal  @map("monthly_installment") @db.Decimal(12, 2)
+  outstandingBalance Decimal  @map("outstanding_balance") @db.Decimal(12, 2)
   status             String   @default("ACTIVE") // ACTIVE | CLOSED | CANCELLED
   createdById        Int?     @map("created_by")
   createdAt          DateTime @default(now()) @map("created_at")
@@ -1054,8 +1054,8 @@ model TimesheetEntry {
   employeeId    Int      @map("employee_id")
   periodYear    Int      @map("period_year")
   periodMonth   Int      @map("period_month") // 1-12
-  regularHours  Decimal  @default(0) @db.Decimal(6, 1) @map("regular_hours")
-  overtimeHours Decimal  @default(0) @db.Decimal(6, 1) @map("overtime_hours")
+  regularHours  Decimal  @default(0) @map("regular_hours") @db.Decimal(6, 1)
+  overtimeHours Decimal  @default(0) @map("overtime_hours") @db.Decimal(6, 1)
   updatedById   Int?     @map("updated_by")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -1484,4 +1484,152 @@ model AdminTicketAttachment {
 
   @@index([ticketId])
   @@map("admin_ticket_attachments")
+}
+
+// ============================================================
+// MEETING MANAGEMENT MODULE (Phase 1 — scheduling, participants, agenda)
+//
+// Fully additive, feature-flagged (FEATURE_MEETINGS) module, same
+// convention as ADMIN TICKET MODULE above — own tables only. organizerId/
+// createdById/performedById/uploadedById/ownerId are loose references to
+// User.id (plain Int, no @relation): deactivating or deleting a User must
+// never fail because of a row in this module. MOM, Action Items, SLA, and
+// notification-template/preference tables are later phases and are not
+// created yet — meeting_attachments' entityType already anticipates them
+// (MOM | ACTION_ITEM) so it doesn't need to change shape when they land.
+// ============================================================
+
+model Meeting {
+  id              Int      @id @default(autoincrement())
+  title           String
+  meetingType     String   @map("meeting_type") // INTERNAL | CLIENT | VENDOR | REVIEW | OTHER
+  purpose         String?
+  scheduledAt     DateTime @map("scheduled_at")
+  durationMinutes Int?     @map("duration_minutes")
+  location        String?
+  meetingLink     String?  @map("meeting_link")
+  organizerId     Int?     @map("organizer_id") // loose ref to User.id
+  priority        String   @default("MEDIUM") // LOW | MEDIUM | HIGH
+  status          String   @default("SCHEDULED") // SCHEDULED | COMPLETED | CANCELLED — rescheduling updates scheduledAt + logs a RESCHEDULED activity, it isn't its own status
+  refType         String?  @map("ref_type") // loose link to an existing entity, e.g. "LEAD" | "IMPLEMENTATION" | "ADMIN_TICKET"
+  refId           Int?     @map("ref_id") // no FK — see module note above
+  recurrenceId    Int?     @map("recurrence_id")
+  parentMeetingId Int?     @map("parent_meeting_id")
+  version         Int      @default(1) // optimistic-lock token for concurrent edits
+  createdById     Int?     @map("created_by") // loose ref to User.id
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  recurrence    MeetingRecurrence?   @relation(fields: [recurrenceId], references: [id])
+  parentMeeting Meeting?             @relation("MeetingOccurrences", fields: [parentMeetingId], references: [id])
+  occurrences   Meeting[]            @relation("MeetingOccurrences")
+  participants  MeetingParticipant[]
+  agendaItems   MeetingAgendaItem[]
+  activities    MeetingActivity[]
+
+  @@unique([recurrenceId, scheduledAt])
+  @@index([status, scheduledAt])
+  @@index([organizerId])
+  @@index([refType, refId])
+  @@index([recurrenceId])
+  @@map("meetings")
+}
+
+model MeetingRecurrence {
+  id                Int       @id @default(autoincrement())
+  frequency         String // DAILY | WEEKLY | MONTHLY | QUARTERLY | YEARLY | CUSTOM_CRON
+  intervalValue     Int       @default(1) @map("interval_value")
+  dayOfMonth        Int?      @map("day_of_month")
+  dayOfWeek         Int?      @map("day_of_week") // 0 (Sun) - 6 (Sat)
+  monthOfYear       Int?      @map("month_of_year") // 1-12, used by YEARLY
+  startDate         DateTime  @map("start_date")
+  endDate           DateTime? @map("end_date")
+  nextRunDate       DateTime  @map("next_run_date")
+  lastGeneratedDate DateTime? @map("last_generated_date")
+  leadTimeDays      Int       @default(0) @map("lead_time_days") // generate the occurrence N days before it's due
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  occurrences Meeting[]
+
+  @@index([isActive, nextRunDate])
+  @@map("meeting_recurrences")
+}
+
+model MeetingParticipant {
+  id              Int      @id @default(autoincrement())
+  meetingId       Int      @map("meeting_id")
+  participantType String   @map("participant_type") // INTERNAL | EXTERNAL
+  userId          Int?     @map("user_id") // loose ref to User.id, set when participantType=INTERNAL
+  externalName    String?  @map("external_name")
+  externalEmail   String?  @map("external_email")
+  role            String   @default("ATTENDEE") // ORGANIZER | ATTENDEE | OPTIONAL
+  rsvpStatus      String   @default("PENDING") @map("rsvp_status") // PENDING | ACCEPTED | DECLINED | TENTATIVE
+  attended        Boolean?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([userId])
+  @@map("meeting_participants")
+}
+
+model MeetingAgendaItem {
+  id                   Int      @id @default(autoincrement())
+  meetingId            Int      @map("meeting_id")
+  sortOrder            Int      @default(0) @map("sort_order")
+  title                String
+  description          String?
+  timeAllocatedMinutes Int?     @map("time_allocated_minutes")
+  ownerId              Int?     @map("owner_id") // loose ref to User.id
+  status               String   @default("PENDING") // PENDING | DISCUSSED | DEFERRED
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@map("meeting_agenda_items")
+}
+
+// Append-only audit trail — same separation of concerns as
+// AdminTicketActivity: system-generated field-change/status trail, not
+// freeform human discussion (there's no MeetingComment yet; add one the
+// same way AdminTicketComment was added if this module needs it).
+model MeetingActivity {
+  id            Int      @id @default(autoincrement())
+  meetingId     Int      @map("meeting_id")
+  action        String
+  fieldName     String?  @map("field_name")
+  oldValue      String?  @map("old_value")
+  newValue      String?  @map("new_value")
+  performedById Int?     @map("performed_by") // loose ref to User.id
+  performedAt   DateTime @default(now()) @map("performed_at")
+  remarks       String?
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([performedAt])
+  @@map("meeting_activities")
+}
+
+// Polymorphic on purpose — meetings, and later MOM/action items (once those
+// tables exist), all attach files through this one table instead of three
+// near-identical ones. No FK, matches the Notification/AuditLog entityType/
+// entityId idiom already used elsewhere in this schema.
+model MeetingAttachment {
+  id           Int      @id @default(autoincrement())
+  entityType   String   @map("entity_type") // MEETING | MOM | ACTION_ITEM
+  entityId     Int      @map("entity_id")
+  fileName     String   @map("file_name")
+  filePath     String   @map("file_path") // Vercel Blob URL
+  mimeType     String?  @map("mime_type")
+  size         Int?
+  uploadedById Int?     @map("uploaded_by") // loose ref to User.id
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@map("meeting_attachments")
 }

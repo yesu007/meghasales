@@ -27,6 +27,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
 import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
+import { isMeetingsModuleEnabled } from '@/lib/meetings/featureFlag';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { hasAnyPermission } from '@/lib/permissions';
 
@@ -54,8 +55,9 @@ interface NavSection {
 // space. Each item can carry a `permission` (single string or array —
 // array means "any of"); an item with none is always visible once its
 // section is reached (e.g. Dashboard home, personal Notifications).
-// Feature flags (isPayrollModuleEnabled, isAdminTicketModuleEnabled) are a
-// separate, build-time AND-condition on top of the permission check.
+// Feature flags (isPayrollModuleEnabled, isAdminTicketModuleEnabled,
+// isMeetingsModuleEnabled) are a separate, build-time AND-condition on top
+// of the permission check.
 function getNavItems(): NavSection[] {
   return [
     {
@@ -69,6 +71,9 @@ function getNavItems(): NavSection[] {
         { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon, permission: 'view_quotations' },
         { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon, permission: 'view_demos' },
         { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon, permission: 'view_implementations' },
+        ...(isMeetingsModuleEnabled()
+          ? [{ href: '/dashboard/meetings', label: 'Meetings', icon: CalendarDaysIcon, permission: 'view_meetings' }]
+          : []),
       ],
     },
     {
