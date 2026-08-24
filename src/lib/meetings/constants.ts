@@ -66,3 +66,67 @@ export function isValidMomStatusTransition(from: MomStatus, to: MomStatus): bool
   if (from === to) return false;
   return MOM_STATUS_TRANSITIONS[from]?.includes(to) ?? false;
 }
+
+export const ACTION_ITEM_STATUSES = [
+  'DRAFT',
+  'ASSIGNED',
+  'ACCEPTED',
+  'IN_PROGRESS',
+  'PENDING',
+  'BLOCKED',
+  'COMPLETED',
+  'VERIFIED',
+  'CLOSED',
+  'CANCELLED',
+] as const;
+export type ActionItemStatus = (typeof ACTION_ITEM_STATUSES)[number];
+
+export const ACTION_ITEM_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+export type ActionItemPriority = (typeof ACTION_ITEM_PRIORITIES)[number];
+
+// Reopening (CLOSED/CANCELLED -> an open status) is a dedicated operation
+// with its own permission and its own target-status rule (see
+// reopenActionItem in actionItemService.ts) — it deliberately doesn't
+// appear here, same reasoning as Meeting's reschedule being a dedicated
+// endpoint rather than a generic status edge.
+const ACTION_ITEM_STATUS_TRANSITIONS: Record<ActionItemStatus, ActionItemStatus[]> = {
+  DRAFT: ['ASSIGNED', 'CANCELLED'],
+  ASSIGNED: ['ACCEPTED', 'CANCELLED'],
+  ACCEPTED: ['IN_PROGRESS', 'CANCELLED'],
+  IN_PROGRESS: ['PENDING', 'BLOCKED', 'COMPLETED', 'CANCELLED'],
+  PENDING: ['IN_PROGRESS', 'BLOCKED', 'CANCELLED'],
+  BLOCKED: ['IN_PROGRESS', 'PENDING', 'CANCELLED'],
+  COMPLETED: ['VERIFIED', 'IN_PROGRESS'], // IN_PROGRESS = verifier rejecting the completion claim back for rework
+  VERIFIED: ['CLOSED'],
+  CLOSED: [],
+  CANCELLED: [],
+};
+
+export function isValidActionItemStatusTransition(from: ActionItemStatus, to: ActionItemStatus): boolean {
+  if (from === to) return false;
+  return ACTION_ITEM_STATUS_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+export type ActionItemTransitionCapability = 'ASSIGN' | 'OWNER' | 'VERIFY' | 'CLOSE' | 'CANCEL';
+
+// Which capability a transition requires — checked by the route/service
+// layer alongside isValidActionItemStatusTransition. Order matters: the
+// COMPLETED->IN_PROGRESS "reject a completion claim" edge must be caught
+// before the generic "moving into IN_PROGRESS is an OWNER action" rule
+// below it, since the same target status means something different
+// depending on where it came from.
+export function getActionItemTransitionCapability(from: ActionItemStatus, to: ActionItemStatus): ActionItemTransitionCapability | null {
+  if (from === 'COMPLETED' && to === 'IN_PROGRESS') return 'VERIFY';
+  if (to === 'CANCELLED') return 'CANCEL';
+  if (to === 'ASSIGNED') return 'ASSIGN';
+  if (to === 'VERIFIED') return 'VERIFY';
+  if (to === 'CLOSED') return 'CLOSE';
+  if (to === 'ACCEPTED' || to === 'IN_PROGRESS' || to === 'PENDING' || to === 'BLOCKED' || to === 'COMPLETED') return 'OWNER';
+  return null;
+}
+
+export const FOLLOWUP_FREQUENCIES = ['ONE_TIME', 'DAILY', 'WEEKLY', 'MONTHLY'] as const;
+export type FollowUpFrequency = (typeof FOLLOWUP_FREQUENCIES)[number];
+
+export const FOLLOWUP_STATUSES = ['PENDING', 'COMPLETED'] as const;
+export type FollowUpStatus = (typeof FOLLOWUP_STATUSES)[number];

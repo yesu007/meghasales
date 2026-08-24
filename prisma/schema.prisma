@@ -1527,6 +1527,7 @@ model Meeting {
   agendaItems   MeetingAgendaItem[]
   activities    MeetingActivity[]
   mom           Mom?
+  actionItems   ActionItem[]
 
   @@unique([recurrenceId, scheduledAt])
   @@index([status, scheduledAt])
@@ -1661,9 +1662,10 @@ model Mom {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  meeting   Meeting       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  decisions MomDecision[]
-  versions  MomVersion[]
+  meeting     Meeting       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  decisions   MomDecision[]
+  versions    MomVersion[]
+  actionItems ActionItem[]
 
   @@index([status])
   @@map("moms")
@@ -1700,4 +1702,118 @@ model MomDecision {
 
   @@index([momId])
   @@map("mom_decisions")
+}
+
+// ============================================================
+// ACTION ITEM MODULE (Phase 3 — assignment, status workflow, follow-up,
+// dependencies)
+//
+// meetingId is a real FK (cascades with its meeting, like MeetingActivity).
+// momId is a real FK too but nullable + SET NULL on delete — an item can be
+// added to a meeting directly, or generated from a MOM decision, and must
+// survive if the MOM row is ever removed. assignedToId/assignedTeam(free
+// text — no Team master exists yet)/createdById/completedById/verifiedById
+// are loose refs to User.id, same reasoning as the rest of this module.
+// Lifecycle events log into ActionItemHistory (append-only), mirroring
+// AdminTicketActivity/MeetingActivity — separate from ActionItemComment
+// (freeform human discussion), same separation of concerns used throughout
+// this schema.
+// ============================================================
+
+model ActionItem {
+  id                    Int       @id @default(autoincrement())
+  meetingId             Int       @map("meeting_id")
+  momId                 Int?      @map("mom_id")
+  refType               String?   @map("ref_type") // loose link, e.g. "LEAD" | "IMPLEMENTATION" | "ADMIN_TICKET"
+  refId                 Int?      @map("ref_id")
+  description           String
+  assignedToId          Int?      @map("assigned_to") // loose ref to User.id
+  assignedTeam          String?   @map("assigned_team") // free-text — no Team master table exists yet
+  priority              String    @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  status                String    @default("DRAFT") // DRAFT | ASSIGNED | ACCEPTED | IN_PROGRESS | PENDING | BLOCKED | COMPLETED | VERIFIED | CLOSED | CANCELLED
+  percentComplete       Int       @default(0) @map("percent_complete")
+  dependsOnActionItemId Int?      @map("depends_on_action_item_id")
+  startDate             DateTime? @map("start_date")
+  dueDate               DateTime  @map("due_date")
+  escalationLevel       Int       @default(0) @map("escalation_level") // advanced by the Phase 4 SLA engine, unused until then
+  completedAt           DateTime? @map("completed_at")
+  completedById         Int?      @map("completed_by") // loose ref to User.id
+  verifiedById          Int?      @map("verified_by") // loose ref to User.id
+  verifiedAt            DateTime? @map("verified_at")
+  closureRemarks        String?   @map("closure_remarks")
+  version               Int       @default(1) // optimistic-lock token for concurrent edits
+  createdById           Int?      @map("created_by") // loose ref to User.id
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  meeting    Meeting              @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  mom        Mom?                 @relation(fields: [momId], references: [id], onDelete: SetNull)
+  dependsOn  ActionItem?          @relation("ActionItemDependency", fields: [dependsOnActionItemId], references: [id])
+  dependents ActionItem[]         @relation("ActionItemDependency")
+  history    ActionItemHistory[]
+  comments   ActionItemComment[]
+  followUps  ActionItemFollowUp[]
+
+  @@index([status, dueDate])
+  @@index([assignedToId])
+  @@index([meetingId])
+  @@index([momId])
+  @@index([refType, refId])
+  @@index([dependsOnActionItemId])
+  @@map("action_items")
+}
+
+// Append-only audit trail — same separation of concerns as
+// AdminTicketActivity/MeetingActivity: system-generated field-change/
+// status trail, not freeform human discussion (that's ActionItemComment).
+model ActionItemHistory {
+  id            Int      @id @default(autoincrement())
+  actionItemId  Int      @map("action_item_id")
+  action        String
+  fieldName     String?  @map("field_name")
+  oldValue      String?  @map("old_value")
+  newValue      String?  @map("new_value")
+  performedById Int?     @map("performed_by") // loose ref to User.id
+  performedAt   DateTime @default(now()) @map("performed_at")
+  remarks       String?
+
+  actionItem ActionItem @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+
+  @@index([actionItemId])
+  @@index([performedAt])
+  @@map("action_item_history")
+}
+
+// Freeform human discussion on an action item — create-only for v1, no
+// edit/delete, same convention as AdminTicketComment/EventDiscussion.
+model ActionItemComment {
+  id           Int      @id @default(autoincrement())
+  actionItemId Int      @map("action_item_id")
+  body         String
+  authorId     Int?     @map("author_id") // loose ref to User.id
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  actionItem ActionItem @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+
+  @@index([actionItemId])
+  @@map("action_item_comments")
+}
+
+model ActionItemFollowUp {
+  id               Int       @id @default(autoincrement())
+  actionItemId     Int       @map("action_item_id")
+  followUpDate     DateTime  @map("follow_up_date")
+  frequency        String    @default("ONE_TIME") // ONE_TIME | DAILY | WEEKLY | MONTHLY
+  nextFollowUpDate DateTime? @map("next_follow_up_date")
+  ownerId          Int?      @map("owner_id") // loose ref to User.id
+  remarks          String?
+  status           String    @default("PENDING") // PENDING | COMPLETED
+  completedAt      DateTime? @map("completed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  actionItem ActionItem @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+
+  @@index([actionItemId])
+  @@index([nextFollowUpDate])
+  @@map("action_item_followups")
 }
