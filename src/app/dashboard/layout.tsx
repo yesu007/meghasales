@@ -20,6 +20,7 @@ import {
   CurrencyRupeeIcon,
   WalletIcon,
   CalendarDaysIcon,
+  ListBulletIcon,
   ReceiptPercentIcon,
   ChevronDownIcon,
   Bars3Icon,
@@ -72,7 +73,10 @@ function getNavItems(): NavSection[] {
         { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon, permission: 'view_demos' },
         { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon, permission: 'view_implementations' },
         ...(isMeetingsModuleEnabled()
-          ? [{ href: '/dashboard/meetings', label: 'Meetings', icon: CalendarDaysIcon, permission: 'view_meetings' }]
+          ? [
+              { href: '/dashboard/meetings', label: 'Meetings', icon: CalendarDaysIcon, permission: 'view_meetings' },
+              { href: '/dashboard/action-items', label: 'Action Items', icon: ListBulletIcon, permission: 'view_meetings' },
+            ]
           : []),
       ],
     },

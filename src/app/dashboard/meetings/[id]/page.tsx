@@ -31,6 +31,8 @@ import {
   MeetingStatus,
   MeetingPriority,
   ParticipantType,
+  ACTION_ITEM_PRIORITIES,
+  ActionItemPriority,
 } from '@/lib/meetings/constants';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -67,6 +69,26 @@ const MOM_STATUS_COLORS: Record<string, string> = {
   PUBLISHED: 'bg-amber-100 text-amber-700',
 };
 
+const ACTION_ITEM_STATUS_COLORS: Record<string, string> = {
+  DRAFT: 'bg-slate-100 text-slate-500',
+  ASSIGNED: 'bg-blue-100 text-blue-700',
+  ACCEPTED: 'bg-cyan-100 text-cyan-700',
+  IN_PROGRESS: 'bg-amber-100 text-amber-700',
+  PENDING: 'bg-orange-100 text-orange-700',
+  BLOCKED: 'bg-red-100 text-red-700',
+  COMPLETED: 'bg-green-100 text-green-700',
+  VERIFIED: 'bg-teal-100 text-teal-700',
+  CLOSED: 'bg-slate-200 text-slate-600',
+  CANCELLED: 'bg-slate-100 text-slate-400',
+};
+
+const ACTION_ITEM_PRIORITY_COLORS: Record<string, string> = {
+  LOW: 'bg-slate-100 text-slate-600',
+  MEDIUM: 'bg-blue-100 text-blue-700',
+  HIGH: 'bg-orange-100 text-orange-700',
+  CRITICAL: 'bg-red-100 text-red-700',
+};
+
 const AVATAR_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7'];
 function avatarColor(id: number): string {
   return AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
@@ -91,6 +113,12 @@ async function fetchUsers() {
 async function fetchMomDetail(momId: number) {
   const res = await fetch(`/api/mom/${momId}`);
   if (!res.ok) throw new Error('Failed to fetch MOM detail');
+  return res.json();
+}
+
+async function fetchActionItems(meetingId: number) {
+  const res = await fetch(`/api/action-items?meetingId=${meetingId}&size=100`);
+  if (!res.ok) throw new Error('Failed to fetch action items');
   return res.json();
 }
 
@@ -702,6 +730,160 @@ function AddMomDecisionForm({ mom, onDone }: { mom: any; onDone: () => void }) {
   );
 }
 
+function AddActionItemModal({
+  meetingId,
+  momId,
+  users,
+  otherActionItems,
+  onClose,
+}: {
+  meetingId: number;
+  momId: number | null;
+  users: any[];
+  otherActionItems: any[];
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [description, setDescription] = useState('');
+  const [assignedToId, setAssignedToId] = useState('');
+  const [assignedTeam, setAssignedTeam] = useState('');
+  const [priority, setPriority] = useState<ActionItemPriority>('MEDIUM');
+  const [startDate, setStartDate] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [dependsOnActionItemId, setDependsOnActionItemId] = useState('');
+  const [attachToMom, setAttachToMom] = useState(false);
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/action-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meetingId,
+          momId: attachToMom && momId ? momId : undefined,
+          description,
+          assignedToId: assignedToId ? Number(assignedToId) : undefined,
+          assignedTeam: assignedTeam || undefined,
+          priority,
+          startDate: startDate ? new Date(startDate).toISOString() : undefined,
+          dueDate: new Date(dueDate).toISOString(),
+          dependsOnActionItemId: dependsOnActionItemId ? Number(dependsOnActionItemId) : undefined,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to create action item');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['action-items', meetingId] });
+      toast.success('Action item created');
+      onClose();
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-semibold text-slate-800 mb-4">Add Action Item</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Description</label>
+            <textarea
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1">Assign To</label>
+              <select value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                <option value="">Unassigned</option>
+                {users.map((u: any) => (
+                  <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1">Assigned Team</label>
+              <input
+                value={assignedTeam}
+                onChange={(e) => setAssignedTeam(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1">Priority</label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as ActionItemPriority)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              >
+                {ACTION_ITEM_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1">Start Date</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1">Due Date</label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+          {otherActionItems.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1">Depends On</label>
+              <select
+                value={dependsOnActionItemId}
+                onChange={(e) => setDependsOnActionItemId(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              >
+                <option value="">No dependency</option>
+                {otherActionItems.map((a: any) => (
+                  <option key={a.id} value={a.id}>{a.description}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {momId != null && (
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={attachToMom} onChange={(e) => setAttachToMom(e.target.checked)} />
+              Link this action item to the meeting&apos;s MOM
+            </label>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
+          <button
+            onClick={() => createMutation.mutate()}
+            disabled={!description.trim() || !dueDate || createMutation.isPending}
+            className="px-4 py-2 bg-amber-600 text-white text-sm rounded-lg disabled:opacity-50"
+          >
+            {createMutation.isPending ? 'Creating...' : 'Create Action Item'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MomApprovalModal({ mom, decision, onClose }: { mom: any; decision: 'APPROVED' | 'REJECTED'; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [remarks, setRemarks] = useState('');
@@ -820,6 +1002,7 @@ export default function MeetingDetailPage() {
   const canManageMom = hasPermission('manage_mom');
   const canApproveMom = hasPermission('approve_mom');
   const canPublishMom = hasPermission('publish_mom');
+  const canAssignActionItems = hasPermission('assign_action_items');
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
@@ -830,6 +1013,7 @@ export default function MeetingDetailPage() {
   const [showEditMomModal, setShowEditMomModal] = useState(false);
   const [showAddDecision, setShowAddDecision] = useState(false);
   const [momApprovalDecision, setMomApprovalDecision] = useState<'APPROVED' | 'REJECTED' | null>(null);
+  const [showAddActionItem, setShowAddActionItem] = useState(false);
 
   const { data: meeting, isLoading } = useQuery({
     queryKey: ['meeting', id],
@@ -837,6 +1021,13 @@ export default function MeetingDetailPage() {
   });
 
   const { data: users = [] } = useQuery({ queryKey: ['users-for-meetings'], queryFn: fetchUsers });
+
+  const { data: actionItemsData } = useQuery({
+    queryKey: ['action-items', meeting?.id],
+    queryFn: () => fetchActionItems(meeting.id),
+    enabled: !!meeting?.id,
+  });
+  const actionItems = actionItemsData?.content || [];
 
   const statusMutation = useMutation({
     mutationFn: async (status: MeetingStatus) => {
@@ -1197,6 +1388,47 @@ export default function MeetingDetailPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold text-slate-800">Action Items</h2>
+          {canAssignActionItems && (
+            <button
+              onClick={() => setShowAddActionItem(true)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-700 hover:bg-amber-100"
+            >
+              <PlusIcon className="h-4 w-4" /> Add Action Item
+            </button>
+          )}
+        </div>
+        {actionItems.length ? (
+          <ul className="divide-y divide-slate-100">
+            {actionItems.map((a: any) => (
+              <li
+                key={a.id}
+                onClick={() => router.push(`/dashboard/action-items/${a.id}`)}
+                className="py-3 flex items-start justify-between gap-3 cursor-pointer hover:bg-slate-50 rounded-lg px-2 -mx-2"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-700">{a.description}</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {a.assignedToName ? `Assigned to ${a.assignedToName}` : 'Unassigned'} · Due {dayjs(a.dueDate).format('DD MMM YYYY')}
+                    {a.dependsOn && (
+                      <span className="text-amber-600"> · Depends on &quot;{a.dependsOn.description}&quot; ({a.dependsOn.status})</span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${ACTION_ITEM_PRIORITY_COLORS[a.priority] || 'bg-slate-100 text-slate-700'}`}>{a.priority}</span>
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${ACTION_ITEM_STATUS_COLORS[a.status] || 'bg-slate-100 text-slate-700'}`}>{a.status.replace('_', ' ')}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-400">No action items yet</p>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <h2 className="font-semibold text-slate-800 mb-3">Activity</h2>
         {meeting.activities?.length ? (
           <ul className="space-y-3">
@@ -1224,6 +1456,15 @@ export default function MeetingDetailPage() {
           mom={{ ...meeting.mom, meetingId: meeting.id }}
           decision={momApprovalDecision}
           onClose={() => setMomApprovalDecision(null)}
+        />
+      )}
+      {showAddActionItem && (
+        <AddActionItemModal
+          meetingId={meeting.id}
+          momId={meeting.mom?.id ?? null}
+          users={users}
+          otherActionItems={actionItems}
+          onClose={() => setShowAddActionItem(false)}
         />
       )}
     </div>
