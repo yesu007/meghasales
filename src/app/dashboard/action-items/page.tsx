@@ -3,10 +3,20 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useSession } from 'next-auth/react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ClipboardDocumentCheckIcon, MagnifyingGlassIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { ACTION_ITEM_STATUSES, ACTION_ITEM_PRIORITIES } from '@/lib/meetings/constants';
+import {
+  ACTION_ITEM_STATUSES,
+  ACTION_ITEM_PRIORITIES,
+  ActionItemStatus,
+  ActionItemPriority,
+  isValidActionItemStatusTransition,
+  getActionItemTransitionCapability,
+} from '@/lib/meetings/constants';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-500',
@@ -35,8 +45,52 @@ async function fetchActionItems(params: Record<string, string>) {
   return res.json();
 }
 
+interface StatusCapabilities {
+  canAssign: boolean;
+  canManageOwn: boolean;
+  canVerify: boolean;
+  canClose: boolean;
+}
+
+// Same allowed-transition logic as the action-item detail page's status
+// buttons (getActionItemTransitionCapability), just producing <select>
+// options instead of a row of buttons — who can move an item where
+// depends on where it's going (owner self-service vs. assign/verify/
+// close), not a single flat permission. ASSIGNED is excluded — that's
+// reached via the dedicated Assign action, not a generic status move.
+function getAvailableStatusOptions(actionItem: any, currentUserId: number | null, caps: StatusCapabilities): ActionItemStatus[] {
+  const isOwner = currentUserId != null && actionItem.assignedToId === currentUserId;
+  const options = (ACTION_ITEM_STATUSES as readonly ActionItemStatus[]).filter((s) => {
+    if (s === actionItem.status) return true;
+    if (s === 'ASSIGNED') return false;
+    if (!isValidActionItemStatusTransition(actionItem.status, s)) return false;
+    const capability = getActionItemTransitionCapability(actionItem.status, s);
+    return capability === 'ASSIGN' || capability === 'CANCEL'
+      ? caps.canAssign
+      : capability === 'VERIFY'
+        ? caps.canVerify
+        : capability === 'CLOSE'
+          ? caps.canClose
+          : capability === 'OWNER'
+            ? (caps.canManageOwn && isOwner) || caps.canAssign
+            : false;
+  });
+  return options;
+}
+
 export default function ActionItemsListPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const { data: session } = useSession();
+  const parsedUserId = session?.user ? parseInt((session.user as any).id, 10) : NaN;
+  const currentUserId = Number.isFinite(parsedUserId) ? parsedUserId : null;
+  const { has: hasPermission } = usePermissions();
+  const caps: StatusCapabilities = {
+    canAssign: hasPermission('assign_action_items'),
+    canManageOwn: hasPermission('manage_own_action_items'),
+    canVerify: hasPermission('verify_action_items'),
+    canClose: hasPermission('close_action_items'),
+  };
 
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
@@ -66,6 +120,51 @@ export default function ActionItemsListPage() {
   });
 
   const actionItems = data?.content || [];
+
+  // Inline status/priority edits from the list — same endpoints the action
+  // item detail page's status buttons and Edit modal use. Priority requires
+  // assign_action_items server-side (see PATCH /api/action-items/[id]), and
+  // status requires whichever capability the specific transition needs
+  // (getAvailableStatusOptions mirrors that per-row).
+  const statusMutation = useMutation({
+    mutationFn: async ({ id, version, toStatus }: { id: number; version: number; toStatus: ActionItemStatus }) => {
+      const res = await fetch(`/api/action-items/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version, toStatus }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to update status');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['action-items-list'] });
+      toast.success('Status updated');
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
+  const priorityMutation = useMutation({
+    mutationFn: async ({ id, version, priority }: { id: number; version: number; priority: ActionItemPriority }) => {
+      const res = await fetch(`/api/action-items/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority, version }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to update priority');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['action-items-list'] });
+      toast.success('Priority updated');
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
   const statusCounts: Record<string, number> = data?.statusCounts || {};
   const allCount = Object.values(statusCounts).reduce((s, n) => s + (n || 0), 0);
   const totalPages = data?.totalPages || 0;
@@ -196,11 +295,40 @@ export default function ActionItemsListPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{a.assignedToName || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{dayjs(a.dueDate).format('DD MMM YYYY')}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${PRIORITY_COLORS[a.priority] || 'bg-slate-100 text-slate-700'}`}>{a.priority}</span>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      {caps.canAssign ? (
+                        <select
+                          value={a.priority}
+                          disabled={priorityMutation.isPending && priorityMutation.variables?.id === a.id}
+                          onChange={(e) =>
+                            priorityMutation.mutate({ id: a.id, version: a.version, priority: e.target.value as ActionItemPriority })
+                          }
+                          className={`px-2 py-1 rounded text-xs font-medium border-0 cursor-pointer disabled:opacity-50 ${PRIORITY_COLORS[a.priority] || 'bg-slate-100 text-slate-700'}`}
+                        >
+                          {ACTION_ITEM_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                      ) : (
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${PRIORITY_COLORS[a.priority] || 'bg-slate-100 text-slate-700'}`}>{a.priority}</span>
+                      )}
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[a.status] || 'bg-slate-100 text-slate-700'}`}>{a.status.replace('_', ' ')}</span>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      {(() => {
+                        const options = getAvailableStatusOptions(a, currentUserId, caps);
+                        return options.length > 1 ? (
+                          <select
+                            value={a.status}
+                            disabled={statusMutation.isPending && statusMutation.variables?.id === a.id}
+                            onChange={(e) =>
+                              statusMutation.mutate({ id: a.id, version: a.version, toStatus: e.target.value as ActionItemStatus })
+                            }
+                            className={`px-2 py-1 rounded text-xs font-medium border-0 cursor-pointer disabled:opacity-50 ${STATUS_COLORS[a.status] || 'bg-slate-100 text-slate-700'}`}
+                          >
+                            {options.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                          </select>
+                        ) : (
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[a.status] || 'bg-slate-100 text-slate-700'}`}>{a.status.replace('_', ' ')}</span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
