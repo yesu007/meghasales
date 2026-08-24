@@ -41,3 +41,28 @@ export type AgendaItemStatus = (typeof AGENDA_ITEM_STATUSES)[number];
 // than adding a dedicated nullable FK column when a new relation appears.
 export const MEETING_REF_TYPES = ['LEAD', 'IMPLEMENTATION', 'ADMIN_TICKET'] as const;
 export type MeetingRefType = (typeof MEETING_REF_TYPES)[number];
+
+export const MOM_STATUSES = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'PUBLISHED'] as const;
+export type MomStatus = (typeof MOM_STATUSES)[number];
+
+// Content (summary/risksIssues/decisions) can only be edited while the MOM
+// hasn't left the authoring stage or has bounced back from a rejection —
+// once SUBMITTED/APPROVED/PUBLISHED, editing would silently invalidate an
+// approval someone already gave. Reopening for edits is done by rejecting
+// it back to DRAFT (via REJECTED), not by allowing arbitrary edits later.
+export function isMomContentEditable(status: MomStatus): boolean {
+  return status === 'DRAFT' || status === 'REJECTED';
+}
+
+const MOM_STATUS_TRANSITIONS: Record<MomStatus, MomStatus[]> = {
+  DRAFT: ['SUBMITTED'],
+  SUBMITTED: ['APPROVED', 'REJECTED'],
+  APPROVED: ['PUBLISHED', 'REJECTED'],
+  REJECTED: ['SUBMITTED'],
+  PUBLISHED: [],
+};
+
+export function isValidMomStatusTransition(from: MomStatus, to: MomStatus): boolean {
+  if (from === to) return false;
+  return MOM_STATUS_TRANSITIONS[from]?.includes(to) ?? false;
+}

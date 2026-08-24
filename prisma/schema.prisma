@@ -1526,6 +1526,7 @@ model Meeting {
   participants  MeetingParticipant[]
   agendaItems   MeetingAgendaItem[]
   activities    MeetingActivity[]
+  mom           Mom?
 
   @@unique([recurrenceId, scheduledAt])
   @@index([status, scheduledAt])
@@ -1632,4 +1633,71 @@ model MeetingAttachment {
 
   @@index([entityType, entityId])
   @@map("meeting_attachments")
+}
+
+// ============================================================
+// MOM MODULE (Phase 2 — Minutes of Meeting authoring/approval/publish)
+//
+// One Mom per Meeting (moms.meetingId is unique — a real FK, cascading with
+// the meeting it belongs to, unlike the loose refs elsewhere in this
+// module). Lifecycle events (submitted/approved/rejected/published,
+// decisions added) are logged into the existing MeetingActivity trail
+// rather than a second per-MOM activity table, so a meeting's timeline
+// stays in one place. createdById/approvedById/editedById/decidedById are
+// loose refs to User.id, same reasoning as the rest of this module.
+// ============================================================
+
+model Mom {
+  id           Int       @id @default(autoincrement())
+  meetingId    Int       @unique @map("meeting_id")
+  summary      String?
+  risksIssues  String?   @map("risks_issues")
+  status       String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | REJECTED | PUBLISHED
+  version      Int       @default(1) // optimistic-lock token for concurrent edits
+  createdById  Int?      @map("created_by") // loose ref to User.id
+  approvedById Int?      @map("approved_by") // loose ref to User.id
+  approvedAt   DateTime? @map("approved_at")
+  publishedAt  DateTime? @map("published_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  meeting   Meeting       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  decisions MomDecision[]
+  versions  MomVersion[]
+
+  @@index([status])
+  @@map("moms")
+}
+
+// Snapshot of a Mom's content taken immediately BEFORE an edit is applied —
+// versionNumber 1 is the state right after creation, each subsequent edit
+// pushes the prior state as the next number. This is history, not the
+// optimistic lock (that's Mom.version); read it to see what a MOM looked
+// like before a given edit.
+model MomVersion {
+  id              Int      @id @default(autoincrement())
+  momId           Int      @map("mom_id")
+  versionNumber   Int      @map("version_number")
+  contentSnapshot Json     @map("content_snapshot")
+  editedById      Int?     @map("edited_by") // loose ref to User.id
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  mom Mom @relation(fields: [momId], references: [id], onDelete: Cascade)
+
+  @@unique([momId, versionNumber])
+  @@map("mom_versions")
+}
+
+model MomDecision {
+  id           Int      @id @default(autoincrement())
+  momId        Int      @map("mom_id")
+  decisionText String   @map("decision_text")
+  decidedById  Int?     @map("decided_by") // loose ref to User.id
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  mom Mom @relation(fields: [momId], references: [id], onDelete: Cascade)
+
+  @@index([momId])
+  @@map("mom_decisions")
 }

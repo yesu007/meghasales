@@ -3,7 +3,22 @@
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftIcon, PencilIcon, ClockIcon, XCircleIcon, LinkIcon, MapPinIcon, UserPlusIcon, PlusIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowLeftIcon,
+  PencilIcon,
+  ClockIcon,
+  XCircleIcon,
+  LinkIcon,
+  MapPinIcon,
+  UserPlusIcon,
+  PlusIcon,
+  ClipboardDocumentListIcon,
+  PaperAirplaneIcon,
+  CheckIcon,
+  XMarkIcon,
+  RocketLaunchIcon,
+  EyeIcon,
+} from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import {
@@ -12,6 +27,7 @@ import {
   PARTICIPANT_TYPES,
   PARTICIPANT_ROLES,
   isValidMeetingStatusTransition,
+  isMomContentEditable,
   MeetingStatus,
   MeetingPriority,
   ParticipantType,
@@ -43,6 +59,14 @@ const AGENDA_STATUS_COLORS: Record<string, string> = {
   DEFERRED: 'bg-amber-100 text-amber-700',
 };
 
+const MOM_STATUS_COLORS: Record<string, string> = {
+  DRAFT: 'bg-slate-100 text-slate-600',
+  SUBMITTED: 'bg-blue-100 text-blue-700',
+  APPROVED: 'bg-green-100 text-green-700',
+  REJECTED: 'bg-red-100 text-red-700',
+  PUBLISHED: 'bg-amber-100 text-amber-700',
+};
+
 const AVATAR_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7'];
 function avatarColor(id: number): string {
   return AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
@@ -62,6 +86,12 @@ async function fetchUsers() {
   if (!res.ok) return [];
   const data = await res.json();
   return data.content || [];
+}
+
+async function fetchMomDetail(momId: number) {
+  const res = await fetch(`/api/mom/${momId}`);
+  if (!res.ok) throw new Error('Failed to fetch MOM detail');
+  return res.json();
 }
 
 function EditMeetingModal({ meeting, users, onClose }: { meeting: any; users: any[]; onClose: () => void }) {
@@ -494,6 +524,292 @@ function AddAgendaItemForm({ meetingId, users, sortOrder, onDone }: { meetingId:
   );
 }
 
+function CreateMomModal({ meetingId, onClose }: { meetingId: number; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [summary, setSummary] = useState('');
+  const [risksIssues, setRisksIssues] = useState('');
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/meetings/${meetingId}/mom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary: summary || undefined, risksIssues: risksIssues || undefined }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to create MOM');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meeting', String(meetingId)] });
+      toast.success('MOM draft created');
+      onClose();
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-semibold text-slate-800 mb-4">Create MOM</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Summary</label>
+            <textarea
+              rows={3}
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Risks / Issues</label>
+            <textarea
+              rows={3}
+              value={risksIssues}
+              onChange={(e) => setRisksIssues(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
+          <button
+            onClick={() => createMutation.mutate()}
+            disabled={createMutation.isPending}
+            className="px-4 py-2 bg-amber-600 text-white text-sm rounded-lg disabled:opacity-50"
+          >
+            {createMutation.isPending ? 'Creating...' : 'Create MOM'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditMomModal({ mom, onClose }: { mom: any; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [summary, setSummary] = useState(mom.summary || '');
+  const [risksIssues, setRisksIssues] = useState(mom.risksIssues || '');
+
+  const editMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/mom/${mom.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: mom.version, summary: summary || null, risksIssues: risksIssues || null }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to update MOM');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meeting', String(mom.meetingId)] });
+      toast.success('MOM updated');
+      onClose();
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-semibold text-slate-800 mb-4">Edit MOM</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Summary</label>
+            <textarea
+              rows={3}
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Risks / Issues</label>
+            <textarea
+              rows={3}
+              value={risksIssues}
+              onChange={(e) => setRisksIssues(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
+          <button
+            onClick={() => editMutation.mutate()}
+            disabled={editMutation.isPending}
+            className="px-4 py-2 bg-amber-600 text-white text-sm rounded-lg disabled:opacity-50"
+          >
+            {editMutation.isPending ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddMomDecisionForm({ mom, onDone }: { mom: any; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const [decisionText, setDecisionText] = useState('');
+
+  const addMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/mom/${mom.id}/decisions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decisionText, sortOrder: mom.decisions?.length || 0 }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to add decision');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meeting', String(mom.meetingId)] });
+      toast.success('Decision added');
+      setDecisionText('');
+      onDone();
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
+  return (
+    <div className="bg-slate-50 rounded-lg p-4 space-y-3">
+      <textarea
+        rows={2}
+        value={decisionText}
+        onChange={(e) => setDecisionText(e.target.value)}
+        placeholder="Decision text"
+        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+      />
+      <div className="flex justify-end">
+        <button
+          onClick={() => decisionText.trim() && addMutation.mutate()}
+          disabled={!decisionText.trim() || addMutation.isPending}
+          className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+        >
+          {addMutation.isPending ? 'Adding...' : 'Add Decision'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MomApprovalModal({ mom, decision, onClose }: { mom: any; decision: 'APPROVED' | 'REJECTED'; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [remarks, setRemarks] = useState('');
+
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/mom/${mom.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: mom.version, decision, remarks: remarks || undefined }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to record MOM approval decision');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meeting', String(mom.meetingId)] });
+      toast.success(decision === 'APPROVED' ? 'MOM approved' : 'MOM rejected');
+      onClose();
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
+        <h2 className="text-lg font-semibold text-slate-800 mb-2">{decision === 'APPROVED' ? 'Approve MOM' : 'Reject MOM'}</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          {decision === 'APPROVED' ? 'This will approve the minutes of meeting.' : 'This will send the minutes of meeting back to draft.'}
+        </p>
+        <div>
+          <label className="block text-sm font-medium text-slate-600 mb-1">Remarks (optional)</label>
+          <textarea
+            rows={2}
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          />
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
+          <button
+            onClick={() => approveMutation.mutate()}
+            disabled={approveMutation.isPending}
+            className={`px-4 py-2 text-white text-sm rounded-lg disabled:opacity-50 ${decision === 'APPROVED' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+          >
+            {approveMutation.isPending ? 'Saving...' : decision === 'APPROVED' ? 'Approve' : 'Reject'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MomHistorySection({ momId }: { momId: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const { data: momDetail, isLoading } = useQuery({
+    queryKey: ['mom-detail', momId],
+    queryFn: () => fetchMomDetail(momId),
+    enabled: expanded,
+  });
+
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-100">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-800"
+      >
+        <EyeIcon className="h-4 w-4" /> {expanded ? 'Hide history' : 'View history'}
+      </button>
+      {expanded && (
+        <div className="mt-3">
+          {isLoading ? (
+            <div className="h-16 bg-slate-100 rounded-lg animate-pulse" />
+          ) : momDetail?.versions?.length ? (
+            <ul className="space-y-3">
+              {momDetail.versions.map((v: any) => {
+                const snapshot = v.contentSnapshot || {};
+                return (
+                  <li key={v.id} className="bg-slate-50 rounded-lg p-3 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium text-slate-700">Version {v.versionNumber}</p>
+                      <p className="text-xs text-slate-400">{dayjs(v.createdAt).format('DD MMM YYYY, HH:mm')} {v.editedByName ? `by ${v.editedByName}` : ''}</p>
+                    </div>
+                    {snapshot.summary && <p className="text-slate-600 mt-1"><span className="text-slate-400">Summary: </span>{snapshot.summary}</p>}
+                    {snapshot.risksIssues && <p className="text-slate-600 mt-1"><span className="text-slate-400">Risks/Issues: </span>{snapshot.risksIssues}</p>}
+                    {snapshot.decisions?.length ? (
+                      <ul className="mt-1.5 list-disc list-inside text-slate-600">
+                        {snapshot.decisions.map((d: any, idx: number) => (
+                          <li key={idx}>{d.decisionText}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-slate-400">No prior versions</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MeetingDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -501,12 +817,19 @@ export default function MeetingDetailPage() {
   const queryClient = useQueryClient();
   const { has: hasPermission } = usePermissions();
   const canManageMeetings = hasPermission('manage_meetings');
+  const canManageMom = hasPermission('manage_mom');
+  const canApproveMom = hasPermission('approve_mom');
+  const canPublishMom = hasPermission('publish_mom');
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [showAddAgendaItem, setShowAddAgendaItem] = useState(false);
+  const [showCreateMomModal, setShowCreateMomModal] = useState(false);
+  const [showEditMomModal, setShowEditMomModal] = useState(false);
+  const [showAddDecision, setShowAddDecision] = useState(false);
+  const [momApprovalDecision, setMomApprovalDecision] = useState<'APPROVED' | 'REJECTED' | null>(null);
 
   const { data: meeting, isLoading } = useQuery({
     queryKey: ['meeting', id],
@@ -532,6 +855,46 @@ export default function MeetingDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['meeting', id] });
       queryClient.invalidateQueries({ queryKey: ['meetings'] });
       toast.success('Status updated');
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
+  const submitMomMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/mom/${meeting.mom.id}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: meeting.mom.version }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to submit MOM');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meeting', id] });
+      toast.success('MOM submitted for approval');
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
+  const publishMomMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/mom/${meeting.mom.id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: meeting.mom.version }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to publish MOM');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meeting', id] });
+      toast.success('MOM published');
     },
     onError: (error: any) => toast.error(error.message),
   });
@@ -714,6 +1077,126 @@ export default function MeetingDetailPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold text-slate-800">Minutes of Meeting</h2>
+          {!meeting.mom && canManageMom && (
+            <button
+              onClick={() => setShowCreateMomModal(true)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-700 hover:bg-amber-100"
+            >
+              <ClipboardDocumentListIcon className="h-4 w-4" /> Create MOM
+            </button>
+          )}
+        </div>
+
+        {!meeting.mom ? (
+          <p className="text-sm text-slate-400">No MOM created yet</p>
+        ) : (
+          <div>
+            <div className="flex items-start justify-between gap-4">
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${MOM_STATUS_COLORS[meeting.mom.status] || 'bg-slate-100 text-slate-700'}`}>
+                {meeting.mom.status}
+              </span>
+              <div className="flex flex-wrap items-center gap-2 justify-end">
+                {isMomContentEditable(meeting.mom.status) && canManageMom && (
+                  <>
+                    <button
+                      onClick={() => setShowEditMomModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    >
+                      <PencilIcon className="h-4 w-4" /> Edit
+                    </button>
+                    <button
+                      onClick={() => setShowAddDecision((v) => !v)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-700 hover:bg-amber-100"
+                    >
+                      <PlusIcon className="h-4 w-4" /> Add Decision
+                    </button>
+                    <button
+                      onClick={() => submitMomMutation.mutate()}
+                      disabled={submitMomMutation.isPending}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                    >
+                      <PaperAirplaneIcon className="h-4 w-4" /> {submitMomMutation.isPending ? 'Submitting...' : 'Submit for Approval'}
+                    </button>
+                  </>
+                )}
+                {meeting.mom.status === 'SUBMITTED' && canApproveMom && (
+                  <>
+                    <button
+                      onClick={() => setMomApprovalDecision('APPROVED')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-green-50 text-green-700 hover:bg-green-100"
+                    >
+                      <CheckIcon className="h-4 w-4" /> Approve
+                    </button>
+                    <button
+                      onClick={() => setMomApprovalDecision('REJECTED')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-50 text-red-700 hover:bg-red-100"
+                    >
+                      <XMarkIcon className="h-4 w-4" /> Reject
+                    </button>
+                  </>
+                )}
+                {meeting.mom.status === 'APPROVED' && canPublishMom && (
+                  <button
+                    onClick={() => publishMomMutation.mutate()}
+                    disabled={publishMomMutation.isPending}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    <RocketLaunchIcon className="h-4 w-4" /> {publishMomMutation.isPending ? 'Publishing...' : 'Publish'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {showAddDecision && isMomContentEditable(meeting.mom.status) && canManageMom && (
+              <div className="mt-4">
+                <AddMomDecisionForm mom={meeting.mom} onDone={() => setShowAddDecision(false)} />
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 text-sm">
+              <div>
+                <p className="text-slate-400">Summary</p>
+                <p className="font-medium text-slate-700 whitespace-pre-wrap">{meeting.mom.summary || '—'}</p>
+              </div>
+              <div>
+                <p className="text-slate-400">Risks / Issues</p>
+                <p className="font-medium text-slate-700 whitespace-pre-wrap">{meeting.mom.risksIssues || '—'}</p>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <p className="text-sm font-medium text-slate-600 mb-2">Decisions</p>
+              {meeting.mom.decisions?.length ? (
+                <ul className="space-y-2">
+                  {meeting.mom.decisions.map((d: any) => (
+                    <li key={d.id} className="text-sm bg-slate-50 rounded-lg p-3">
+                      <p className="text-slate-700">{d.decisionText}</p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {d.decidedByName ? `Decided by ${d.decidedByName}` : ''} {d.decidedByName ? '·' : ''} {dayjs(d.createdAt).format('DD MMM YYYY, HH:mm')}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-400">No decisions recorded yet</p>
+              )}
+            </div>
+
+            {meeting.mom.status === 'PUBLISHED' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-100 text-sm">
+                <div><p className="text-slate-400">Approved By</p><p className="font-medium text-slate-700">{meeting.mom.approvedByName || '—'}{meeting.mom.approvedAt ? ` on ${dayjs(meeting.mom.approvedAt).format('DD MMM YYYY, HH:mm')}` : ''}</p></div>
+                <div><p className="text-slate-400">Published At</p><p className="font-medium text-slate-700">{meeting.mom.publishedAt ? dayjs(meeting.mom.publishedAt).format('DD MMM YYYY, HH:mm') : '—'}</p></div>
+              </div>
+            )}
+
+            <MomHistorySection momId={meeting.mom.id} />
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <h2 className="font-semibold text-slate-800 mb-3">Activity</h2>
         {meeting.activities?.length ? (
           <ul className="space-y-3">
@@ -734,6 +1217,15 @@ export default function MeetingDetailPage() {
       {showEditModal && <EditMeetingModal meeting={meeting} users={users} onClose={() => setShowEditModal(false)} />}
       {showRescheduleModal && <RescheduleModal meeting={meeting} onClose={() => setShowRescheduleModal(false)} />}
       {showCancelModal && <CancelMeetingModal meeting={meeting} onClose={() => setShowCancelModal(false)} />}
+      {showCreateMomModal && <CreateMomModal meetingId={meeting.id} onClose={() => setShowCreateMomModal(false)} />}
+      {showEditMomModal && meeting.mom && <EditMomModal mom={{ ...meeting.mom, meetingId: meeting.id }} onClose={() => setShowEditMomModal(false)} />}
+      {momApprovalDecision && meeting.mom && (
+        <MomApprovalModal
+          mom={{ ...meeting.mom, meetingId: meeting.id }}
+          decision={momApprovalDecision}
+          onClose={() => setMomApprovalDecision(null)}
+        />
+      )}
     </div>
   );
 }

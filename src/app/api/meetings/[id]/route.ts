@@ -28,15 +28,23 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         participants: { orderBy: { createdAt: 'asc' } },
         agendaItems: { orderBy: { sortOrder: 'asc' } },
         activities: { orderBy: { performedAt: 'desc' } },
+        mom: { include: { decisions: { orderBy: { sortOrder: 'asc' } } } },
       },
     });
     if (!meeting) return NextResponse.json({ message: 'Meeting not found' }, { status: 404 });
 
     const userIds = Array.from(
       new Set(
-        [meeting.organizerId, meeting.createdById, ...meeting.participants.map((p) => p.userId), ...meeting.agendaItems.map((a) => a.ownerId), ...meeting.activities.map((a) => a.performedById)].filter(
-          (v): v is number => v != null
-        )
+        [
+          meeting.organizerId,
+          meeting.createdById,
+          ...meeting.participants.map((p) => p.userId),
+          ...meeting.agendaItems.map((a) => a.ownerId),
+          ...meeting.activities.map((a) => a.performedById),
+          meeting.mom?.createdById,
+          meeting.mom?.approvedById,
+          ...(meeting.mom?.decisions.map((d) => d.decidedById) ?? []),
+        ].filter((v): v is number => v != null)
       )
     );
     const users = userIds.length
@@ -55,6 +63,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       participants: meeting.participants.map((p) => ({ ...p, userName: userName(p.userId) })),
       agendaItems: meeting.agendaItems.map((a) => ({ ...a, ownerName: userName(a.ownerId) })),
       activities: meeting.activities.map((a) => ({ ...a, performedByName: userName(a.performedById) })),
+      mom: meeting.mom
+        ? {
+            ...meeting.mom,
+            createdByName: userName(meeting.mom.createdById),
+            approvedByName: userName(meeting.mom.approvedById),
+            decisions: meeting.mom.decisions.map((d) => ({ ...d, decidedByName: userName(d.decidedById) })),
+          }
+        : null,
     });
   } catch (error) {
     console.error('GET /api/meetings/[id] error:', error);
