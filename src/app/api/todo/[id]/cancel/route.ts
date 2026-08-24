@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isMeetingsModuleEnabled } from '@/lib/meetings/featureFlag';
-import { rescheduleMeeting, resolveMeetingRecipientUserIds, OptimisticLockError, InvalidStatusTransitionError } from '@/lib/meetings/meetingService';
+import { changeMeetingStatus, resolveMeetingRecipientUserIds, OptimisticLockError, InvalidStatusTransitionError } from '@/lib/meetings/meetingService';
 import { notifyManyViaTemplate } from '@/lib/meetings/notificationTemplates';
 import dayjs from 'dayjs';
 
@@ -20,9 +20,6 @@ function appUrl(path: string): string {
   return `${base}${path}`;
 }
 
-// Separate from the generic PATCH — this is the one edit participants
-// actually need re-notifying about (design doc §11), so it's its own
-// endpoint even though today it just calls through to the service layer.
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isMeetingsModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
   const denied = await requirePermission('manage_meetings');
@@ -31,26 +28,22 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   try {
     const id = parseInt(params.id);
     const body = await request.json();
-    if (body.version == null || !body.scheduledAt) {
-      return NextResponse.json({ message: 'version and scheduledAt are required' }, { status: 400 });
-    }
-    const scheduledAt = new Date(body.scheduledAt);
-    if (Number.isNaN(scheduledAt.getTime())) {
-      return NextResponse.json({ message: 'scheduledAt must be a valid date/time' }, { status: 400 });
+    if (body.version == null) {
+      return NextResponse.json({ message: 'version is required for optimistic-lock updates' }, { status: 400 });
     }
 
     const session = await getServerSession(authOptions);
     const performedById = currentUserId(session);
 
-    const meeting = await rescheduleMeeting(id, scheduledAt, Number(body.version), performedById, body.reason || null);
+    const meeting = await changeMeetingStatus(id, 'CANCELLED', Number(body.version), performedById, body.reason || null);
 
-    await logAudit({ action: 'UPDATE', entityType: 'MEETING', entityId: meeting.id, newValue: { scheduledAt: meeting.scheduledAt }, description: `Meeting "${meeting.title}" rescheduled`, request });
+    await logAudit({ action: 'UPDATE', entityType: 'MEETING', entityId: meeting.id, newValue: { status: meeting.status }, description: `Meeting "${meeting.title}" cancelled`, request });
 
     try {
       const recipientUserIds = await resolveMeetingRecipientUserIds(meeting.id);
       if (recipientUserIds.length > 0) {
         await notifyManyViaTemplate({
-          eventType: 'MEETING_RESCHEDULED',
+          eventType: 'MEETING_CANCELLED',
           channels: ['IN_APP', 'EMAIL'],
           entityType: 'MEETING',
           entityId: meeting.id,
@@ -59,12 +52,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
             meetingTitle: meeting.title,
             scheduledAt: dayjs(meeting.scheduledAt).format('DD MMM YYYY, h:mm A'),
             reason: body.reason || '',
-            actionUrl: appUrl(`/dashboard/meetings/${meeting.id}`),
+            actionUrl: appUrl(`/dashboard/todo/${meeting.id}`),
           },
         });
       }
     } catch (error) {
-      console.error(`MEETING_RESCHEDULED notification fan-out failed for meeting ${meeting.id}:`, error);
+      console.error(`MEETING_CANCELLED notification fan-out failed for meeting ${meeting.id}:`, error);
     }
 
     return NextResponse.json(meeting);
@@ -75,7 +68,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (error instanceof InvalidStatusTransitionError) {
       return NextResponse.json({ message: error.message }, { status: 400 });
     }
-    console.error('POST /api/meetings/[id]/reschedule error:', error);
-    return NextResponse.json({ message: error.message || 'Failed to reschedule meeting' }, { status: 400 });
+    console.error('POST /api/todo/[id]/cancel error:', error);
+    return NextResponse.json({ message: error.message || 'Failed to cancel meeting' }, { status: 400 });
   }
 }

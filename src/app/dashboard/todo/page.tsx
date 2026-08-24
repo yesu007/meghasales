@@ -36,10 +36,10 @@ const PRIORITY_COLORS: Record<string, string> = {
   HIGH: 'bg-orange-100 text-orange-700',
 };
 
-async function fetchMeetings(params: Record<string, string>) {
+async function fetchTodos(params: Record<string, string>) {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(`/api/meetings?${query}`);
-  if (!res.ok) throw new Error('Failed to fetch meetings');
+  const res = await fetch(`/api/todo?${query}`);
+  if (!res.ok) throw new Error('Failed to fetch tasks');
   return res.json();
 }
 
@@ -50,7 +50,7 @@ async function fetchUsers() {
   return data.content || [];
 }
 
-function ScheduleMeetingModal({ onClose }: { onClose: () => void }) {
+function AddTaskModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { data: users = [] } = useQuery({ queryKey: ['users-for-meetings'], queryFn: fetchUsers });
@@ -69,7 +69,7 @@ function ScheduleMeetingModal({ onClose }: { onClose: () => void }) {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/meetings', {
+      const res = await fetch('/api/todo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -86,15 +86,15 @@ function ScheduleMeetingModal({ onClose }: { onClose: () => void }) {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.message || 'Failed to schedule meeting');
+        throw new Error(body.message || 'Failed to add task');
       }
       return res.json();
     },
     onSuccess: (meeting) => {
       queryClient.invalidateQueries({ queryKey: ['meetings'] });
-      toast.success('Meeting scheduled');
+      toast.success('Task added');
       onClose();
-      router.push(`/dashboard/meetings/${meeting.id}`);
+      router.push(`/dashboard/todo/${meeting.id}`);
     },
     onError: (error: any) => toast.error(error.message),
   });
@@ -102,7 +102,7 @@ function ScheduleMeetingModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-lg w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-semibold text-slate-800 mb-4">Schedule Meeting</h2>
+        <h2 className="text-lg font-semibold text-slate-800 mb-4">Add Task</h2>
         <div className="space-y-3">
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Title</label>
@@ -121,7 +121,7 @@ function ScheduleMeetingModal({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setForm((f) => ({ ...f, meetingType: e.target.value as MeetingType }))}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
               >
-                {MEETING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                {MEETING_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
               </select>
             </div>
             <div>
@@ -204,7 +204,7 @@ function ScheduleMeetingModal({ onClose }: { onClose: () => void }) {
             disabled={!form.title || !form.meetingType || !form.scheduledAt || createMutation.isPending}
             className="px-4 py-2 bg-amber-600 text-white text-sm rounded-lg disabled:opacity-50"
           >
-            {createMutation.isPending ? 'Scheduling...' : 'Schedule Meeting'}
+            {createMutation.isPending ? 'Adding...' : 'Add Task'}
           </button>
         </div>
       </div>
@@ -212,7 +212,7 @@ function ScheduleMeetingModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export default function MeetingsListPage() {
+export default function TodoListPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { has: hasPermission } = usePermissions();
@@ -242,7 +242,7 @@ export default function MeetingsListPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['meetings', params],
-    queryFn: () => fetchMeetings(params),
+    queryFn: () => fetchTodos(params),
     placeholderData: (prev: any) => prev,
   });
 
@@ -256,7 +256,7 @@ export default function MeetingsListPage() {
   // MEETING_CANCELLED notification fan-out still fire.
   const statusMutation = useMutation({
     mutationFn: async ({ id, version, status }: { id: number; version: number; status: MeetingStatus }) => {
-      const res = await fetch(`/api/meetings/${id}`, {
+      const res = await fetch(`/api/todo/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, version }),
@@ -276,7 +276,7 @@ export default function MeetingsListPage() {
 
   const priorityMutation = useMutation({
     mutationFn: async ({ id, version, priority }: { id: number; version: number; priority: MeetingPriority }) => {
-      const res = await fetch(`/api/meetings/${id}`, {
+      const res = await fetch(`/api/todo/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ priority, version }),
@@ -311,15 +311,15 @@ export default function MeetingsListPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Meetings</h1>
-          <p className="text-slate-500 mt-1">Schedule, track, and run internal, client, and vendor meetings</p>
+          <h1 className="text-2xl font-bold text-slate-800">To Do</h1>
+          <p className="text-slate-500 mt-1">Track tasks and meetings across the team</p>
         </div>
         {canManageMeetings && (
           <button
             onClick={() => setShowCreateModal(true)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700"
           >
-            <PlusIcon className="h-4 w-4" /> Schedule Meeting
+            <PlusIcon className="h-4 w-4" /> Add Task
           </button>
         )}
       </div>
@@ -345,7 +345,7 @@ export default function MeetingsListPage() {
             <input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search meetings"
+              placeholder="Search tasks and meetings"
               className="pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm w-56"
             />
           </div>
@@ -357,7 +357,7 @@ export default function MeetingsListPage() {
               className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
             >
               <option value="">All types</option>
-              {MEETING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              {MEETING_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
             </select>
           </div>
           <div>
@@ -394,8 +394,8 @@ export default function MeetingsListPage() {
       ) : meetings.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 text-center py-16">
           <CalendarDaysIcon className="h-12 w-12 mx-auto text-slate-300" />
-          <p className="mt-4 text-lg font-medium text-slate-600">No meetings</p>
-          <p className="text-sm text-slate-400 mt-1">Schedule one to start tracking an internal, client, or vendor meeting</p>
+          <p className="mt-4 text-lg font-medium text-slate-600">No tasks or meetings</p>
+          <p className="text-sm text-slate-400 mt-1">Add one to start tracking a task, or an internal, client, or vendor meeting</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -416,16 +416,16 @@ export default function MeetingsListPage() {
                 {meetings.map((m: any, idx: number) => (
                   <tr
                     key={m.id}
-                    onClick={() => router.push(`/dashboard/meetings/${m.id}`)}
+                    onClick={() => router.push(`/dashboard/todo/${m.id}`)}
                     className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors cursor-pointer`}
                   >
                     <td className="px-4 py-3">
-                      <Link href={`/dashboard/meetings/${m.id}`} onClick={(e) => e.stopPropagation()} className="font-medium text-slate-800 hover:text-amber-600">
+                      <Link href={`/dashboard/todo/${m.id}`} onClick={(e) => e.stopPropagation()} className="font-medium text-slate-800 hover:text-amber-600">
                         {m.title}
                       </Link>
                       {m.purpose && <p className="text-xs text-slate-500 truncate max-w-xs">{m.purpose}</p>}
                     </td>
-                    <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{m.meetingType}</td>
+                    <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{m.meetingType.replace('_', ' ')}</td>
                     <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{m.organizerName || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{dayjs(m.scheduledAt).format('DD MMM YYYY, h:mm A')}</td>
                     <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{m.participantCount ?? 0}</td>
@@ -514,7 +514,7 @@ export default function MeetingsListPage() {
         </div>
       )}
 
-      {showCreateModal && <ScheduleMeetingModal onClose={() => setShowCreateModal(false)} />}
+      {showCreateModal && <AddTaskModal onClose={() => setShowCreateModal(false)} />}
     </div>
   );
 }

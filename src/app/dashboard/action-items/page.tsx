@@ -288,7 +288,7 @@ export default function ActionItemsListPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-600 hidden md:table-cell">
                       {a.meeting ? (
-                        <Link href={`/dashboard/meetings/${a.meetingId}`} onClick={(e) => e.stopPropagation()} className="hover:text-amber-600">
+                        <Link href={`/dashboard/todo/${a.meetingId}`} onClick={(e) => e.stopPropagation()} className="hover:text-amber-600">
                           {a.meeting.title}
                         </Link>
                       ) : '—'}

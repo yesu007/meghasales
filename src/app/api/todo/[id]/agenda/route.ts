@@ -43,7 +43,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     return NextResponse.json(item, { status: 201 });
   } catch (error: any) {
-    console.error('POST /api/meetings/[id]/agenda error:', error);
+    console.error('POST /api/todo/[id]/agenda error:', error);
     return NextResponse.json({ message: error.message || 'Failed to add agenda item' }, { status: 400 });
   }
 }

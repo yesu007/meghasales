@@ -1,4 +1,4 @@
-export const MEETING_TYPES = ['INTERNAL', 'CLIENT', 'VENDOR', 'REVIEW', 'OTHER'] as const;
+export const MEETING_TYPES = ['INTERNAL', 'CLIENT', 'VENDOR', 'REVIEW', 'OTHER', 'TO_DO'] as const;
 export type MeetingType = (typeof MEETING_TYPES)[number];
 
 export const MEETING_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH'] as const;

@@ -73,7 +73,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         : null,
     });
   } catch (error) {
-    console.error('GET /api/meetings/[id] error:', error);
+    console.error('GET /api/todo/[id] error:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }
@@ -131,7 +131,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (error instanceof InvalidStatusTransitionError) {
       return NextResponse.json({ message: error.message }, { status: 400 });
     }
-    console.error('PATCH /api/meetings/[id] error:', error);
+    console.error('PATCH /api/todo/[id] error:', error);
     return NextResponse.json({ message: error.message || 'Failed to update meeting' }, { status: 400 });
   }
 }

@@ -105,7 +105,7 @@ function initials(name: string): string {
 }
 
 async function fetchMeeting(id: string) {
-  const res = await fetch(`/api/meetings/${id}`);
+  const res = await fetch(`/api/todo/${id}`);
   if (!res.ok) throw new Error('Failed to fetch meeting');
   return res.json();
 }
@@ -257,7 +257,7 @@ function EditMeetingModal({ meeting, users, onClose }: { meeting: any; users: an
 
   const editMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/meetings/${meeting.id}`, {
+      const res = await fetch(`/api/todo/${meeting.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -383,7 +383,7 @@ function RescheduleModal({ meeting, onClose }: { meeting: any; onClose: () => vo
 
   const rescheduleMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/meetings/${meeting.id}/reschedule`, {
+      const res = await fetch(`/api/todo/${meeting.id}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ version: meeting.version, scheduledAt: new Date(scheduledAt).toISOString(), reason: reason || undefined }),
@@ -448,7 +448,7 @@ function CancelMeetingModal({ meeting, onClose }: { meeting: any; onClose: () =>
 
   const cancelMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/meetings/${meeting.id}/cancel`, {
+      const res = await fetch(`/api/todo/${meeting.id}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ version: meeting.version, reason: reason || undefined }),
@@ -507,7 +507,7 @@ function AddParticipantForm({ meetingId, users, onDone }: { meetingId: number; u
 
   const addMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/meetings/${meetingId}/participants`, {
+      const res = await fetch(`/api/todo/${meetingId}/participants`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -600,7 +600,7 @@ function AddAgendaItemForm({ meetingId, users, sortOrder, onDone }: { meetingId:
 
   const addMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/meetings/${meetingId}/agenda`, {
+      const res = await fetch(`/api/todo/${meetingId}/agenda`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -687,7 +687,7 @@ function CreateMomModal({ meetingId, onClose }: { meetingId: number; onClose: ()
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/meetings/${meetingId}/mom`, {
+      const res = await fetch(`/api/todo/${meetingId}/mom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ summary: summary || undefined, risksIssues: risksIssues || undefined }),
@@ -1246,7 +1246,7 @@ function MomAttachmentsSection({ momId, canUpload }: { momId: number; canUpload:
   );
 }
 
-export default function MeetingDetailPage() {
+export default function TodoDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
@@ -1286,7 +1286,7 @@ export default function MeetingDetailPage() {
 
   const statusMutation = useMutation({
     mutationFn: async (status: MeetingStatus) => {
-      const res = await fetch(`/api/meetings/${id}`, {
+      const res = await fetch(`/api/todo/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, version: meeting.version }),
@@ -1356,14 +1356,14 @@ export default function MeetingDetailPage() {
 
   return (
     <div className="space-y-6">
-      <button onClick={() => router.push('/dashboard/meetings')} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-        <ArrowLeftIcon className="h-4 w-4" /> Back to Meetings
+      <button onClick={() => router.push('/dashboard/todo')} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
+        <ArrowLeftIcon className="h-4 w-4" /> Back to To Do
       </button>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm text-slate-400">{meeting.meetingType}</p>
+            <p className="text-sm text-slate-400">{meeting.meetingType.replace('_', ' ')}</p>
             <h1 className="text-xl font-bold text-slate-800 mt-1">{meeting.title}</h1>
             {meeting.purpose && <p className="text-slate-600 mt-2">{meeting.purpose}</p>}
           </div>

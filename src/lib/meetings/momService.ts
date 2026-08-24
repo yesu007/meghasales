@@ -149,7 +149,7 @@ export async function publishMom(momId: number, version: number, performedById: 
         entityType: 'MOM',
         entityId: mom.id,
         recipientUserIds,
-        vars: { meetingTitle: meeting.title, actionUrl: appUrl(`/dashboard/meetings/${mom.meetingId}`) },
+        vars: { meetingTitle: meeting.title, actionUrl: appUrl(`/dashboard/todo/${mom.meetingId}`) },
       });
     }
   } catch (error) {

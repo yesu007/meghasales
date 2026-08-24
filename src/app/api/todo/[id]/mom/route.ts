@@ -29,7 +29,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (error instanceof MomAlreadyExistsError) {
       return NextResponse.json({ message: error.message }, { status: 409 });
     }
-    console.error('POST /api/meetings/[id]/mom error:', error);
+    console.error('POST /api/todo/[id]/mom error:', error);
     return NextResponse.json({ message: error.message || 'Failed to create MOM' }, { status: 400 });
   }
 }

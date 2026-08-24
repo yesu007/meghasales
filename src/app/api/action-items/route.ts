@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     const priorities = (searchParams.get('priority') || '').split(',').filter((p) => (ACTION_ITEM_PRIORITIES as readonly string[]).includes(p));
 
     // baseWhere excludes status so tab counts reflect the OTHER active
-    // filters, same convention as /api/meetings and /api/admin-ticket/tickets.
+    // filters, same convention as /api/todo and /api/admin-ticket/tickets.
     const baseWhere: Prisma.ActionItemWhereInput = {};
     if (search) baseWhere.description = { contains: search, mode: 'insensitive' };
     if (meetingId != null) baseWhere.meetingId = meetingId;

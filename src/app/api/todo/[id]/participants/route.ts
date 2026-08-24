@@ -54,7 +54,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     return NextResponse.json(created, { status: 201 });
   } catch (error: any) {
-    console.error('POST /api/meetings/[id]/participants error:', error);
+    console.error('POST /api/todo/[id]/participants error:', error);
     return NextResponse.json({ message: error.message || 'Failed to add participant(s)' }, { status: 400 });
   }
 }

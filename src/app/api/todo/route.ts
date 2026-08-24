@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
       statusCounts,
     });
   } catch (error) {
-    console.error('GET /api/meetings error:', error);
+    console.error('GET /api/todo error:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(meeting, { status: 201 });
   } catch (error: any) {
-    console.error('POST /api/meetings error:', error);
+    console.error('POST /api/todo error:', error);
     return NextResponse.json({ message: error.message || 'Failed to create meeting' }, { status: 400 });
   }
 }

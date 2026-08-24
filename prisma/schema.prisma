@@ -1502,7 +1502,7 @@ model AdminTicketAttachment {
 model Meeting {
   id              Int      @id @default(autoincrement())
   title           String
-  meetingType     String   @map("meeting_type") // INTERNAL | CLIENT | VENDOR | REVIEW | OTHER
+  meetingType     String   @map("meeting_type") // INTERNAL | CLIENT | VENDOR | REVIEW | OTHER | TO_DO
   purpose         String?
   scheduledAt     DateTime @map("scheduled_at")
   durationMinutes Int?     @map("duration_minutes")
