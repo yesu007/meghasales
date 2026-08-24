@@ -221,15 +221,22 @@ export async function changeActionItemStatus(
     data.completedAt = new Date();
     data.completedById = actingUserId;
     data.percentComplete = 100;
-  } else if (fromStatus === 'COMPLETED' && toStatus === 'IN_PROGRESS') {
-    // Verifier rejected the completion claim — it's back in play, not done.
-    data.completedAt = null;
-    data.completedById = null;
   } else if (toStatus === 'VERIFIED') {
     data.verifiedById = actingUserId;
     data.verifiedAt = new Date();
   } else if (toStatus === 'CLOSED' || toStatus === 'CANCELLED') {
     if (remarks) data.closureRemarks = remarks;
+  } else {
+    // Moving to any other status (DRAFT/ASSIGNED/ACCEPTED/IN_PROGRESS/
+    // PENDING/BLOCKED) means it's back in play, not done or verified —
+    // covers the verifier-rejection edge (COMPLETED -> IN_PROGRESS) and
+    // every other "jump straight back from COMPLETED/VERIFIED" edge the
+    // open transition graph now allows, so a stale completedAt/verifiedAt
+    // never lingers on an item that's active again.
+    data.completedAt = null;
+    data.completedById = null;
+    data.verifiedById = null;
+    data.verifiedAt = null;
   }
 
   const updateResult = await prisma.actionItem.updateMany({ where: { id: actionItemId, version }, data });

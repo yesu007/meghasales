@@ -84,23 +84,29 @@ export type ActionItemStatus = (typeof ACTION_ITEM_STATUSES)[number];
 export const ACTION_ITEM_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
 export type ActionItemPriority = (typeof ACTION_ITEM_PRIORITIES)[number];
 
-// Reopening (CLOSED/CANCELLED -> an open status) is a dedicated operation
-// with its own permission and its own target-status rule (see
-// reopenActionItem in actionItemService.ts) — it deliberately doesn't
-// appear here, same reasoning as Meeting's reschedule being a dedicated
-// endpoint rather than a generic status edge.
-const ACTION_ITEM_STATUS_TRANSITIONS: Record<ActionItemStatus, ActionItemStatus[]> = {
-  DRAFT: ['ASSIGNED', 'CANCELLED'],
-  ASSIGNED: ['ACCEPTED', 'CANCELLED'],
-  ACCEPTED: ['IN_PROGRESS', 'CANCELLED'],
-  IN_PROGRESS: ['PENDING', 'BLOCKED', 'COMPLETED', 'CANCELLED'],
-  PENDING: ['IN_PROGRESS', 'BLOCKED', 'CANCELLED'],
-  BLOCKED: ['IN_PROGRESS', 'PENDING', 'CANCELLED'],
-  COMPLETED: ['VERIFIED', 'IN_PROGRESS'], // IN_PROGRESS = verifier rejecting the completion claim back for rework
-  VERIFIED: ['CLOSED'],
-  CLOSED: [],
-  CANCELLED: [],
-};
+// Every open status can move directly to every other open status, or be
+// closed/cancelled outright — same "every status can move to every other"
+// flexibility as AdminTicket's STATUS_TRANSITIONS, so fixing a mistaken
+// status doesn't mean walking back through each intermediate step.
+//
+// CLOSED and CANCELLED are the two exceptions, and stay terminal here on
+// purpose: reopening one has to clear completedAt/verifiedAt/
+// closureRemarks, which only reopenActionItem() does correctly, so
+// reopening is a dedicated operation with its own permission
+// (reopen_action_items) rather than a generic status edge — same
+// reasoning as Meeting's reschedule being a dedicated endpoint instead of
+// a generic status edge.
+const ACTION_ITEM_OPEN_STATUSES: ActionItemStatus[] = ['DRAFT', 'ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'PENDING', 'BLOCKED', 'COMPLETED', 'VERIFIED'];
+
+const ACTION_ITEM_STATUS_TRANSITIONS: Record<ActionItemStatus, ActionItemStatus[]> = ACTION_ITEM_STATUSES.reduce(
+  (acc, status) => {
+    acc[status] = ACTION_ITEM_OPEN_STATUSES.includes(status)
+      ? [...ACTION_ITEM_OPEN_STATUSES.filter((s) => s !== status), 'CLOSED', 'CANCELLED']
+      : [];
+    return acc;
+  },
+  {} as Record<ActionItemStatus, ActionItemStatus[]>
+);
 
 export function isValidActionItemStatusTransition(from: ActionItemStatus, to: ActionItemStatus): boolean {
   if (from === to) return false;
