@@ -7,7 +7,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CalendarDaysIcon, PlusIcon, MagnifyingGlassIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { MEETING_TYPES, MEETING_PRIORITIES, MEETING_STATUSES, MeetingType, MeetingPriority } from '@/lib/meetings/constants';
+import {
+  MEETING_TYPES,
+  MEETING_PRIORITIES,
+  MEETING_STATUSES,
+  MeetingType,
+  MeetingPriority,
+  MeetingStatus,
+  isValidMeetingStatusTransition,
+} from '@/lib/meetings/constants';
 import { usePermissions } from '@/hooks/usePermissions';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -206,6 +214,7 @@ function ScheduleMeetingModal({ onClose }: { onClose: () => void }) {
 
 export default function MeetingsListPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { has: hasPermission } = usePermissions();
   const canManageMeetings = hasPermission('manage_meetings');
 
@@ -238,6 +247,53 @@ export default function MeetingsListPage() {
   });
 
   const meetings = data?.content || [];
+
+  // Inline status/priority edits from the list — same PATCH the meeting
+  // detail page's status/priority controls use, just triggered from the
+  // table row instead of the detail page. CANCELLED is deliberately not
+  // reachable here (see the options filter below) — cancelling goes
+  // through the dedicated /cancel endpoint so the reason field and the
+  // MEETING_CANCELLED notification fan-out still fire.
+  const statusMutation = useMutation({
+    mutationFn: async ({ id, version, status }: { id: number; version: number; status: MeetingStatus }) => {
+      const res = await fetch(`/api/meetings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, version }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to update status');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meetings'] });
+      toast.success('Status updated');
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
+  const priorityMutation = useMutation({
+    mutationFn: async ({ id, version, priority }: { id: number; version: number; priority: MeetingPriority }) => {
+      const res = await fetch(`/api/meetings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority, version }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || 'Failed to update priority');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meetings'] });
+      toast.success('Priority updated');
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+
   const statusCounts: Record<string, number> = data?.statusCounts || {};
   const allCount = Object.values(statusCounts).reduce((s, n) => s + (n || 0), 0);
   const totalPages = data?.totalPages || 0;
@@ -373,11 +429,39 @@ export default function MeetingsListPage() {
                     <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{m.organizerName || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{dayjs(m.scheduledAt).format('DD MMM YYYY, h:mm A')}</td>
                     <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{m.participantCount ?? 0}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${PRIORITY_COLORS[m.priority] || 'bg-slate-100 text-slate-700'}`}>{m.priority}</span>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      {canManageMeetings ? (
+                        <select
+                          value={m.priority}
+                          disabled={priorityMutation.isPending && priorityMutation.variables?.id === m.id}
+                          onChange={(e) =>
+                            priorityMutation.mutate({ id: m.id, version: m.version, priority: e.target.value as MeetingPriority })
+                          }
+                          className={`px-2 py-1 rounded text-xs font-medium border-0 cursor-pointer disabled:opacity-50 ${PRIORITY_COLORS[m.priority] || 'bg-slate-100 text-slate-700'}`}
+                        >
+                          {MEETING_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                      ) : (
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${PRIORITY_COLORS[m.priority] || 'bg-slate-100 text-slate-700'}`}>{m.priority}</span>
+                      )}
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[m.status] || 'bg-slate-100 text-slate-700'}`}>{STATUS_LABELS[m.status] || m.status}</span>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      {canManageMeetings ? (
+                        <select
+                          value={m.status}
+                          disabled={statusMutation.isPending && statusMutation.variables?.id === m.id}
+                          onChange={(e) =>
+                            statusMutation.mutate({ id: m.id, version: m.version, status: e.target.value as MeetingStatus })
+                          }
+                          className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer disabled:opacity-50 ${STATUS_COLORS[m.status] || 'bg-slate-100 text-slate-700'}`}
+                        >
+                          {(MEETING_STATUSES as readonly MeetingStatus[])
+                            .filter((s) => s === m.status || (s !== 'CANCELLED' && isValidMeetingStatusTransition(m.status, s)))
+                            .map((s) => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
+                        </select>
+                      ) : (
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[m.status] || 'bg-slate-100 text-slate-700'}`}>{STATUS_LABELS[m.status] || m.status}</span>
+                      )}
                     </td>
                   </tr>
                 ))}
