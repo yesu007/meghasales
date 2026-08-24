@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { getActionItemTransitionCapability, isValidActionItemStatusTransition, ActionItemStatus } from './constants';
+import { materializeActionItemReminders } from './actionItemReminderMaterializer';
 
 export class OptimisticLockError extends Error {}
 export class InvalidStatusTransitionError extends Error {}
@@ -70,6 +71,8 @@ export async function createActionItem(input: CreateActionItemInput) {
   });
 
   await prisma.actionItemHistory.create({ data: { actionItemId: actionItem.id, action: 'CREATED', performedById: input.createdById ?? null } });
+
+  await materializeActionItemReminders(actionItem.id, actionItem.dueDate, actionItem.priority);
 
   return actionItem;
 }
@@ -152,6 +155,8 @@ export async function updateActionItem(actionItemId: number, input: UpdateAction
   trackField('dueDate', 'dueDate');
   trackField('dependsOnActionItemId', 'dependsOnActionItemId');
 
+  const slaInputsChanged = 'dueDate' in data || 'priority' in data;
+
   const updateResult = await prisma.actionItem.updateMany({ where: { id: actionItemId, version: input.version }, data });
   if (updateResult.count === 0) {
     throw new OptimisticLockError('Action item was modified by someone else — reload and try again');
@@ -163,7 +168,12 @@ export async function updateActionItem(actionItemId: number, input: UpdateAction
     });
   }
 
-  return prisma.actionItem.findUniqueOrThrow({ where: { id: actionItemId } });
+  const updated = await prisma.actionItem.findUniqueOrThrow({ where: { id: actionItemId } });
+  if (slaInputsChanged) {
+    await materializeActionItemReminders(actionItemId, updated.dueDate, updated.priority);
+  }
+
+  return updated;
 }
 
 export async function changeActionItemStatus(
@@ -231,9 +241,11 @@ export async function changeActionItemStatus(
     data: { actionItemId, action: 'STATUS_CHANGED', fieldName: 'status', oldValue: fromStatus, newValue: toStatus, performedById: actingUserId, remarks: remarks ?? null },
   });
 
-  // A closed or cancelled item has nothing left to be followed up on.
+  // A closed or cancelled item has nothing left to be followed up on, or
+  // to be reminded/escalated about.
   if (toStatus === 'CLOSED' || toStatus === 'CANCELLED') {
     await prisma.actionItemFollowUp.updateMany({ where: { actionItemId, status: 'PENDING' }, data: { status: 'COMPLETED', completedAt: new Date() } });
+    await prisma.actionItemReminder.updateMany({ where: { actionItemId, status: 'PENDING' }, data: { status: 'CANCELLED' } });
   }
 
   return prisma.actionItem.findUniqueOrThrow({ where: { id: actionItemId } });

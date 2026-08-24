@@ -222,3 +222,17 @@ export async function addAgendaItem(meetingId: number, input: AddAgendaItemInput
 
   return item;
 }
+
+// Shared by the MOM_PUBLISHED/MEETING_CANCELLED/MEETING_RESCHEDULED
+// notification fan-outs — "everyone who should hear about this meeting
+// event" is the organizer plus every INTERNAL participant with a userId
+// (EXTERNAL participants have no User row to notify in-app or via the
+// SMTP-only mail.ts pipeline).
+export async function resolveMeetingRecipientUserIds(meetingId: number): Promise<number[]> {
+  const meeting = await prisma.meeting.findUnique({
+    where: { id: meetingId },
+    select: { organizerId: true, participants: { where: { userId: { not: null } }, select: { userId: true } } },
+  });
+  if (!meeting) return [];
+  return Array.from(new Set([...(meeting.organizerId ? [meeting.organizerId] : []), ...meeting.participants.map((p) => p.userId as number)]));
+}

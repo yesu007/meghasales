@@ -4,13 +4,20 @@ import { authOptions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isMeetingsModuleEnabled } from '@/lib/meetings/featureFlag';
-import { rescheduleMeeting, OptimisticLockError, InvalidStatusTransitionError } from '@/lib/meetings/meetingService';
+import { rescheduleMeeting, resolveMeetingRecipientUserIds, OptimisticLockError, InvalidStatusTransitionError } from '@/lib/meetings/meetingService';
+import { notifyManyViaTemplate } from '@/lib/meetings/notificationTemplates';
+import dayjs from 'dayjs';
 
 export const dynamic = 'force-dynamic';
 
 function currentUserId(session: any): number | null {
   const id = session?.user ? parseInt(session.user.id, 10) : NaN;
   return Number.isFinite(id) ? id : null;
+}
+
+function appUrl(path: string): string {
+  const base = process.env.NEXTAUTH_URL || '';
+  return `${base}${path}`;
 }
 
 // Separate from the generic PATCH — this is the one edit participants
@@ -39,8 +46,27 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     await logAudit({ action: 'UPDATE', entityType: 'MEETING', entityId: meeting.id, newValue: { scheduledAt: meeting.scheduledAt }, description: `Meeting "${meeting.title}" rescheduled`, request });
 
-    // TODO(Phase 4): fan out a MEETING_RESCHEDULED notification to
-    // participants once the notification-template/preference tables exist.
+    try {
+      const recipientUserIds = await resolveMeetingRecipientUserIds(meeting.id);
+      if (recipientUserIds.length > 0) {
+        await notifyManyViaTemplate({
+          eventType: 'MEETING_RESCHEDULED',
+          channels: ['IN_APP', 'EMAIL'],
+          entityType: 'MEETING',
+          entityId: meeting.id,
+          recipientUserIds,
+          vars: {
+            meetingTitle: meeting.title,
+            scheduledAt: dayjs(meeting.scheduledAt).format('DD MMM YYYY, h:mm A'),
+            reason: body.reason || '',
+            actionUrl: appUrl(`/dashboard/meetings/${meeting.id}`),
+          },
+        });
+      }
+    } catch (error) {
+      console.error(`MEETING_RESCHEDULED notification fan-out failed for meeting ${meeting.id}:`, error);
+    }
+
     return NextResponse.json(meeting);
   } catch (error: any) {
     if (error instanceof OptimisticLockError) {

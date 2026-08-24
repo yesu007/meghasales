@@ -130,3 +130,51 @@ export type FollowUpFrequency = (typeof FOLLOWUP_FREQUENCIES)[number];
 
 export const FOLLOWUP_STATUSES = ['PENDING', 'COMPLETED'] as const;
 export type FollowUpStatus = (typeof FOLLOWUP_STATUSES)[number];
+
+// ============================================================
+// SLA ENGINE + NOTIFICATION TEMPLATES (Phase 4)
+// ============================================================
+
+export const NOTIFICATION_EVENT_TYPES = [
+  'ACTION_ITEM_DUE_SOON',
+  'ACTION_ITEM_OVERDUE',
+  'ACTION_ITEM_ESCALATED',
+  'MOM_PUBLISHED',
+  'MEETING_CANCELLED',
+  'MEETING_RESCHEDULED',
+] as const;
+export type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number];
+
+export const NOTIFICATION_CHANNELS = ['IN_APP', 'EMAIL'] as const;
+export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
+
+export const REMINDER_RECIPIENT_TYPES = ['ASSIGNEE', 'ORGANIZER'] as const;
+export type ReminderRecipientType = (typeof REMINDER_RECIPIENT_TYPES)[number];
+
+export const MAX_REMINDER_ATTEMPTS = 3;
+
+// Sane starting defaults, not fixed policy — editable later the same way
+// AdminTicket's DEFAULT_REMINDER_OFFSETS would be. Tighter cadence and an
+// earlier hand-off to the meeting organizer as priority rises.
+export const SLA_OFFSETS_BY_PRIORITY: Record<ActionItemPriority, Array<{ offsetDays: number; recipientType: ReminderRecipientType }>> = {
+  LOW: [
+    { offsetDays: -2, recipientType: 'ASSIGNEE' },
+    { offsetDays: 3, recipientType: 'ASSIGNEE' },
+    { offsetDays: 7, recipientType: 'ORGANIZER' },
+  ],
+  MEDIUM: [
+    { offsetDays: -1, recipientType: 'ASSIGNEE' },
+    { offsetDays: 2, recipientType: 'ASSIGNEE' },
+    { offsetDays: 4, recipientType: 'ORGANIZER' },
+  ],
+  HIGH: [
+    { offsetDays: -1, recipientType: 'ASSIGNEE' },
+    { offsetDays: 1, recipientType: 'ASSIGNEE' },
+    { offsetDays: 2, recipientType: 'ORGANIZER' },
+  ],
+  CRITICAL: [
+    { offsetDays: 0, recipientType: 'ASSIGNEE' },
+    { offsetDays: 1, recipientType: 'ORGANIZER' },
+    { offsetDays: 2, recipientType: 'ORGANIZER' },
+  ],
+};
