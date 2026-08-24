@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -18,6 +18,10 @@ import {
   XMarkIcon,
   RocketLaunchIcon,
   EyeIcon,
+  PaperClipIcon,
+  MicrophoneIcon,
+  StopIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -114,6 +118,120 @@ async function fetchMomDetail(momId: number) {
   const res = await fetch(`/api/mom/${momId}`);
   if (!res.ok) throw new Error('Failed to fetch MOM detail');
   return res.json();
+}
+
+async function fetchMomAttachments(momId: number) {
+  const res = await fetch(`/api/mom/${momId}/attachments`);
+  if (!res.ok) throw new Error('Failed to fetch attachments');
+  return res.json();
+}
+
+async function uploadMomAttachment(momId: number, file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`/api/mom/${momId}/attachments`, { method: 'POST', body: formData });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || 'Upload failed');
+  }
+  return res.json();
+}
+
+function formatFileSize(bytes: number | null): string {
+  if (bytes == null) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Extensionless, MIME-derived filename for a recorded voice note — the
+// MediaRecorder's actual output container (webm/mp4/ogg) varies by browser
+// (Safari can't record webm), so the extension has to follow whatever
+// mimeType the recorder actually reports rather than being hardcoded.
+function voiceNoteFileName(mimeType: string): string {
+  const ext = mimeType.includes('mp4') ? 'm4a' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+  return `voice-note-${Date.now()}.${ext}`;
+}
+
+// Records a short voice note via MediaRecorder and hands the caller a File
+// once stopped — used both by CreateMomModal (staged, uploaded after the
+// MOM itself is created) and the persistent Attachments list (uploaded
+// immediately). No dedicated recording UI exists elsewhere in this app, so
+// this is the one place mic-permission/MediaRecorder wiring lives.
+function VoiceRecorderButton({ onRecorded, disabled }: { onRecorded: (file: File) => void; disabled?: boolean }) {
+  const [isRecording, setIsRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const startRecording = async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      toast.error('Voice recording is not supported in this browser');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const mimeType = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        onRecorded(new File([blob], voiceNoteFileName(mimeType), { type: mimeType }));
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setSeconds(0);
+      setIsRecording(true);
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+    } catch {
+      toast.error('Microphone permission denied or unavailable');
+    }
+  };
+
+  const stopRecording = () => {
+    recorderRef.current?.stop();
+    recorderRef.current = null;
+    stopTimer();
+    setIsRecording(false);
+  };
+
+  if (isRecording) {
+    const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
+    const ss = String(seconds % 60).padStart(2, '0');
+    return (
+      <button
+        type="button"
+        onClick={stopRecording}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-50 text-red-700 hover:bg-red-100"
+      >
+        <span className="h-2 w-2 rounded-full bg-red-600 animate-pulse" />
+        <StopIcon className="h-4 w-4" /> Stop ({mm}:{ss})
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={startRecording}
+      disabled={disabled}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+    >
+      <MicrophoneIcon className="h-4 w-4" /> Record Voice Note
+    </button>
+  );
 }
 
 async function fetchActionItems(meetingId: number) {
@@ -556,6 +674,13 @@ function CreateMomModal({ meetingId, onClose }: { meetingId: number; onClose: ()
   const queryClient = useQueryClient();
   const [summary, setSummary] = useState('');
   const [risksIssues, setRisksIssues] = useState('');
+  // Staged client-side until the MOM itself exists — MeetingAttachment
+  // needs a real momId, so files/recordings picked here are only actually
+  // uploaded after the create call below succeeds.
+  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+
+  const addStagedFile = (file: File) => setStagedFiles((files) => [...files, file]);
+  const removeStagedFile = (index: number) => setStagedFiles((files) => files.filter((_, i) => i !== index));
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -568,11 +693,27 @@ function CreateMomModal({ meetingId, onClose }: { meetingId: number; onClose: ()
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || 'Failed to create MOM');
       }
-      return res.json();
+      const mom = await res.json();
+
+      let failedUploads = 0;
+      for (const file of stagedFiles) {
+        try {
+          await uploadMomAttachment(mom.id, file);
+        } catch {
+          failedUploads += 1;
+        }
+      }
+
+      return { mom, failedUploads };
     },
-    onSuccess: () => {
+    onSuccess: ({ mom, failedUploads }) => {
       queryClient.invalidateQueries({ queryKey: ['meeting', String(meetingId)] });
-      toast.success('MOM draft created');
+      queryClient.invalidateQueries({ queryKey: ['mom-attachments', mom.id] });
+      if (failedUploads > 0) {
+        toast.error(`MOM created, but ${failedUploads} attachment(s) failed to upload — add them again from the MOM`);
+      } else {
+        toast.success('MOM draft created');
+      }
       onClose();
     },
     onError: (error: any) => toast.error(error.message),
@@ -600,6 +741,36 @@ function CreateMomModal({ meetingId, onClose }: { meetingId: number; onClose: ()
               onChange={(e) => setRisksIssues(e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Attachments (optional)</label>
+            <div className="flex items-center gap-2">
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer">
+                <PaperClipIcon className="h-4 w-4" /> Add File
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (file) addStagedFile(file);
+                  }}
+                />
+              </label>
+              <VoiceRecorderButton onRecorded={addStagedFile} />
+            </div>
+            {stagedFiles.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {stagedFiles.map((file, index) => (
+                  <li key={index} className="flex items-center justify-between gap-2 text-sm bg-slate-50 rounded-lg px-3 py-1.5">
+                    <span className="text-slate-700 truncate">{file.name}</span>
+                    <button type="button" onClick={() => removeStagedFile(index)} className="text-slate-400 hover:text-red-600">
+                      <TrashIcon className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-5">
@@ -992,6 +1163,86 @@ function MomHistorySection({ momId }: { momId: number }) {
   );
 }
 
+// Documents and voice-note recordings attached to a MOM — list is visible
+// to anyone who can view the meeting; upload controls are gated on
+// canManageMom, same as the rest of the MOM authoring actions. Attachments
+// are append-only and not part of the optimistic-locked MOM content
+// (Mom.version), so uploading doesn't require the MOM to be in an
+// editable status.
+function MomAttachmentsSection({ momId, canUpload }: { momId: number; canUpload: boolean }) {
+  const queryClient = useQueryClient();
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: attachments = [], isLoading } = useQuery({
+    queryKey: ['mom-attachments', momId],
+    queryFn: () => fetchMomAttachments(momId),
+  });
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      await uploadMomAttachment(momId, file);
+      queryClient.invalidateQueries({ queryKey: ['mom-attachments', momId] });
+      toast.success('Attachment uploaded');
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-100">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-medium text-slate-600">Attachments</p>
+        {canUpload && (
+          <div className="flex items-center gap-2">
+            <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <PaperClipIcon className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload'}
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                disabled={uploading}
+                onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])}
+              />
+            </label>
+            <VoiceRecorderButton disabled={uploading} onRecorded={handleUpload} />
+          </div>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="h-10 bg-slate-100 rounded-lg animate-pulse" />
+      ) : attachments.length ? (
+        <ul className="divide-y divide-slate-100">
+          {attachments.map((a: any) => (
+            <li key={a.id} className="py-2 flex items-center justify-between gap-3 text-sm">
+              {a.mimeType?.startsWith('audio/') ? (
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-700 truncate">{a.fileName}</p>
+                  <audio controls src={a.filePath} className="mt-1 h-8 w-full max-w-xs" />
+                </div>
+              ) : (
+                <a href={a.filePath} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-amber-600 truncate">
+                  {a.fileName}
+                </a>
+              )}
+              <span className="text-xs text-slate-400 whitespace-nowrap">
+                {formatFileSize(a.size)} {a.uploadedByName ? `· ${a.uploadedByName}` : ''} · {dayjs(a.createdAt).format('DD MMM YYYY')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-slate-400">No attachments yet</p>
+      )}
+    </div>
+  );
+}
+
 export default function MeetingDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -1374,6 +1625,8 @@ export default function MeetingDetailPage() {
                 <p className="text-sm text-slate-400">No decisions recorded yet</p>
               )}
             </div>
+
+            <MomAttachmentsSection momId={meeting.mom.id} canUpload={canManageMom} />
 
             {meeting.mom.status === 'PUBLISHED' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-100 text-sm">
