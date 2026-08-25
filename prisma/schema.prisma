@@ -159,6 +159,18 @@ model Lead {
   events          Event[]
   documents       EventDocument[]
 
+  // The leads list's default (unfiltered) view sorts by createdAt, the
+  // dashboard stats widget counts by status/leadSource/nextFollowUpDate on
+  // every page load, and the on-demand deadline-reminder scan (piggybacked
+  // on every GET /api/leads) filters on nextFollowUpDate + assignedBaId —
+  // this model had zero indexes beyond its primary key despite all of that,
+  // forcing a full table scan on every one of those queries.
+  @@index([createdAt])
+  @@index([status])
+  @@index([leadSource])
+  @@index([assignedBaId])
+  @@index([nextFollowUpDate])
+  @@index([lastFollowUpDate])
   @@map("leads")
 }
 
@@ -327,8 +339,14 @@ model EventDiscussion {
   assignedTo  User?           @relation("EventDiscussionAssignedTo", fields: [assignedToId], references: [id])
   attachments EventDocument[]
 
+  // completionStatus/targetDate/assignedToId are exactly the columns the
+  // on-demand deadline-reminder scan filters on (piggybacked on every
+  // GET /api/leads) — previously unindexed, forcing a full table scan.
   @@index([eventId])
   @@index([createdAt])
+  @@index([completionStatus])
+  @@index([targetDate])
+  @@index([assignedToId])
   @@map("event_discussions")
 }
 
