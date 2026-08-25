@@ -25,6 +25,8 @@ import {
   ChevronDownIcon,
   Bars3Icon,
   XMarkIcon,
+  ChartBarIcon,
+  DocumentChartBarIcon,
 } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
 import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
@@ -76,6 +78,8 @@ function getNavItems(): NavSection[] {
           ? [
               { href: '/dashboard/todo', label: 'To Do', icon: CalendarDaysIcon, permission: 'view_meetings' },
               { href: '/dashboard/action-items', label: 'Action Items', icon: ListBulletIcon, permission: 'view_meetings' },
+              { href: '/dashboard/meetings/dashboard', label: 'Dashboard', icon: ChartBarIcon, permission: 'view_meetings' },
+              { href: '/dashboard/meetings/reports', label: 'Reports', icon: DocumentChartBarIcon, permission: 'view_meeting_reports' },
             ]
           : []),
       ],

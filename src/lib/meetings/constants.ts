@@ -96,7 +96,9 @@ export type ActionItemPriority = (typeof ACTION_ITEM_PRIORITIES)[number];
 // (reopen_action_items) rather than a generic status edge — same
 // reasoning as Meeting's reschedule being a dedicated endpoint instead of
 // a generic status edge.
-const ACTION_ITEM_OPEN_STATUSES: ActionItemStatus[] = ['DRAFT', 'ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'PENDING', 'BLOCKED', 'COMPLETED', 'VERIFIED'];
+// Exported for reuse by the Phase 5 dashboard/report services, which need
+// the same "still in the pipeline" definition as the transition graph below.
+export const ACTION_ITEM_OPEN_STATUSES: ActionItemStatus[] = ['DRAFT', 'ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'PENDING', 'BLOCKED', 'COMPLETED', 'VERIFIED'];
 
 const ACTION_ITEM_STATUS_TRANSITIONS: Record<ActionItemStatus, ActionItemStatus[]> = ACTION_ITEM_STATUSES.reduce(
   (acc, status) => {
@@ -184,3 +186,39 @@ export const SLA_OFFSETS_BY_PRIORITY: Record<ActionItemPriority, Array<{ offsetD
     { offsetDays: 2, recipientType: 'ORGANIZER' },
   ],
 };
+
+// ============================================================
+// DASHBOARDS & REPORTING (Phase 5)
+// ============================================================
+
+// Shared with the reminder dispatcher: an item in one of these statuses no
+// longer needs a due-date-driven urgency signal, whether or not it has been
+// formally verified/closed.
+export const ACTION_ITEM_RESOLVED_STATUSES: ActionItemStatus[] = ['COMPLETED', 'VERIFIED', 'CLOSED', 'CANCELLED'];
+
+export const ACTION_ITEM_SLA_STATUSES = ['ON_TRACK', 'DUE_SOON', 'OVERDUE', 'ON_TIME', 'BREACHED', 'NOT_APPLICABLE'] as const;
+export type ActionItemSlaStatus = (typeof ACTION_ITEM_SLA_STATUSES)[number];
+
+const DUE_SOON_WINDOW_DAYS = 2;
+
+// Computed on read, not stored — Phase 4 shipped a reminder-offset SLA
+// model (per-priority scheduled nudges), not the tiered sla_configs/
+// sla_transactions engine with pause/resume the design doc originally
+// specced, so there is no persisted breach log to read "SLA status" from.
+// ON_TIME/BREACHED apply once resolved (was resolution before or after the
+// due date); DUE_SOON/OVERDUE/ON_TRACK apply while still open; a CANCELLED
+// item never had an SLA outcome, so it's NOT_APPLICABLE rather than
+// counted as either a pass or a breach.
+export function classifyActionItemSlaStatus(
+  item: { status: string; dueDate: Date; completedAt: Date | null },
+  now: Date = new Date()
+): ActionItemSlaStatus {
+  if (item.status === 'CANCELLED') return 'NOT_APPLICABLE';
+  if ((ACTION_ITEM_RESOLVED_STATUSES as string[]).includes(item.status)) {
+    const resolvedAt = item.completedAt ?? now;
+    return resolvedAt.getTime() > item.dueDate.getTime() ? 'BREACHED' : 'ON_TIME';
+  }
+  if (item.dueDate.getTime() < now.getTime()) return 'OVERDUE';
+  const daysToDue = (item.dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+  return daysToDue <= DUE_SOON_WINDOW_DAYS ? 'DUE_SOON' : 'ON_TRACK';
+}

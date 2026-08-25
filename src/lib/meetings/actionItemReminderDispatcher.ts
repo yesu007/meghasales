@@ -1,12 +1,11 @@
 import dayjs from 'dayjs';
 import prisma from '@/lib/prisma';
-import { MAX_REMINDER_ATTEMPTS, NotificationEventType, ReminderRecipientType } from './constants';
+import { ACTION_ITEM_RESOLVED_STATUSES, MAX_REMINDER_ATTEMPTS, NotificationEventType, ReminderRecipientType } from './constants';
 import { dispatchTemplatedNotification, TemplateNotFoundError } from './notificationTemplates';
 
 class ReminderSkippedError extends Error {}
 
 const BATCH_SIZE = 100;
-const RESOLVED_STATUSES = ['COMPLETED', 'VERIFIED', 'CLOSED', 'CANCELLED'];
 
 // Pure and exported specifically to be unit-tested, same reasoning
 // AdminTicket's dispatcher.ts exports formatDaysRemaining.
@@ -91,7 +90,7 @@ async function deliverReminder(reminder: DueReminderRow): Promise<void> {
     },
   });
   if (!actionItem) throw new ReminderSkippedError('action item no longer exists');
-  if (RESOLVED_STATUSES.includes(actionItem.status)) throw new ReminderSkippedError('action item already resolved');
+  if ((ACTION_ITEM_RESOLVED_STATUSES as string[]).includes(actionItem.status)) throw new ReminderSkippedError('action item already resolved');
 
   const recipientUserId = reminder.recipientType === 'ASSIGNEE' ? actionItem.assignedToId : actionItem.meeting.organizerId;
   if (!recipientUserId) throw new ReminderSkippedError('no resolvable recipient');
