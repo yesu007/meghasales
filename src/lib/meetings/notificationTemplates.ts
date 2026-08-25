@@ -4,6 +4,13 @@ import { NotificationChannel, NotificationEventType } from './constants';
 
 export class TemplateNotFoundError extends Error {}
 
+// Thrown specifically when sendMail() itself fails (bad SMTP credentials,
+// unreachable host, ...) — distinct from a per-recipient issue like "no
+// email on file" or a missing template, so callers that loop over many
+// reminders (the SLA dispatcher) can tell a systemic transport failure
+// apart from a one-off skip and stop retrying it N times in the same run.
+export class EmailTransportError extends Error {}
+
 // {{token}} substitution — unmatched tokens render as an empty string
 // rather than being left in place, since a template referencing a token
 // this event type doesn't supply shouldn't leak "{{typo}}" into a real
@@ -65,11 +72,15 @@ export async function dispatchTemplatedNotification(input: DispatchTemplatedNoti
   const email = await resolveUserEmail(input.recipientUserId);
   if (!email) throw new Error('recipient has no email on file');
 
-  await sendMail({
-    to: email,
-    subject: renderTemplate(template.subject || input.eventType, input.vars),
-    html: renderTemplate(template.body, input.vars),
-  });
+  try {
+    await sendMail({
+      to: email,
+      subject: renderTemplate(template.subject || input.eventType, input.vars),
+      html: renderTemplate(template.body, input.vars),
+    });
+  } catch (error) {
+    throw new EmailTransportError(error instanceof Error ? error.message : String(error));
+  }
 }
 
 export interface NotifyManyViaTemplateInput {

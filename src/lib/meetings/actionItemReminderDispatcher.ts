@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import prisma from '@/lib/prisma';
 import { ACTION_ITEM_RESOLVED_STATUSES, MAX_REMINDER_ATTEMPTS, NotificationEventType, ReminderRecipientType } from './constants';
-import { dispatchTemplatedNotification, TemplateNotFoundError } from './notificationTemplates';
+import { dispatchTemplatedNotification, EmailTransportError, TemplateNotFoundError } from './notificationTemplates';
 
 class ReminderSkippedError extends Error {}
 
@@ -43,8 +43,17 @@ export async function dispatchActionItemReminders(now: Date = new Date()): Promi
   let sent = 0;
   let failed = 0;
   let skipped = 0;
+  // Set the first time an EMAIL-channel send hits EmailTransportError (bad
+  // SMTP credentials, unreachable host, ...) — that failure is identical
+  // for every remaining EMAIL row this run, so once seen, remaining EMAIL
+  // rows are left untouched (still PENDING, no attempt consumed) rather
+  // than each paying its own doomed SMTP round-trip inside the same
+  // request. IN_APP rows are unaffected and keep sending normally.
+  let emailTransportBroken = false;
 
   for (const reminder of due) {
+    if (reminder.channel === 'EMAIL' && emailTransportBroken) continue;
+
     try {
       await deliverReminder(reminder);
       await prisma.actionItemReminder.update({
@@ -61,6 +70,8 @@ export async function dispatchActionItemReminders(now: Date = new Date()): Promi
         skipped += 1;
         continue;
       }
+
+      if (error instanceof EmailTransportError) emailTransportBroken = true;
 
       const attemptCount = reminder.attemptCount + 1;
       const status = attemptCount >= MAX_REMINDER_ATTEMPTS ? 'FAILED' : 'PENDING';
