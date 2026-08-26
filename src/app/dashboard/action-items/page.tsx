@@ -179,26 +179,28 @@ export default function ActionItemsListPage() {
   const pageNumbers = getPageNumbers(page, totalPages || 1);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Action Items</h1>
-          <p className="text-slate-500 mt-1">Track action items assigned across all meetings</p>
+    <div className="space-y-4">
+      {/* Title and status tabs packed together on the left (same reasoning
+          as the Leads page header) instead of stacked on two separate
+          rows — removes the dead vertical gap that left between them. */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Action Items</h1>
+          <div className="overflow-x-auto">
+            <div className="flex gap-2 flex-wrap">
+              {[{ v: '', l: 'All' }, ...ACTION_ITEM_STATUSES.map((s) => ({ v: s, l: s.replace('_', ' ') }))].map((s) => (
+                <button
+                  key={s.v}
+                  onClick={() => { setStatusFilter(s.v); setPage(0); }}
+                  className={`px-3 py-1.5 min-h-[40px] rounded-lg text-sm font-medium whitespace-nowrap ${statusFilter === s.v ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                >
+                  {s.l} <span className="opacity-70">({s.v ? statusCounts[s.v] ?? 0 : allCount})</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          {[{ v: '', l: 'All' }, ...ACTION_ITEM_STATUSES.map((s) => ({ v: s, l: s.replace('_', ' ') }))].map((s) => (
-            <button
-              key={s.v}
-              onClick={() => { setStatusFilter(s.v); setPage(0); }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusFilter === s.v ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}
-            >
-              {s.l} <span className="opacity-70">({s.v ? statusCounts[s.v] ?? 0 : allCount})</span>
-            </button>
-          ))}
-        </div>
+        <p className="text-slate-500 text-sm sm:text-base">Track action items assigned across all meetings</p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">

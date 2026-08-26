@@ -308,34 +308,39 @@ export default function TodoListPage() {
   const pageNumbers = getPageNumbers(page, totalPages || 1);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">To Do</h1>
-          <p className="text-slate-500 mt-1">Track tasks and meetings across the team</p>
-        </div>
-        {canManageMeetings && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700"
-          >
-            <PlusIcon className="h-4 w-4" /> Add Task
-          </button>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          {[{ v: '', l: 'All' }, ...MEETING_STATUSES.map((s) => ({ v: s, l: STATUS_LABELS[s] }))].map((s) => (
+    <div className="space-y-4">
+      {/* Title, status tabs, and Add Task packed together on the left
+          (same reasoning as the Leads page header) instead of split to
+          opposite edges of the row — that split left a wide dead strip
+          between the tabs and the button on anything narrower than a very
+          wide desktop. Any leftover width now falls at the true right
+          margin, not mid-row. */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-800">To Do</h1>
+          <div className="overflow-x-auto">
+            <div className="flex gap-2 flex-wrap">
+              {[{ v: '', l: 'All' }, ...MEETING_STATUSES.map((s) => ({ v: s, l: STATUS_LABELS[s] }))].map((s) => (
+                <button
+                  key={s.v}
+                  onClick={() => { setStatusFilter(s.v); setPage(0); }}
+                  className={`px-3 py-1.5 min-h-[40px] rounded-lg text-sm font-medium whitespace-nowrap ${statusFilter === s.v ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                >
+                  {s.l} <span className="opacity-70">({s.v ? statusCounts[s.v] ?? 0 : allCount})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {canManageMeetings && (
             <button
-              key={s.v}
-              onClick={() => { setStatusFilter(s.v); setPage(0); }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusFilter === s.v ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
             >
-              {s.l} <span className="opacity-70">({s.v ? statusCounts[s.v] ?? 0 : allCount})</span>
+              <PlusIcon className="h-4 w-4" /> Add Task
             </button>
-          ))}
+          )}
         </div>
+        <p className="text-slate-500 text-sm sm:text-base">Track tasks and meetings across the team</p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">

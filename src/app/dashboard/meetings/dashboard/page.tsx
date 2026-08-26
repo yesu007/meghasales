@@ -146,7 +146,7 @@ function StatTile({
   const valueClass = tone === 'danger' ? 'text-red-600' : tone === 'warn' ? 'text-amber-600' : 'text-slate-800';
   const card = (
     <div
-      className={`bg-white rounded-xl shadow-sm border border-slate-200 p-5 h-full ${
+      className={`bg-white rounded-xl shadow-sm border border-slate-200 p-4 h-full ${
         href ? 'hover:border-amber-300 transition-colors cursor-pointer' : ''
       }`}
     >
@@ -171,7 +171,7 @@ function PanelCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
       <div className="flex items-center gap-2 mb-3">
         <Icon className="h-4 w-4 text-slate-400" />
         <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
@@ -184,7 +184,7 @@ function PanelCard({
 function ActionItemsStatusBar({ counts }: { counts: Record<string, number> }) {
   const total = ACTION_ITEM_STATUSES.reduce((sum, status) => sum + (counts[status] || 0), 0);
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
       <h3 className="text-sm font-semibold text-slate-700 mb-3">Your Action Items by Status</h3>
       {total === 0 ? (
         <p className="text-sm text-slate-400 py-6 text-center">No action items assigned to you</p>
@@ -291,7 +291,7 @@ export default function MeetingsDashboardPage() {
   const yesterday = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Meetings Dashboard</h1>
         <p className="text-slate-500 mt-1">Your meetings, MOMs, and action items at a glance</p>
@@ -427,7 +427,7 @@ export default function MeetingsDashboardPage() {
               )}
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
               <h3 className="text-sm font-semibold text-slate-700 mb-3">SLA Breach Trend (8 weeks)</h3>
               <div style={{ width: '100%', height: 160 }}>
                 <ResponsiveContainer>
@@ -446,7 +446,7 @@ export default function MeetingsDashboardPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Workload Heatmap (open action items, this week)</h3>
             <WorkloadHeatmap data={team.workloadHeatmap} />
           </div>
@@ -465,7 +465,7 @@ export default function MeetingsDashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-3">
                 <ChartBarIcon className="h-4 w-4 text-slate-400" />
                 <h3 className="text-sm font-semibold text-slate-700">Open Actions by Department</h3>
@@ -487,7 +487,7 @@ export default function MeetingsDashboardPage() {
               )}
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
               <h3 className="text-sm font-semibold text-slate-700 mb-3">Meeting Effectiveness Trend (12 weeks)</h3>
               <div style={{ width: '100%', height: 260 }}>
                 <ResponsiveContainer>
