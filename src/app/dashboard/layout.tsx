@@ -20,13 +20,10 @@ import {
   CurrencyRupeeIcon,
   WalletIcon,
   CalendarDaysIcon,
-  ListBulletIcon,
   ReceiptPercentIcon,
   ChevronDownIcon,
   Bars3Icon,
   XMarkIcon,
-  ChartBarIcon,
-  DocumentChartBarIcon,
 } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
 import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
@@ -37,6 +34,7 @@ import { hasAnyPermission } from '@/lib/permissions';
 interface NavChild {
   href: string;
   label: string;
+  permission?: string | string[];
 }
 
 interface NavItem {
@@ -75,12 +73,15 @@ function getNavItems(): NavSection[] {
         { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon, permission: 'view_demos' },
         { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon, permission: 'view_implementations' },
         ...(isMeetingsModuleEnabled()
-          ? [
-              { href: '/dashboard/todo', label: 'To Do', icon: CalendarDaysIcon, permission: 'view_meetings' },
-              { href: '/dashboard/action-items', label: 'Action Items', icon: ListBulletIcon, permission: 'view_meetings' },
-              { href: '/dashboard/meetings/dashboard', label: 'Dashboard', icon: ChartBarIcon, permission: 'view_meetings' },
-              { href: '/dashboard/meetings/reports', label: 'Reports', icon: DocumentChartBarIcon, permission: 'view_meeting_reports' },
-            ]
+          ? [{
+              href: '/dashboard/todo', label: 'Meetings', icon: CalendarDaysIcon, permission: 'view_meetings',
+              children: [
+                { href: '/dashboard/todo', label: 'To Do' },
+                { href: '/dashboard/action-items', label: 'Action Items' },
+                { href: '/dashboard/meetings/dashboard', label: 'Dashboard' },
+                { href: '/dashboard/meetings/reports', label: 'Reports', permission: 'view_meeting_reports' },
+              ],
+            }]
           : []),
       ],
     },
@@ -142,18 +143,47 @@ function getNavItems(): NavSection[] {
   ];
 }
 
+function isAllowed(roles: string[], permissions: string[], required?: string | string[]) {
+  if (!required) return true;
+  return hasAnyPermission(roles, permissions, Array.isArray(required) ? required : [required]);
+}
+
+// A route is "under" a nav href if it IS that href, or nested one segment
+// deeper (matching on a `/` boundary so e.g. '/dashboard/todo-extra' isn't
+// mistaken for a match). Used for both the active-highlight and the
+// auto-expand-on-navigate effect below.
+function isPathUnder(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+// Whether a nav item (leaf or group) should render as "active" — a group
+// is active when the current route matches ANY of its children, not just
+// the group's own href, since a group's children don't necessarily share
+// its href as a path prefix (e.g. the Meetings group's own href is
+// /dashboard/todo, but /dashboard/action-items is one of its children).
+function isNavItemActive(pathname: string, item: NavItem): boolean {
+  if ('children' in item && item.children) {
+    return item.children.some((child) => isPathUnder(pathname, child.href));
+  }
+  return item.href === '/dashboard' ? pathname === item.href : isPathUnder(pathname, item.href);
+}
+
 // Filters the declarative nav table above by the logged-in user's roles/
 // permissions, then drops any section left with zero items — replaces the
 // one-off canViewPayroll check with the same rule applied to every item.
+// Children get the same treatment as top-level items (a child with no
+// `permission` inherits visibility from its already-gated parent; one with
+// its own — e.g. Meetings > Reports needing view_meeting_reports on top of
+// the parent's view_meetings — is filtered independently).
 function getNavSections(roles: string[], permissions: string[]) {
   return getNavItems()
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => {
-        if (!('permission' in item) || !item.permission) return true;
-        const required = Array.isArray(item.permission) ? item.permission : [item.permission];
-        return hasAnyPermission(roles, permissions, required);
-      }),
+      items: section.items
+        .filter((item) => isAllowed(roles, permissions, item.permission))
+        .map((item) => ('children' in item && item.children
+          ? { ...item, children: item.children.filter((child) => isAllowed(roles, permissions, child.permission)) }
+          : item)),
     }))
     // Sections collapse away entirely when every item inside is gated off
     // (e.g. "My Space" with the Payroll module disabled) rather than
@@ -191,7 +221,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [status, router]);
 
   useEffect(() => {
-    const activeParent = navItems.find((item) => 'children' in item && item.children && pathname.startsWith(item.href));
+    const activeParent = navItems.find((item) => 'children' in item && item.children && isNavItemActive(pathname, item));
     if (activeParent) setExpandedGroups((prev) => new Set(prev).add(activeParent.href));
     // navItems itself depends on session (canViewPayroll), so it needs to
     // be in this list too — otherwise the Payroll group wouldn't
@@ -256,7 +286,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.title}</p>
               )}
               {section.items.map((item) => {
-                const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+                const isActive = isNavItemActive(pathname, item);
 
                 if ('children' in item && item.children) {
                   const isExpanded = expandedGroups.has(item.href);
