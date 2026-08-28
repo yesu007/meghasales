@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     if (financialYearStart) AND.push({ financialYearStart: new Date(financialYearStart) });
     if (AND.length > 0) where.AND = AND;
 
-    const [budgets, totalElements] = await Promise.all([
+    const [budgets, totalElements, totalsByCurrencyRaw] = await Promise.all([
       prisma.expenseBudget.findMany({
         where,
         orderBy: [{ financialYearStart: 'desc' }, { createdAt: 'desc' }],
@@ -43,7 +43,11 @@ export async function GET(request: NextRequest) {
         },
       }),
       prisma.expenseBudget.count({ where }),
+      // Sum across every budget matching the current filter, not just the
+      // page on screen — grouped by currency since amounts aren't converted.
+      prisma.expenseBudget.groupBy({ by: ['currencyCode'], where, _sum: { totalAmount: true } }),
     ]);
+    const totalsByCurrency = totalsByCurrencyRaw.map((t) => ({ currencyCode: t.currencyCode, totalAmount: t._sum.totalAmount }));
 
     const content = budgets.map((b) => ({
       id: b.id,
@@ -67,6 +71,7 @@ export async function GET(request: NextRequest) {
       totalElements,
       totalPages: Math.ceil(totalElements / size),
       last: (page + 1) * size >= totalElements,
+      totalsByCurrency,
     });
   } catch (error) {
     console.error('GET /api/expense-budgets error:', error);

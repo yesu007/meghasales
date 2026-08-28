@@ -25,7 +25,8 @@ interface BudgetRow {
   status: string;
   createdByName: string | null;
 }
-interface BudgetListResponse { content: BudgetRow[]; page: number; totalPages: number; totalElements: number }
+interface CurrencyTotal { currencyCode: string; totalAmount: string | null }
+interface BudgetListResponse { content: BudgetRow[]; page: number; totalPages: number; totalElements: number; totalsByCurrency: CurrencyTotal[] }
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
@@ -142,6 +143,7 @@ export default function ExpenseBudgetsPage() {
       .filter((e) => e.amount > 0),
     [categoryAmounts]
   );
+  const categoryEntriesTotal = useMemo(() => categoryEntries.reduce((sum, e) => sum + e.amount, 0), [categoryEntries]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -197,6 +199,7 @@ export default function ExpenseBudgetsPage() {
   const budgets = data?.content || [];
   const totalElements = data?.totalElements || 0;
   const totalPages = data?.totalPages || 0;
+  const totalsByCurrency = (data?.totalsByCurrency || []).filter((t) => Number(t.totalAmount) > 0);
   const pageNumbers = getPageNumbers(page, totalPages || 1);
 
   return (
@@ -292,21 +295,27 @@ export default function ExpenseBudgetsPage() {
                 {categories.length === 0 ? (
                   <p className="text-sm text-slate-400 px-3 py-6 text-center">No expense categories found</p>
                 ) : (
-                  <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-                    {categories.map((c) => (
-                      <div key={c.id} className="flex items-center gap-3 px-3 py-2">
-                        <label htmlFor={`category-amount-${c.id}`} className="flex-1 text-sm text-slate-700">{c.name}</label>
-                        <input
-                          id={`category-amount-${c.id}`}
-                          type="number" min="0" step="0.01"
-                          placeholder="0.00"
-                          value={categoryAmounts[c.id] ?? ''}
-                          onChange={(e) => setCategoryAmount(c.id, e.target.value)}
-                          className="w-36 px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-800 text-right focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                        />
-                      </div>
-                    ))}
-                  </div>
+                  <>
+                    <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                      {categories.map((c) => (
+                        <div key={c.id} className="flex items-center gap-3 px-3 py-2">
+                          <label htmlFor={`category-amount-${c.id}`} className="flex-1 text-sm text-slate-700">{c.name}</label>
+                          <input
+                            id={`category-amount-${c.id}`}
+                            type="number" min="0" step="0.01"
+                            placeholder="0.00"
+                            value={categoryAmounts[c.id] ?? ''}
+                            onChange={(e) => setCategoryAmount(c.id, e.target.value)}
+                            className="w-36 px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-800 text-right focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-t border-slate-200">
+                      <p className="text-sm font-semibold text-slate-700">Total Budget</p>
+                      <p className="text-sm font-semibold text-slate-800">{formatCurrency(categoryEntriesTotal, form.currencyCode)}</p>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -393,6 +402,15 @@ export default function ExpenseBudgetsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {totalsByCurrency.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-1 sm:gap-4 px-4 py-3 border-t border-slate-200 bg-slate-50">
+            <span className="text-sm font-semibold text-slate-600">Total Budget{statusFilter ? ` (${statusFilter})` : ''}:</span>
+            {totalsByCurrency.map((t) => (
+              <span key={t.currencyCode} className="text-sm font-semibold text-slate-800">{formatCurrency(t.totalAmount || 0, t.currencyCode)}</span>
+            ))}
           </div>
         )}
 
