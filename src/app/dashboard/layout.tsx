@@ -65,14 +65,12 @@ function getNavItems(): NavSection[] {
   return [
     {
       title: null,
-      items: [
-        { href: '/dashboard/verticals', label: 'Verticals', icon: BuildingOffice2Icon, permission: 'view_verticals' },
-        { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
-      ],
+      items: [{ href: '/dashboard', label: 'Dashboard', icon: HomeIcon }],
     },
     {
       title: 'Sales',
       items: [
+        { href: '/dashboard/verticals', label: 'Verticals', icon: BuildingOffice2Icon, permission: 'view_verticals' },
         { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon, permission: 'view_leads' },
         { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon, permission: 'view_quotations' },
         { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon, permission: 'view_demos' },
