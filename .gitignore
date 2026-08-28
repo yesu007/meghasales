@@ -48,3 +48,6 @@ next-env.d.ts
 # never belongs in git history
 *.sql
 dbdump.sql
+
+# Claude Code local settings — can contain plaintext secrets (DB URLs, etc.)
+.claude/
