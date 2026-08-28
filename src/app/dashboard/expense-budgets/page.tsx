@@ -401,16 +401,20 @@ export default function ExpenseBudgetsPage() {
                   </tr>
                 ))}
               </tbody>
+              {totalsByCurrency.length > 0 && (
+                <tfoot>
+                  {totalsByCurrency.map((t) => (
+                    <tr key={t.currencyCode} className="bg-slate-50 border-t-2 border-slate-200">
+                      <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-slate-600">
+                        Total Budget{statusFilter ? ` (${statusFilter})` : ''}
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold text-slate-800">{formatCurrency(t.totalAmount || 0, t.currencyCode)}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  ))}
+                </tfoot>
+              )}
             </table>
-          </div>
-        )}
-
-        {totalsByCurrency.length > 0 && (
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-1 sm:gap-4 px-4 py-3 border-t border-slate-200 bg-slate-50">
-            <span className="text-sm font-semibold text-slate-600">Total Budget{statusFilter ? ` (${statusFilter})` : ''}:</span>
-            {totalsByCurrency.map((t) => (
-              <span key={t.currencyCode} className="text-sm font-semibold text-slate-800">{formatCurrency(t.totalAmount || 0, t.currencyCode)}</span>
-            ))}
           </div>
         )}
 
