@@ -77,7 +77,6 @@ const blankForm = () => {
     financialYearStart: start.format('YYYY-MM-DD'),
     financialYearEnd: start.add(1, 'year').subtract(1, 'day').format('YYYY-MM-DD'),
     verticalId: '',
-    totalAmount: '',
     currencyCode: 'INR',
     notes: '',
   };
@@ -90,42 +89,38 @@ export default function ExpenseBudgetsPage() {
   const [size, setSize] = useState(10);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(blankForm());
-  const [months, setMonths] = useState<{ month: string; amount: number }[]>([]);
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
-  const [categoryToAdd, setCategoryToAdd] = useState('');
+  const [categoryAmounts, setCategoryAmounts] = useState<Record<number, string>>({});
 
   const { data, isLoading } = useQuery({ queryKey: ['expense-budgets', statusFilter, page, size], queryFn: () => fetchBudgets(statusFilter, page, size) });
   const { data: verticals = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticals });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
 
-  const closeForm = () => { setShowForm(false); setForm(blankForm()); setMonths([]); setSelectedCategoryIds([]); setCategoryToAdd(''); };
+  const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); };
 
-  const recomputeSpread = (totalAmount: string, start: string, end: string) => {
-    const amount = Number(totalAmount);
-    if (!amount || !start || !end) { setMonths([]); return; }
-    setMonths(defaultMonthlySpread(amount, start, end));
-  };
+  const setCategoryAmount = (categoryId: number, value: string) =>
+    setCategoryAmounts((prev) => ({ ...prev, [categoryId]: value }));
 
-  const addCategoryToList = () => {
-    if (!categoryToAdd) return;
-    const id = Number(categoryToAdd);
-    setSelectedCategoryIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-    setCategoryToAdd('');
-  };
-  const removeCategoryFromList = (id: number) => setSelectedCategoryIds((prev) => prev.filter((c) => c !== id));
+  const categoryEntries = useMemo(
+    () => Object.entries(categoryAmounts)
+      .map(([categoryId, amount]) => ({ categoryId: Number(categoryId), amount: Number(amount) }))
+      .filter((e) => e.amount > 0),
+    [categoryAmounts]
+  );
 
   const save = useMutation({
     mutationFn: async () => {
-      // Same financial year / amount / monthly spread, one Expense Budget
-      // per selected category — the backend keys a budget on (FY, vertical,
-      // category), so each selection becomes its own row.
+      // Same financial year / vertical / currency, one Expense Budget per
+      // category with an amount entered — the backend keys a budget on
+      // (FY, vertical, category), so each row becomes its own budget with
+      // its own monthly spread.
       const results = await Promise.allSettled(
-        selectedCategoryIds.map(async (categoryId) => {
+        categoryEntries.map(async ({ categoryId, amount }) => {
+          const months = defaultMonthlySpread(amount, form.financialYearStart, form.financialYearEnd);
           const res = await fetch('/api/expense-budgets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...form, categoryId, verticalId: form.verticalId || null, months }),
+            body: JSON.stringify({ ...form, categoryId, totalAmount: amount, verticalId: form.verticalId || null, months }),
           });
           if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save budget'); }
           return res.json();
@@ -147,8 +142,6 @@ export default function ExpenseBudgetsPage() {
   const totalPages = data?.totalPages || 0;
   const pageNumbers = getPageNumbers(page, totalPages || 1);
 
-  const monthsTotal = useMemo(() => months.reduce((sum, m) => sum + m.amount, 0), [months]);
-
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -168,8 +161,8 @@ export default function ExpenseBudgetsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (selectedCategoryIds.length === 0 || !form.totalAmount || !form.financialYearStart || !form.financialYearEnd) {
-              toast.error('At least one category, financial year, and total amount are required');
+            if (categoryEntries.length === 0 || !form.financialYearStart || !form.financialYearEnd) {
+              toast.error('Financial year and a budget amount for at least one category are required');
               return;
             }
             save.mutate();
@@ -180,11 +173,11 @@ export default function ExpenseBudgetsPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year Start</label>
-              <input type="date" value={form.financialYearStart} onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, financialYearStart: v })); recomputeSpread(form.totalAmount, v, form.financialYearEnd); }} className={inputCls} />
+              <input type="date" value={form.financialYearStart} onChange={(e) => setForm((f) => ({ ...f, financialYearStart: e.target.value }))} className={inputCls} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year End</label>
-              <input type="date" value={form.financialYearEnd} onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, financialYearEnd: v })); recomputeSpread(form.totalAmount, form.financialYearStart, v); }} className={inputCls} />
+              <input type="date" value={form.financialYearEnd} onChange={(e) => setForm((f) => ({ ...f, financialYearEnd: e.target.value }))} className={inputCls} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
@@ -192,10 +185,6 @@ export default function ExpenseBudgetsPage() {
                 <option value="">Company-wide</option>
                 {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Total Budget Amount</label>
-              <input type="number" min="0.01" step="0.01" value={form.totalAmount} onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, totalAmount: v })); recomputeSpread(v, form.financialYearStart, form.financialYearEnd); }} className={inputCls} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
@@ -211,87 +200,39 @@ export default function ExpenseBudgetsPage() {
           </div>
 
           <div className="mt-4">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Category <span className="text-red-500">*</span></label>
-            <div className="flex gap-2">
-              <select value={categoryToAdd} onChange={(e) => setCategoryToAdd(e.target.value)} className={`${inputCls} flex-1`}>
-                <option value="">-- Select a category --</option>
-                {categories.filter((c) => !selectedCategoryIds.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <button
-                type="button"
-                onClick={addCategoryToList}
-                disabled={!categoryToAdd}
-                className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap"
-              >
-                <PlusIcon className="h-4 w-4" /> Add to List
-              </button>
-            </div>
-
-            {selectedCategoryIds.length === 0 ? (
-              <p className="text-xs text-slate-400 mt-1.5">Select a category and click &quot;Add to List&quot; to include it. Add more than one to create a budget for each.</p>
-            ) : (
-              <div className="mt-3 border border-slate-200 rounded-lg overflow-hidden">
-                <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
-                  <p className="text-sm font-medium text-slate-700">Selected Categories ({selectedCategoryIds.length})</p>
-                </div>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-500">
-                      <th className="px-3 py-1.5 w-10">#</th>
-                      <th className="px-3 py-1.5">Category</th>
-                      <th className="px-3 py-1.5 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedCategoryIds.map((id, idx) => (
-                      <tr key={id} className="border-t border-slate-100">
-                        <td className="px-3 py-1.5 text-slate-500">{idx + 1}</td>
-                        <td className="px-3 py-1.5 text-slate-700">{categories.find((c) => c.id === id)?.name}</td>
-                        <td className="px-3 py-1.5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => removeCategoryFromList(id)}
-                            className="px-2 py-1 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50"
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {months.length > 0 && (
-            <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
+            <label className="block text-sm font-medium text-slate-700 mb-1">Category Budgets <span className="text-red-500">*</span></label>
+            <p className="text-xs text-slate-400 mb-2">Enter a budget amount for each category that needs one this financial year. Leave the rest blank.</p>
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
               <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                <p className="text-sm font-medium text-slate-700">Monthly Spread</p>
-                <p className={`text-xs font-medium ${Math.abs(monthsTotal - Number(form.totalAmount)) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatCurrency(monthsTotal, form.currencyCode)} of {formatCurrency(Number(form.totalAmount) || 0, form.currencyCode)}
-                </p>
+                <p className="text-sm font-medium text-slate-700">Categories ({categories.length})</p>
+                {categoryEntries.length > 0 && <p className="text-xs font-medium text-amber-700">{categoryEntries.length} with an amount entered</p>}
               </div>
-              <div className="p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-56 overflow-y-auto">
-                {months.map((m, idx) => (
-                  <div key={m.month}>
-                    <label className="block text-xs text-slate-500 mb-0.5">{dayjs(`${m.month}-01`).format('MMM YYYY')}</label>
-                    <input
-                      type="number" step="0.01"
-                      value={m.amount}
-                      onChange={(e) => setMonths((prev) => prev.map((x, i) => (i === idx ? { ...x, amount: Number(e.target.value) } : x)))}
-                      className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                    />
-                  </div>
-                ))}
-              </div>
+              {categories.length === 0 ? (
+                <p className="text-sm text-slate-400 px-3 py-6 text-center">No expense categories found</p>
+              ) : (
+                <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                  {categories.map((c) => (
+                    <div key={c.id} className="flex items-center gap-3 px-3 py-2">
+                      <label htmlFor={`category-amount-${c.id}`} className="flex-1 text-sm text-slate-700">{c.name}</label>
+                      <input
+                        id={`category-amount-${c.id}`}
+                        type="number" min="0" step="0.01"
+                        placeholder="0.00"
+                        value={categoryAmounts[c.id] ?? ''}
+                        onChange={(e) => setCategoryAmount(c.id, e.target.value)}
+                        className="w-36 px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-800 text-right focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+          </div>
 
           <div className="flex justify-end gap-2 mt-4">
             <button type="button" onClick={closeForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
             <button type="submit" disabled={save.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-              {save.isPending ? 'Saving...' : selectedCategoryIds.length > 1 ? `Save Budgets (${selectedCategoryIds.length})` : 'Save Budget'}
+              {save.isPending ? 'Saving...' : categoryEntries.length > 1 ? `Save Budgets (${categoryEntries.length})` : 'Save Budget'}
             </button>
           </div>
         </form>
