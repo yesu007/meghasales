@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
@@ -90,13 +90,29 @@ export default function ExpenseBudgetsPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(blankForm());
   const [categoryAmounts, setCategoryAmounts] = useState<Record<number, string>>({});
+  const [editingBudget, setEditingBudget] = useState<BudgetRow | null>(null);
 
   const { data, isLoading } = useQuery({ queryKey: ['expense-budgets', statusFilter, page, size], queryFn: () => fetchBudgets(statusFilter, page, size) });
   const { data: verticals = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticals });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
 
-  const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); };
+  const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); setEditingBudget(null); };
+
+  const openEdit = async (row: BudgetRow) => {
+    const res = await fetch(`/api/expense-budgets/${row.id}`);
+    if (!res.ok) { toast.error('Failed to load budget'); return; }
+    const detail = await res.json();
+    setEditingBudget(row);
+    setForm({
+      financialYearStart: dayjs(detail.financialYearStart).format('YYYY-MM-DD'),
+      financialYearEnd: dayjs(detail.financialYearEnd).format('YYYY-MM-DD'),
+      verticalId: detail.vertical?.id ? String(detail.vertical.id) : '',
+      currencyCode: detail.currencyCode,
+      notes: detail.notes || '',
+    });
+    setShowForm(true);
+  };
 
   const deleteBudget = async (id: number, categoryName: string) => {
     if (!window.confirm(`Delete the expense budget for "${categoryName}"? This cannot be undone.`)) return;
@@ -152,6 +168,28 @@ export default function ExpenseBudgetsPage() {
     },
   });
 
+  // Category, vertical and financial year identify the budget (and its
+  // amount goes through /revise for a tracked before/after), so editing
+  // only ever touches currency and notes.
+  const saveEdit = useMutation({
+    mutationFn: async () => {
+      if (!editingBudget) throw new Error('No budget selected');
+      const res = await fetch(`/api/expense-budgets/${editingBudget.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currencyCode: form.currencyCode, notes: form.notes }),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to update budget'); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expense-budgets'] });
+      toast.success('Expense budget updated');
+      closeForm();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const budgets = data?.content || [];
   const totalElements = data?.totalElements || 0;
   const totalPages = data?.totalPages || 0;
@@ -176,6 +214,7 @@ export default function ExpenseBudgetsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (editingBudget) { saveEdit.mutate(); return; }
             if (categoryEntries.length === 0 || !form.financialYearStart || !form.financialYearEnd) {
               toast.error('Financial year and a budget amount for at least one category are required');
               return;
@@ -184,19 +223,37 @@ export default function ExpenseBudgetsPage() {
           }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
         >
-          <h2 className="text-base font-semibold text-slate-800 mb-3">Create Expense Budget</h2>
+          <h2 className="text-base font-semibold text-slate-800 mb-3">{editingBudget ? `Edit Expense Budget — ${editingBudget.categoryName}` : 'Create Expense Budget'}</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year Start</label>
-              <input type="date" value={form.financialYearStart} onChange={(e) => setForm((f) => ({ ...f, financialYearStart: e.target.value }))} className={inputCls} />
+              <input
+                type="date" value={form.financialYearStart}
+                onChange={(e) => setForm((f) => ({ ...f, financialYearStart: e.target.value }))}
+                disabled={!!editingBudget}
+                title={editingBudget ? 'Financial year is fixed once a budget is created — delete and recreate it if this needs to change' : undefined}
+                className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year End</label>
-              <input type="date" value={form.financialYearEnd} onChange={(e) => setForm((f) => ({ ...f, financialYearEnd: e.target.value }))} className={inputCls} />
+              <input
+                type="date" value={form.financialYearEnd}
+                onChange={(e) => setForm((f) => ({ ...f, financialYearEnd: e.target.value }))}
+                disabled={!!editingBudget}
+                title={editingBudget ? 'Financial year is fixed once a budget is created — delete and recreate it if this needs to change' : undefined}
+                className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
-              <select value={form.verticalId} onChange={(e) => setForm((f) => ({ ...f, verticalId: e.target.value }))} className={inputCls}>
+              <select
+                value={form.verticalId}
+                onChange={(e) => setForm((f) => ({ ...f, verticalId: e.target.value }))}
+                disabled={!!editingBudget}
+                title={editingBudget ? 'Vertical is fixed once a budget is created — delete and recreate it if this needs to change' : undefined}
+                className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}
+              >
                 <option value="">Company-wide</option>
                 {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
@@ -214,40 +271,49 @@ export default function ExpenseBudgetsPage() {
             </div>
           </div>
 
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Category Budgets <span className="text-red-500">*</span></label>
-            <p className="text-xs text-slate-400 mb-2">Enter a budget amount for each category that needs one this financial year. Leave the rest blank.</p>
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                <p className="text-sm font-medium text-slate-700">Categories ({categories.length})</p>
-                {categoryEntries.length > 0 && <p className="text-xs font-medium text-amber-700">{categoryEntries.length} with an amount entered</p>}
-              </div>
-              {categories.length === 0 ? (
-                <p className="text-sm text-slate-400 px-3 py-6 text-center">No expense categories found</p>
-              ) : (
-                <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-                  {categories.map((c) => (
-                    <div key={c.id} className="flex items-center gap-3 px-3 py-2">
-                      <label htmlFor={`category-amount-${c.id}`} className="flex-1 text-sm text-slate-700">{c.name}</label>
-                      <input
-                        id={`category-amount-${c.id}`}
-                        type="number" min="0" step="0.01"
-                        placeholder="0.00"
-                        value={categoryAmounts[c.id] ?? ''}
-                        onChange={(e) => setCategoryAmount(c.id, e.target.value)}
-                        className="w-36 px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-800 text-right focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                      />
-                    </div>
-                  ))}
+          {editingBudget ? (
+            <p className="text-xs text-slate-400 mt-4">
+              Category is <span className="font-medium text-slate-600">{editingBudget.categoryName}</span> and amount is {formatCurrency(editingBudget.totalAmount, form.currencyCode)} —
+              neither can be changed here. Use <span className="font-medium text-slate-600">Revise</span> on the budget&apos;s detail page to change the amount.
+            </p>
+          ) : (
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Category Budgets <span className="text-red-500">*</span></label>
+              <p className="text-xs text-slate-400 mb-2">Enter a budget amount for each category that needs one this financial year. Leave the rest blank.</p>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                  <p className="text-sm font-medium text-slate-700">Categories ({categories.length})</p>
+                  {categoryEntries.length > 0 && <p className="text-xs font-medium text-amber-700">{categoryEntries.length} with an amount entered</p>}
                 </div>
-              )}
+                {categories.length === 0 ? (
+                  <p className="text-sm text-slate-400 px-3 py-6 text-center">No expense categories found</p>
+                ) : (
+                  <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                    {categories.map((c) => (
+                      <div key={c.id} className="flex items-center gap-3 px-3 py-2">
+                        <label htmlFor={`category-amount-${c.id}`} className="flex-1 text-sm text-slate-700">{c.name}</label>
+                        <input
+                          id={`category-amount-${c.id}`}
+                          type="number" min="0" step="0.01"
+                          placeholder="0.00"
+                          value={categoryAmounts[c.id] ?? ''}
+                          onChange={(e) => setCategoryAmount(c.id, e.target.value)}
+                          className="w-36 px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-800 text-right focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex justify-end gap-2 mt-4">
             <button type="button" onClick={closeForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-            <button type="submit" disabled={save.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-              {save.isPending ? 'Saving...' : categoryEntries.length > 1 ? `Save Budgets (${categoryEntries.length})` : 'Save Budget'}
+            <button type="submit" disabled={save.isPending || saveEdit.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+              {editingBudget
+                ? (saveEdit.isPending ? 'Saving...' : 'Save Changes')
+                : (save.isPending ? 'Saving...' : categoryEntries.length > 1 ? `Save Budgets (${categoryEntries.length})` : 'Save Budget')}
             </button>
           </div>
         </form>
@@ -298,14 +364,23 @@ export default function ExpenseBudgetsPage() {
                           <>
                             <span className="text-slate-300">|</span>
                             <button onClick={() => approveBudget(b.id)} className="text-xs font-medium text-green-700 hover:text-green-800">Approve</button>
-                            <button
-                              onClick={() => deleteBudget(b.id, b.categoryName)}
-                              className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
-                              title="Delete"
-                            >
-                              <TrashIcon className="h-4 w-4" />
-                            </button>
                           </>
+                        )}
+                        <button
+                          onClick={() => openEdit(b)}
+                          className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                          title="Edit"
+                        >
+                          <PencilIcon className="h-4 w-4" />
+                        </button>
+                        {b.status === 'DRAFT' && (
+                          <button
+                            onClick={() => deleteBudget(b.id, b.categoryName)}
+                            className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                            title="Delete"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
                         )}
                       </div>
                     </td>

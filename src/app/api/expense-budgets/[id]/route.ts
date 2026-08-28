@@ -54,6 +54,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       where: { id },
       data: {
         ...(body.notes !== undefined && { notes: body.notes || null }),
+        ...(body.currencyCode !== undefined && { currencyCode: body.currencyCode }),
         ...(body.status !== undefined && { status: body.status }),
         ...(approving && { approvedById: Number.isFinite(userId) ? userId : null, approvedAt: new Date() }),
       },
