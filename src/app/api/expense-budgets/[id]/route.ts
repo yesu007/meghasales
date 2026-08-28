@@ -67,3 +67,40 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({ message: error.message || 'Failed to update expense budget' }, { status: 400 });
   }
 }
+
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const denied = await requirePermission('manage_expense_budgets');
+  if (denied) return denied;
+  try {
+    const id = parseInt(params.id);
+
+    const existing = await prisma.expenseBudget.findUnique({
+      where: { id },
+      include: { category: { select: { name: true } }, vertical: { select: { name: true } } },
+    });
+    if (!existing) return NextResponse.json({ message: 'Expense budget not found' }, { status: 404 });
+
+    // Approved budgets are the official record other reports read from —
+    // revise them instead of deleting, same reasoning as invoices blocking
+    // delete once payments exist.
+    if (existing.status === 'APPROVED') {
+      return NextResponse.json({ message: 'Cannot delete an approved budget — revise it instead' }, { status: 400 });
+    }
+
+    await prisma.expenseBudget.delete({ where: { id } });
+
+    await logAudit({
+      action: 'DELETE',
+      entityType: 'EXPENSE_BUDGET',
+      entityId: id,
+      oldValue: existing,
+      description: `Expense budget deleted for ${existing.category.name} (${existing.vertical?.name || 'Company-wide'})`,
+      request,
+    });
+
+    return new NextResponse(null, { status: 204 });
+  } catch (error: any) {
+    console.error('DELETE /api/expense-budgets/[id] error:', error);
+    return NextResponse.json({ message: error.message || 'Failed to delete expense budget' }, { status: 400 });
+  }
+}

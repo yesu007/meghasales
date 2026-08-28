@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
@@ -97,6 +97,14 @@ export default function ExpenseBudgetsPage() {
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
 
   const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); };
+
+  const deleteBudget = async (id: number, categoryName: string) => {
+    if (!window.confirm(`Delete the expense budget for "${categoryName}"? This cannot be undone.`)) return;
+    const res = await fetch(`/api/expense-budgets/${id}`, { method: 'DELETE' });
+    if (!res.ok) { const err = await res.json().catch(() => ({})); toast.error(err.message || 'Failed to delete budget'); return; }
+    queryClient.invalidateQueries({ queryKey: ['expense-budgets'] });
+    toast.success('Expense budget deleted');
+  };
 
   const setCategoryAmount = (categoryId: number, value: string) =>
     setCategoryAmounts((prev) => ({ ...prev, [categoryId]: value }));
@@ -277,7 +285,18 @@ export default function ExpenseBudgetsPage() {
                     <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(b.totalAmount, b.currencyCode)}</td>
                     <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[b.status]}`}>{b.status}</span></td>
                     <td className="px-4 py-3 text-right">
-                      <Link href={`/dashboard/expense-budgets/${b.id}`} className="text-xs font-medium text-amber-700 hover:text-amber-800">View</Link>
+                      <div className="flex items-center justify-end gap-1">
+                        <Link href={`/dashboard/expense-budgets/${b.id}`} className="text-xs font-medium text-amber-700 hover:text-amber-800">View</Link>
+                        {b.status !== 'APPROVED' && (
+                          <button
+                            onClick={() => deleteBudget(b.id, b.categoryName)}
+                            className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                            title="Delete"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
