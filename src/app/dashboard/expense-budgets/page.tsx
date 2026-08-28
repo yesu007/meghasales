@@ -41,9 +41,11 @@ function getPageNumbers(current: number, total: number): (number | 'ellipsis')[]
   return [0, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total - 1];
 }
 
-async function fetchBudgets(status: string, page: number, size: number): Promise<BudgetListResponse> {
+async function fetchBudgets(status: string, verticalId: string, categoryId: string, page: number, size: number): Promise<BudgetListResponse> {
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (status) params.set('status', status);
+  if (verticalId) params.set('verticalId', verticalId);
+  if (categoryId) params.set('categoryId', categoryId);
   const res = await fetch(`/api/expense-budgets?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch expense budgets');
   return res.json();
@@ -86,6 +88,8 @@ const blankForm = () => {
 export default function ExpenseBudgetsPage() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('');
+  const [verticalFilter, setVerticalFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [showForm, setShowForm] = useState(false);
@@ -93,7 +97,10 @@ export default function ExpenseBudgetsPage() {
   const [categoryAmounts, setCategoryAmounts] = useState<Record<number, string>>({});
   const [editingBudget, setEditingBudget] = useState<BudgetRow | null>(null);
 
-  const { data, isLoading } = useQuery({ queryKey: ['expense-budgets', statusFilter, page, size], queryFn: () => fetchBudgets(statusFilter, page, size) });
+  const { data, isLoading } = useQuery({
+    queryKey: ['expense-budgets', statusFilter, verticalFilter, categoryFilter, page, size],
+    queryFn: () => fetchBudgets(statusFilter, verticalFilter, categoryFilter, page, size),
+  });
   const { data: verticals = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticals });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
@@ -333,16 +340,42 @@ export default function ExpenseBudgetsPage() {
       )}
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 flex gap-2">
-          {['', 'DRAFT', 'APPROVED'].map((s) => (
+        <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center gap-3">
+          <div className="flex gap-2">
+            {['', 'DRAFT', 'APPROVED'].map((s) => (
+              <button
+                key={s}
+                onClick={() => { setStatusFilter(s); setPage(0); }}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-50'}`}
+              >
+                {s || 'All'}
+              </button>
+            ))}
+          </div>
+          <select
+            value={verticalFilter}
+            onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }}
+            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
+          >
+            <option value="">All Verticals</option>
+            {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+          <select
+            value={categoryFilter}
+            onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }}
+            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
+          >
+            <option value="">All Categories</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          {(verticalFilter || categoryFilter) && (
             <button
-              key={s}
-              onClick={() => { setStatusFilter(s); setPage(0); }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-50'}`}
+              onClick={() => { setVerticalFilter(''); setCategoryFilter(''); setPage(0); }}
+              className="text-xs font-medium text-slate-500 hover:text-slate-700"
             >
-              {s || 'All'}
+              Clear filters
             </button>
-          ))}
+          )}
         </div>
 
         {isLoading ? (
