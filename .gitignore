@@ -43,3 +43,8 @@ next-env.d.ts
 *.png
 *.txt
 !README.txt
+
+# Database dumps — full data (PII, password hashes, financial records),
+# never belongs in git history
+*.sql
+dbdump.sql
