@@ -65,12 +65,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 }
 
-// Real delete — but only when nothing points at this vertical. Today that
-// means ExpenseBudget (the only FK that exists yet); once Lead/
-// Implementation/Employee get their own verticalId (see the module note
-// above Vertical), the same guard extends to them the same way. Blocking
-// with a clear count beats a silent ON DELETE SET NULL, which would leave
-// an existing budget quietly pointing at nothing.
+// Soft-delete (isActive = false), same convention as ExpenseCategory/
+// Expense elsewhere in this app — a vertical can already be referenced by
+// an ExpenseBudget (verticalId is ON DELETE SET NULL, not CASCADE, but a
+// hard delete would still silently blank out that budget's vertical).
+// Deactivating instead keeps every existing reference intact and readable,
+// and is fully reversible from the same screen (Edit -> Reactivate).
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   const denied = await requirePermission('manage_verticals');
   if (denied) return denied;
@@ -79,18 +79,10 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     const existing = await prisma.vertical.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Vertical not found' }, { status: 404 });
 
-    const budgetCount = await prisma.expenseBudget.count({ where: { verticalId: id } });
-    if (budgetCount > 0) {
-      return NextResponse.json(
-        { message: `"${existing.name}" is assigned to ${budgetCount} expense budget${budgetCount === 1 ? '' : 's'} and can't be deleted. Reassign or remove ${budgetCount === 1 ? 'it' : 'them'} first.` },
-        { status: 409 }
-      );
-    }
-
-    await prisma.vertical.delete({ where: { id } });
+    const vertical = await prisma.vertical.update({ where: { id }, data: { isActive: false } });
     await logAudit({ action: 'DELETE', entityType: 'VERTICAL', entityId: id, oldValue: existing, description: `Vertical "${existing.name}" deleted`, request });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json(vertical);
   } catch (error) {
     console.error('DELETE /api/verticals/[id] error:', error);
     return NextResponse.json({ message: 'Failed to delete vertical' }, { status: 400 });

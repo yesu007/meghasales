@@ -22,7 +22,7 @@ interface VerticalRow {
 const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
 
 async function fetchVerticals(): Promise<VerticalRow[]> {
-  const res = await fetch('/api/verticals');
+  const res = await fetch('/api/verticals?includeInactive=true');
   if (!res.ok) throw new Error('Failed to fetch verticals');
   return res.json();
 }
@@ -79,21 +79,18 @@ export default function VerticalsPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  // A vertical still assigned to an expense budget (or, in future, a
-  // client/project once those get their own verticalId) comes back as a
-  // 409 with an explanatory message — surfaced as-is via toast.error rather
-  // than a generic "failed to delete", since the whole point is telling the
-  // user exactly what it's assigned to.
-  const remove = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/verticals/${id}`, { method: 'DELETE' });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to delete vertical'); }
+  const toggleActive = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const res = isActive
+        ? await fetch(`/api/verticals/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: true }) })
+        : await fetch(`/api/verticals/${id}`, { method: 'DELETE' });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to update vertical'); }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['verticals-admin'] });
       queryClient.invalidateQueries({ queryKey: ['verticals'] });
-      toast.success('Vertical deleted');
+      toast.success(variables.isActive ? 'Vertical reactivated' : 'Vertical deleted');
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -165,6 +162,7 @@ export default function VerticalsPage() {
                   <th className="px-4 py-3 text-left font-semibold text-white">Vertical</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Head</th>
                   <th className="px-4 py-3 text-right font-semibold text-white">Budget</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -177,15 +175,26 @@ export default function VerticalsPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">{v.headName || '—'}</td>
                     <td className="px-4 py-3 text-right text-slate-700">{v.budget ? formatCurrency(v.budget, v.budgetCurrencyCode || 'INR') : '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${v.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {v.isActive ? 'Active' : 'Deleted'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-2">
                         <button onClick={() => openEdit(v)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
-                        <button
-                          onClick={() => { if (window.confirm(`Delete vertical "${v.name}"? This can't be undone.`)) remove.mutate(v.id); }}
-                          className="text-xs font-medium text-slate-500 hover:text-red-600"
-                        >
-                          Delete
-                        </button>
+                        {v.isActive ? (
+                          <button
+                            onClick={() => { if (window.confirm(`Delete vertical "${v.name}"?`)) toggleActive.mutate({ id: v.id, isActive: false }); }}
+                            className="text-xs font-medium text-slate-500 hover:text-red-600"
+                          >
+                            Delete
+                          </button>
+                        ) : (
+                          <button onClick={() => toggleActive.mutate({ id: v.id, isActive: true })} className="text-xs font-medium text-green-700 hover:text-green-800">
+                            Reactivate
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
