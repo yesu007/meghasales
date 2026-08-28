@@ -360,12 +360,15 @@ export default function ExpenseBudgetsPage() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Link href={`/dashboard/expense-budgets/${b.id}`} className="text-xs font-medium text-amber-700 hover:text-amber-800">View</Link>
-                        {b.status === 'DRAFT' && (
-                          <>
-                            <span className="text-slate-300">|</span>
-                            <button onClick={() => approveBudget(b.id)} className="text-xs font-medium text-green-700 hover:text-green-800">Approve</button>
-                          </>
-                        )}
+                        <span className="text-slate-300">|</span>
+                        <button
+                          onClick={() => approveBudget(b.id)}
+                          disabled={b.status !== 'DRAFT'}
+                          title={b.status !== 'DRAFT' ? 'Already approved' : undefined}
+                          className="text-xs font-medium text-green-700 hover:text-green-800 disabled:text-slate-300 disabled:cursor-not-allowed disabled:hover:text-slate-300"
+                        >
+                          Approve
+                        </button>
                         <button
                           onClick={() => openEdit(b)}
                           className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
