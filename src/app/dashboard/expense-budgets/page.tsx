@@ -114,9 +114,13 @@ export default function ExpenseBudgetsPage() {
     setShowForm(true);
   };
 
-  const deleteBudget = async (id: number, categoryName: string) => {
-    if (!window.confirm(`Delete the expense budget for "${categoryName}"? This cannot be undone.`)) return;
-    const res = await fetch(`/api/expense-budgets/${id}`, { method: 'DELETE' });
+  const deleteBudget = async (b: BudgetRow) => {
+    if (b.status === 'APPROVED') {
+      toast.error('Approved budgets cannot be deleted — use View to revise it instead');
+      return;
+    }
+    if (!window.confirm(`Delete the expense budget for "${b.categoryName}"? This cannot be undone.`)) return;
+    const res = await fetch(`/api/expense-budgets/${b.id}`, { method: 'DELETE' });
     if (!res.ok) { const err = await res.json().catch(() => ({})); toast.error(err.message || 'Failed to delete budget'); return; }
     queryClient.invalidateQueries({ queryKey: ['expense-budgets'] });
     toast.success('Expense budget deleted');
@@ -376,15 +380,13 @@ export default function ExpenseBudgetsPage() {
                         >
                           <PencilIcon className="h-4 w-4" />
                         </button>
-                        {b.status === 'DRAFT' && (
-                          <button
-                            onClick={() => deleteBudget(b.id, b.categoryName)}
-                            className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
-                            title="Delete"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => deleteBudget(b)}
+                          title={b.status === 'APPROVED' ? 'Approved budgets cannot be deleted' : 'Delete'}
+                          className={`p-1.5 rounded ${b.status === 'APPROVED' ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
