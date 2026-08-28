@@ -1365,6 +1365,9 @@ model Vertical {
   headId             Int?     @map("head_id")
   budget             Decimal? @map("budget") @db.Decimal(15, 2)
   budgetCurrencyCode String?  @default("INR") @map("budget_currency_code")
+  // Filters pickers (findMany defaults to isActive: true); no longer what
+  // DELETE flips — an unreferenced vertical is now actually deleted, so
+  // this stays true unless something sets it directly via PATCH.
   isActive           Boolean  @default(true) @map("is_active")
   sortOrder          Int      @default(0) @map("sort_order")
   createdAt          DateTime @default(now()) @map("created_at")
