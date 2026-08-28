@@ -21,6 +21,7 @@ import {
   WalletIcon,
   CalendarDaysIcon,
   ReceiptPercentIcon,
+  ChartPieIcon,
   ChevronDownIcon,
   Bars3Icon,
   XMarkIcon,
@@ -100,6 +101,7 @@ function getNavItems(): NavSection[] {
           ],
         },
         { href: '/dashboard/expenses', label: 'Expenses', icon: ReceiptPercentIcon, permission: 'view_expenses' },
+        { href: '/dashboard/expense-budgets', label: 'Expense Budgets', icon: ChartPieIcon, permission: 'view_expense_budgets' },
         // Employees/Salary Structures/Runs expose everyone's salary data,
         // not just the viewer's own, so this needs view_payroll on top of
         // the module being enabled at all.

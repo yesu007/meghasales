@@ -3,6 +3,7 @@ import { registerTools } from './registry';
 import { readLeadStatus } from './tools/readLeadStatus';
 import { readDashboardStats } from './tools/readDashboardStats';
 import { readPendingInvoices } from './tools/readPendingInvoices';
+import { readExpenseBudgetVariance } from './tools/readExpenseBudgetVariance';
 
 // Fetched from `curl https://ai-gateway.vercel.sh/v1/models` at Phase 0 time
 // rather than assumed from memory — model slugs change.
@@ -14,6 +15,7 @@ const tools = registerTools({
   readLeadStatus,
   readDashboardStats,
   readPendingInvoices,
+  readExpenseBudgetVariance,
 });
 
 export const assistantAgent = new ToolLoopAgent({

@@ -98,14 +98,17 @@ model User {
   assignedDiscussions      EventDiscussion[]      @relation("EventDiscussionAssignedTo")
 
   // Accounting
-  managedInvoices      Invoice[]         @relation("InvoiceAccountManager")
-  createdInvoices      Invoice[]         @relation("InvoiceCreatedBy")
-  updatedInvoices      Invoice[]         @relation("InvoiceUpdatedBy")
-  recordedPayments     Payment[]         @relation("PaymentRecordedBy")
-  reminderFollowUps    PaymentReminder[] @relation("ReminderFollowedUpBy")
-  issuedCreditNotes    CreditNote[]      @relation("CreditNoteIssuedBy")
-  createdExchangeRates ExchangeRate[]    @relation("ExchangeRateCreatedBy")
-  recordedExpenses     Expense[]         @relation("ExpenseRecordedBy")
+  managedInvoices        Invoice[]               @relation("InvoiceAccountManager")
+  createdInvoices        Invoice[]               @relation("InvoiceCreatedBy")
+  updatedInvoices        Invoice[]               @relation("InvoiceUpdatedBy")
+  recordedPayments       Payment[]               @relation("PaymentRecordedBy")
+  reminderFollowUps      PaymentReminder[]       @relation("ReminderFollowedUpBy")
+  issuedCreditNotes      CreditNote[]            @relation("CreditNoteIssuedBy")
+  createdExchangeRates   ExchangeRate[]          @relation("ExchangeRateCreatedBy")
+  recordedExpenses       Expense[]               @relation("ExpenseRecordedBy")
+  approvedExpenseBudgets ExpenseBudget[]         @relation("ExpenseBudgetApprovedBy")
+  createdExpenseBudgets  ExpenseBudget[]         @relation("ExpenseBudgetCreatedBy")
+  revisedExpenseBudgets  ExpenseBudgetRevision[] @relation("ExpenseBudgetRevisedBy")
 
   @@map("users")
 }
@@ -1302,6 +1305,7 @@ model ExpenseCategory {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   expenses Expense[]
+  budgets  ExpenseBudget[]
 
   @@map("expense_categories")
 }
@@ -1337,6 +1341,94 @@ model Expense {
   @@index([categoryId])
   @@index([expenseDate])
   @@map("expenses")
+}
+
+// ============================================================
+// VERTICALS & EXPENSE BUDGET (BRD §6, §10 — vertical-wise budgeting)
+//
+// Vertical is intentionally minimal here: just enough of a master to give
+// ExpenseBudget a real dimension to group by. Wiring verticalId onto Lead/
+// Implementation/Employee (and backfilling their existing free-text
+// businessVerticals values) is separate follow-on work, not required for
+// budgets to be useful on their own.
+// ============================================================
+
+model Vertical {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  code      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  budgets ExpenseBudget[]
+
+  @@map("verticals")
+}
+
+model ExpenseBudget {
+  id                 Int       @id @default(autoincrement())
+  financialYearStart DateTime  @map("financial_year_start")
+  financialYearEnd   DateTime  @map("financial_year_end")
+  verticalId         Int?      @map("vertical_id") // null = company-wide
+  categoryId         Int       @map("category_id")
+  totalAmount        Decimal   @map("total_amount") @db.Decimal(15, 2)
+  currencyCode       String    @default("INR") @map("currency_code")
+  status             String    @default("DRAFT") // DRAFT | APPROVED
+  notes              String?
+  approvedById       Int?      @map("approved_by")
+  approvedAt         DateTime? @map("approved_at")
+  createdById        Int?      @map("created_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  vertical   Vertical?               @relation(fields: [verticalId], references: [id])
+  category   ExpenseCategory         @relation(fields: [categoryId], references: [id])
+  approvedBy User?                   @relation("ExpenseBudgetApprovedBy", fields: [approvedById], references: [id])
+  createdBy  User?                   @relation("ExpenseBudgetCreatedBy", fields: [createdById], references: [id])
+  months     ExpenseBudgetMonth[]
+  revisions  ExpenseBudgetRevision[]
+
+  // One budget per financial-year/vertical/category combination — a second
+  // budget for the same slice should be a revision of this one, not a
+  // sibling row competing with it in variance reports.
+  @@unique([financialYearStart, verticalId, categoryId])
+  @@index([verticalId])
+  @@index([categoryId])
+  @@index([status])
+  @@map("expense_budgets")
+}
+
+// The monthly spread that makes "month-wise Budget vs Actual" (BRD §6, §9)
+// possible — a budget's totalAmount is the sum of its months, enforced in
+// application code at write time (see /api/expense-budgets) rather than a
+// DB constraint, matching this codebase's existing convention of validating
+// cross-row invariants in the route handler.
+model ExpenseBudgetMonth {
+  id       Int      @id @default(autoincrement())
+  budgetId Int      @map("budget_id")
+  month    DateTime // first day of the month, e.g. 2026-08-01
+  amount   Decimal  @db.Decimal(15, 2)
+
+  budget ExpenseBudget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@unique([budgetId, month])
+  @@map("expense_budget_months")
+}
+
+model ExpenseBudgetRevision {
+  id             Int      @id @default(autoincrement())
+  budgetId       Int      @map("budget_id")
+  previousAmount Decimal  @map("previous_amount") @db.Decimal(15, 2)
+  newAmount      Decimal  @map("new_amount") @db.Decimal(15, 2)
+  reason         String?
+  revisedById    Int?     @map("revised_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  budget    ExpenseBudget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  revisedBy User?         @relation("ExpenseBudgetRevisedBy", fields: [revisedById], references: [id])
+
+  @@map("expense_budget_revisions")
 }
 
 // ============================================================
