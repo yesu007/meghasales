@@ -109,6 +109,7 @@ model User {
   approvedExpenseBudgets ExpenseBudget[]         @relation("ExpenseBudgetApprovedBy")
   createdExpenseBudgets  ExpenseBudget[]         @relation("ExpenseBudgetCreatedBy")
   revisedExpenseBudgets  ExpenseBudgetRevision[] @relation("ExpenseBudgetRevisedBy")
+  headOfVerticals        Vertical[]              @relation("VerticalHead")
 
   @@map("users")
 }
@@ -1346,21 +1347,30 @@ model Expense {
 // ============================================================
 // VERTICALS & EXPENSE BUDGET (BRD §6, §10 — vertical-wise budgeting)
 //
-// Vertical is intentionally minimal here: just enough of a master to give
-// ExpenseBudget a real dimension to group by. Wiring verticalId onto Lead/
-// Implementation/Employee (and backfilling their existing free-text
-// businessVerticals values) is separate follow-on work, not required for
-// budgets to be useful on their own.
+// Vertical carries just what its own admin screen needs (name, head,
+// headline budget) plus the code every other module keys off. Wiring
+// verticalId onto Lead/Implementation/Employee (and backfilling their
+// existing free-text businessVerticals values) is separate follow-on work,
+// not required for this screen or for ExpenseBudget to be useful on
+// their own. `budget` here is a simple headline figure the vertical's own
+// admin screen edits directly — a separate, simpler thing from the
+// category-by-month ExpenseBudget rows below, which stay the source of
+// truth for actual Budget vs Actual variance reporting.
 // ============================================================
 
 model Vertical {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  code      String   @unique
-  isActive  Boolean  @default(true) @map("is_active")
-  sortOrder Int      @default(0) @map("sort_order")
-  createdAt DateTime @default(now()) @map("created_at")
+  id                 Int      @id @default(autoincrement())
+  name               String   @unique
+  code               String   @unique
+  headId             Int?     @map("head_id")
+  budget             Decimal? @map("budget") @db.Decimal(15, 2)
+  budgetCurrencyCode String?  @default("INR") @map("budget_currency_code")
+  isActive           Boolean  @default(true) @map("is_active")
+  sortOrder          Int      @default(0) @map("sort_order")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
+  head    User?           @relation("VerticalHead", fields: [headId], references: [id])
   budgets ExpenseBudget[]
 
   @@map("verticals")

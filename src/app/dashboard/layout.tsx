@@ -22,6 +22,7 @@ import {
   CalendarDaysIcon,
   ReceiptPercentIcon,
   ChartPieIcon,
+  BuildingOffice2Icon,
   ChevronDownIcon,
   Bars3Icon,
   XMarkIcon,
@@ -64,7 +65,10 @@ function getNavItems(): NavSection[] {
   return [
     {
       title: null,
-      items: [{ href: '/dashboard', label: 'Dashboard', icon: HomeIcon }],
+      items: [
+        { href: '/dashboard/verticals', label: 'Verticals', icon: BuildingOffice2Icon, permission: 'view_verticals' },
+        { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
+      ],
     },
     {
       title: 'Sales',
