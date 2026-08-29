@@ -9,7 +9,7 @@ import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { defaultMonthlySpread } from '@/lib/expenseBudgetVariance';
 
-interface Vertical { id: number; name: string }
+interface Vertical { id: number; name: string; headName?: string | null }
 interface ExpenseCategory { id: number; name: string }
 interface CurrencyOption { currencyCode: string }
 interface BudgetRow {
@@ -213,14 +213,17 @@ export default function ExpenseBudgetsPage() {
   // its own collapsible section (mirrors the reference layout's expandable
   // transaction-type panels).
   const groups = useMemo(() => {
-    const map = new Map<string, { key: string; label: string; verticalId: number | null; rows: BudgetRow[] }>();
+    const map = new Map<string, { key: string; label: string; verticalId: number | null; headName: string | null; rows: BudgetRow[] }>();
     for (const b of budgets) {
       const key = b.verticalId != null ? String(b.verticalId) : 'company-wide';
-      if (!map.has(key)) map.set(key, { key, label: b.verticalName || 'Company-wide', verticalId: b.verticalId, rows: [] });
+      if (!map.has(key)) {
+        const headName = b.verticalId != null ? (verticals.find((v) => v.id === b.verticalId)?.headName ?? null) : null;
+        map.set(key, { key, label: b.verticalName || 'Company-wide', verticalId: b.verticalId, headName, rows: [] });
+      }
       map.get(key)!.rows.push(b);
     }
     return Array.from(map.values());
-  }, [budgets]);
+  }, [budgets, verticals]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleGroup = (key: string) => setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -420,9 +423,14 @@ export default function ExpenseBudgetsPage() {
                       onClick={() => toggleGroup(group.key)}
                       className="flex items-center gap-2 flex-1 text-left"
                     >
-                      <ChevronRightIcon className={`h-4 w-4 text-slate-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-                      <span className="font-semibold text-slate-800">{group.label}</span>
-                      <span className="text-xs text-slate-400">({group.rows.length})</span>
+                      <ChevronRightIcon className={`h-4 w-4 text-slate-400 transition-transform shrink-0 ${isOpen ? 'rotate-90' : ''}`} />
+                      <span className="flex flex-col">
+                        <span className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-800">{group.label}</span>
+                          <span className="text-xs text-slate-400">({group.rows.length})</span>
+                        </span>
+                        {group.headName && <span className="text-xs text-slate-400">Head: {group.headName}</span>}
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -434,56 +442,45 @@ export default function ExpenseBudgetsPage() {
                   </div>
 
                   {isOpen && (
-                    <div className="overflow-x-auto border-t border-slate-200">
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-900">
-                          <tr>
-                            <th className="px-4 py-3 text-left font-semibold text-white">Financial Year</th>
-                            <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
-                            <th className="px-4 py-3 text-right font-semibold text-white">Total Budget</th>
-                            <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
-                            <th className="px-4 py-3"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.rows.map((b, idx) => (
-                            <tr key={b.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                              <td className="px-4 py-3 text-slate-700">{dayjs(b.financialYearStart).format('DD MMM YYYY')} – {dayjs(b.financialYearEnd).format('DD MMM YYYY')}</td>
-                              <td className="px-4 py-3 text-slate-600">{b.categoryName}</td>
-                              <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(b.totalAmount, b.currencyCode)}</td>
-                              <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[b.status]}`}>{b.status}</span></td>
-                              <td className="px-4 py-3 text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  <Link href={`/dashboard/expense-budgets/${b.id}`} className="text-xs font-medium text-amber-700 hover:text-amber-800">View</Link>
-                                  <span className="text-slate-300">|</span>
-                                  <button
-                                    onClick={() => approveBudget(b.id)}
-                                    disabled={b.status !== 'DRAFT'}
-                                    title={b.status !== 'DRAFT' ? 'Already approved' : undefined}
-                                    className="text-xs font-medium text-green-700 hover:text-green-800 disabled:text-slate-300 disabled:cursor-not-allowed disabled:hover:text-slate-300"
-                                  >
-                                    Approve
-                                  </button>
-                                  <button
-                                    onClick={() => openEdit(b)}
-                                    className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
-                                    title="Edit"
-                                  >
-                                    <PencilIcon className="h-4 w-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => deleteBudget(b)}
-                                    title={b.status === 'APPROVED' ? 'Approved budgets cannot be deleted' : 'Delete'}
-                                    className={`p-1.5 rounded ${b.status === 'APPROVED' ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
-                                  >
-                                    <TrashIcon className="h-4 w-4" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="divide-y divide-slate-100 border-t border-slate-200">
+                      {group.rows.map((b) => (
+                        <div key={b.id} className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-amber-50/60 transition-colors">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-800">{b.categoryName}</p>
+                            <p className="text-xs text-slate-400">{dayjs(b.financialYearStart).format('DD MMM YYYY')} – {dayjs(b.financialYearEnd).format('DD MMM YYYY')}</p>
+                          </div>
+                          <div className="flex items-center gap-4 shrink-0">
+                            <span className="text-sm font-semibold text-slate-800">{formatCurrency(b.totalAmount, b.currencyCode)}</span>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[b.status]}`}>{b.status}</span>
+                            <div className="flex items-center gap-2">
+                              <Link href={`/dashboard/expense-budgets/${b.id}`} className="text-xs font-medium text-amber-700 hover:text-amber-800">View</Link>
+                              <span className="text-slate-300">|</span>
+                              <button
+                                onClick={() => approveBudget(b.id)}
+                                disabled={b.status !== 'DRAFT'}
+                                title={b.status !== 'DRAFT' ? 'Already approved' : undefined}
+                                className="text-xs font-medium text-green-700 hover:text-green-800 disabled:text-slate-300 disabled:cursor-not-allowed disabled:hover:text-slate-300"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => openEdit(b)}
+                                className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                                title="Edit"
+                              >
+                                <PencilIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => deleteBudget(b)}
+                                title={b.status === 'APPROVED' ? 'Approved budgets cannot be deleted' : 'Delete'}
+                                className={`p-1.5 rounded ${b.status === 'APPROVED' ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
+                              >
+                                <TrashIcon className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
