@@ -16,6 +16,7 @@ import {
   DocumentPlusIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { generateInvoicePDF } from '@/lib/generateInvoicePDF';
 import { formatCurrency } from '@/lib/currency';
@@ -389,7 +390,59 @@ export default function QuotationsPage() {
     });
   };
 
+  // Resource-based (Quotation Calculator) quotations carry their line items
+  // in pricingSnapshot.resources rather than softwareModules — mirrors the
+  // same branch added to lineItemsFromQuotation (src/lib/invoiceFromQuotation.ts)
+  // for invoice generation, kept separate since this one runs client-side.
+  const downloadResourceBasedQuotationPDF = (q: any) => {
+    const snapshot = q.pricingSnapshot as any;
+    const resources = Array.isArray(snapshot?.resources) ? snapshot.resources : [];
+    const symbol = symbolForCurrency(q.currencyCode || 'INR');
+
+    const modules = resources.map((r: any) => ({
+      name: r.role || 'Resource',
+      description: '',
+      quantity: Number(r.qty) || 0,
+      unitPrice: (Number(r.durationDays) || 0) * (Number(r.dayRate) || 0),
+      total: (Number(r.qty) || 0) * (Number(r.durationDays) || 0) * (Number(r.dayRate) || 0),
+    }));
+    const extra: { label: string; cost: number }[] = [
+      { label: 'Outsourcing', cost: Number(q.outsourcingCost) || 0 },
+      { label: 'Travel / Other', cost: Number(q.travelCost) || 0 },
+      { label: 'Admin / Overhead', cost: Number(q.adminCost) || 0 },
+      { label: 'Markup', cost: Number(q.markupAmount) || 0 },
+    ];
+    for (const e of extra) {
+      if (e.cost > 0) modules.push({ name: e.label, description: '', quantity: 1, unitPrice: e.cost, total: e.cost });
+    }
+    const subtotal = modules.reduce((sum: number, m: any) => sum + m.total, 0);
+
+    generateInvoicePDF({
+      quotationNumber: q.quotationNumber,
+      date: dayjs(q.createdAt).format('DD MMM, YYYY'),
+      clientName: q.contactPerson || '',
+      companyName: q.companyName || '',
+      clientEmail: '',
+      clientPhone: '',
+      modules,
+      implementationCost: 0,
+      trainingCost: 0,
+      annualMaintenanceCost: 0,
+      subtotal,
+      discountPercentage: 0,
+      discountAmount: 0,
+      taxInclusive: false,
+      taxBreakdown: [],
+      grandTotal: Number(q.totalAmount),
+      currencySymbol: symbol,
+      currencyCode: q.currencyCode || 'INR',
+      fileName: `${q.quotationNumber}_${q.companyName}.pdf`,
+    });
+  };
+
   const downloadQuotationPDF = (q: any) => {
+    if (q.costingMode === 'RESOURCE_BASED') { downloadResourceBasedQuotationPDF(q); return; }
+
     const snapshot = q.pricingSnapshot as any;
     const modulesList = Array.isArray(q.softwareModules) ? q.softwareModules : [];
     const symbol = snapshot?.currencySymbol || '₹';
@@ -431,7 +484,10 @@ export default function QuotationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-bold text-slate-800">Quotations</h1><p className="text-slate-500 mt-1">Manage quotations</p></div>
-        <button onClick={() => { resetCreateState(); setView('create'); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"><PlusIcon className="h-4 w-4" /> New Quotation</button>
+        <div className="flex items-center gap-2">
+          <Link href="/dashboard/quotations/calculator" className="flex items-center gap-2 px-4 py-2 border border-amber-600 text-amber-700 rounded-lg text-sm font-medium hover:bg-amber-50"><CalculatorIcon className="h-4 w-4" /> New (Resource Calculator)</Link>
+          <button onClick={() => { resetCreateState(); setView('create'); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"><PlusIcon className="h-4 w-4" /> New Quotation</button>
+        </div>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         {quotations.length === 0 ? (
@@ -449,13 +505,23 @@ export default function QuotationsPage() {
             </tr></thead>
             <tbody>
               {quotations.map((q: any, idx: number) => {
+                const isResourceBased = q.costingMode === 'RESOURCE_BASED';
                 const modulesList = Array.isArray(q.softwareModules) ? q.softwareModules : [];
                 const moduleNames = modulesList.map((m: any) => typeof m === 'string' ? m : m.name || m.moduleCode || '');
                 return (
                 <tr key={q.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                  <td className="px-4 py-3 font-medium text-slate-800">{q.quotationNumber}</td>
+                  <td className="px-4 py-3 font-medium text-slate-800">
+                    {q.quotationNumber}
+                    {isResourceBased && <span className="block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-teal-100 text-teal-700 w-fit">Calculator</span>}
+                  </td>
                   <td className="px-4 py-3"><p className="font-medium text-slate-800">{q.contactPerson}</p><p className="text-xs text-slate-500">{q.companyName}</p></td>
-                  <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{moduleNames.slice(0, 3).map((m: string, i: number) => <span key={i} className={`px-2 py-0.5 rounded text-xs font-medium ${MODULE_COLORS[m] || 'bg-orange-100 text-orange-700'}`}>{m.charAt(0).toUpperCase() + m.slice(1).toLowerCase()}</span>)}{moduleNames.length > 3 && <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">+{moduleNames.length - 3}</span>}</div></td>
+                  <td className="px-4 py-3">
+                    {isResourceBased ? (
+                      <span className="text-xs text-slate-500">{q.projectName || 'Resource-based'}</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">{moduleNames.slice(0, 3).map((m: string, i: number) => <span key={i} className={`px-2 py-0.5 rounded text-xs font-medium ${MODULE_COLORS[m] || 'bg-orange-100 text-orange-700'}`}>{m.charAt(0).toUpperCase() + m.slice(1).toLowerCase()}</span>)}{moduleNames.length > 3 && <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">+{moduleNames.length - 3}</span>}</div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmt(Number(q.totalAmount || 0), symbolForCurrency(q.currencyCode || 'INR'), q.currencyCode || 'INR')}</td>
                   <td className="px-4 py-3">
                     <select
@@ -473,7 +539,11 @@ export default function QuotationsPage() {
                       {q.status === 'APPROVED' && (
                         <button onClick={() => generateInvoice(q)} className="p-1.5 rounded text-slate-400 hover:text-green-600 hover:bg-green-50" title="Generate Invoice"><DocumentPlusIcon className="h-4 w-4" /></button>
                       )}
-                      <button onClick={() => openEdit(q.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>
+                      {isResourceBased ? (
+                        <Link href={`/dashboard/quotations/calculator/${q.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></Link>
+                      ) : (
+                        <button onClick={() => openEdit(q.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>
+                      )}
                       <button onClick={() => deleteQuotation(q.id, q.quotationNumber)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>
                     </div>
                   </td>

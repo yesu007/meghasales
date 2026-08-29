@@ -470,7 +470,7 @@ export default function ExpenseBudgetsPage() {
               <table className="w-full border-collapse text-sm table-fixed">
                 <colgroup>
                   <col className="w-44" />
-                  {columns.map((col) => <col key={col.verticalId ?? 'company-wide'} className="w-36" />)}
+                  {columns.map((col) => <col key={col.verticalId ?? 'company-wide'} className="w-48" />)}
                   <col className="w-36" />
                 </colgroup>
                 <thead>
@@ -510,23 +510,12 @@ export default function ExpenseBudgetsPage() {
                           return (
                             <td key={col.verticalId ?? 'company-wide'} className="py-1.5 px-3 text-right">
                               <div className="group flex items-center justify-end gap-1">
-                                <span
-                                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${budget ? (budget.status === 'APPROVED' ? 'bg-green-500' : 'bg-slate-300') : 'bg-transparent'}`}
-                                  title={budget?.status}
-                                />
-                                <span className="text-slate-400 text-xs">₹</span>
-                                <input
-                                  value={displayValue}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onFocus={() => setEditingCell({ key, value: budget ? String(budget.totalAmount) : '' })}
-                                  onChange={(e) => setEditingCell({ key, value: e.target.value.replace(/[^0-9.]/g, '') })}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                                  onBlur={() => commitCell(cat, col.verticalId)}
-                                  className="w-[84px] text-right bg-transparent outline-none rounded px-1.5 py-1 focus:bg-white focus:ring-1 focus:ring-amber-500 text-slate-800"
-                                />
-                                {/* Always rendered (never conditionally omitted) so its reserved
-                                    width doesn't shift the input/₹ left only on rows that have a
-                                    budget — that mismatch was the cause of the ragged alignment. */}
+                                {/* Reserved-width slots placed BEFORE the number, never after —
+                                    an element after the input sits between it and the cell's
+                                    true right edge, offsetting it from the header/Column Total
+                                    (which right-align straight to that edge, nothing reserved).
+                                    Their presence/visibility can only change how far left the
+                                    row starts, never the number's right edge. */}
                                 <div className={`flex items-center gap-1 shrink-0 transition-opacity ${budget ? 'opacity-0 group-hover:opacity-100' : 'invisible'}`}>
                                   <button
                                     type="button"
@@ -547,6 +536,22 @@ export default function ExpenseBudgetsPage() {
                                     <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
                                   </Link>
                                 </div>
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${budget ? (budget.status === 'APPROVED' ? 'bg-green-500' : 'bg-slate-300') : 'bg-transparent'}`}
+                                  title={budget?.status}
+                                />
+                                {/* Fixed-width slot for the currency symbol — same reasoning,
+                                    it never shifts the number's right edge either. */}
+                                <span className="w-3 shrink-0 text-center text-slate-400 text-xs">₹</span>
+                                <input
+                                  value={displayValue}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onFocus={() => setEditingCell({ key, value: budget ? String(budget.totalAmount) : '' })}
+                                  onChange={(e) => setEditingCell({ key, value: e.target.value.replace(/[^0-9.]/g, '') })}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                                  onBlur={() => commitCell(cat, col.verticalId)}
+                                  className="w-[84px] shrink-0 text-right bg-transparent outline-none rounded px-1.5 py-1 focus:bg-white focus:ring-1 focus:ring-amber-500 text-slate-800"
+                                />
                               </div>
                             </td>
                           );
