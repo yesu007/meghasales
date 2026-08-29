@@ -33,16 +33,16 @@ RUN apk add --no-cache openssl
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs
 
-# Standalone server + only the deps it actually needs
+# Standalone server + full node_modules (from `deps`, not the standalone
+# trace-pruned subset). This is slightly bigger than the minimal trace,
+# but guarantees the Prisma CLI has every engine/wasm file it needs at
+# container start - cherry-picking individual prisma paths here kept
+# missing files Prisma only discovers it needs at runtime.
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-# Needed at container start for `prisma migrate deploy` (see entrypoint.sh)
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh && chown nextjs:nodejs ./entrypoint.sh
