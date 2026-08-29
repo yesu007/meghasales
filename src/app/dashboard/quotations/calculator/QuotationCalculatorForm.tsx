@@ -461,29 +461,42 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Travel / other</span><span className="font-mono font-medium text-slate-700">{fmt(Number(travelCost) || 0)}</span></div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Admin / overhead</span><span className="font-mono font-medium text-slate-700">{fmt(costing.adminCost)}{adminMode === 'PCT' && ` (${adminValue}%)`}</span></div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100 font-semibold"><span className="text-slate-800">Base project cost</span><span className="font-mono text-slate-800">{fmt(costing.baseCost)}</span></div>
-              <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Markup</span><span className="font-mono font-medium text-slate-700">{fmt(costing.markupAmount)}{markupMode === 'PCT' && ` (${markupValue}%)`}</span></div>
-              <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Discount</span><span className={`font-mono font-medium ${costing.discountAmount > 0 ? 'text-red-600' : 'text-slate-700'}`}>{costing.discountAmount > 0 ? '-' : ''}{fmt(costing.discountAmount)}{discountMode === 'PCT' && ` (${discountValue}%)`}</span></div>
-              <div className="flex justify-between py-1"><span className="text-slate-500">Tax</span><span className="font-mono font-medium text-slate-700">{fmt(costing.taxAmount)} ({taxPercentage}%)</span></div>
+              <div className="flex items-center justify-between py-1 border-b border-dashed border-slate-100">
+                <span className="text-slate-500">Markup</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-medium text-slate-700">{fmt(costing.markupAmount)}</span>
+                  <input type="number" min="0" value={markupValue} onChange={(e) => setMarkupValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
+                  <select value={markupMode} onChange={(e) => setMarkupMode(e.target.value as CostMode)} className="px-1 py-0.5 border border-slate-300 rounded text-xs text-slate-700">
+                    <option value="PCT">%</option>
+                    <option value="FIXED">₹</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-dashed border-slate-100">
+                <span className="text-slate-500">Discount</span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`font-mono font-medium ${costing.discountAmount > 0 ? 'text-red-600' : 'text-slate-700'}`}>{costing.discountAmount > 0 ? '-' : ''}{fmt(costing.discountAmount)}</span>
+                  <input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
+                  <select value={discountMode} onChange={(e) => setDiscountMode(e.target.value as CostMode)} className="px-1 py-0.5 border border-slate-300 rounded text-xs text-slate-700">
+                    <option value="PCT">%</option>
+                    <option value="FIXED">₹</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-slate-500">Tax</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-medium text-slate-700">{fmt(costing.taxAmount)}</span>
+                  <input type="number" min="0" value={taxPercentage} onChange={(e) => setTaxPercentage(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
+                  <span className="text-xs text-slate-400">%</span>
+                </div>
+              </div>
             </div>
 
             <div className="text-center my-4">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Quoted Amount</p>
               <p className="text-3xl font-bold text-slate-800 mt-0.5">{fmt(costing.totalAmount)}</p>
               {costing.totalAmountOverridden && <p className="text-xs text-amber-600 mt-1">Overridden — system value was {fmt(costing.calculatedTotalAmount)}</p>}
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <label className="text-xs font-medium text-slate-600">Discount</label>
-                <div className="flex items-center gap-1.5">
-                  <select value={discountMode} onChange={(e) => setDiscountMode(e.target.value as CostMode)} className="px-1.5 py-1.5 border border-slate-300 rounded text-xs text-slate-700">
-                    <option value="PCT">%</option>
-                    <option value="FIXED">₹</option>
-                  </select>
-                  <input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className="w-24 px-2 py-1.5 border border-slate-300 rounded text-sm text-right text-slate-800" />
-                </div>
-              </div>
-              <p className="text-xs text-slate-400">{costing.discountAmount > 0 ? `${fmt(costing.discountAmount)} off, applied before tax` : 'Applied to the subtotal (cost + markup) before tax.'}</p>
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4">
