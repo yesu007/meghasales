@@ -34,29 +34,6 @@ services:
 
   # Nightly pg_dump into ./backups on the host, kept 14 days. Point this at
   # off-box storage (S3, etc.) too if you want real disaster recovery.
-  backup:
-    image: postgres:16-alpine
-    restart: always
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      PGHOST: postgres
-    volumes:
-      - ./backups:/backups
-    entrypoint: >
-      sh -c "
-        while true; do
-          FILE=/backups/$$(date +%Y-%m-%d_%H%M%S).sql.gz;
-          echo \"[backup] dumping to $$FILE\";
-          pg_dump -h $$PGHOST -U $$POSTGRES_USER -d $$POSTGRES_DB | gzip > $$FILE;
-          find /backups -name '*.sql.gz' -mtime +14 -delete;
-          sleep 86400;
-        done
-      "
 
 volumes:
   pgdata:
