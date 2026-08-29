@@ -33,6 +33,8 @@ function buildResourceBasedCosting(body: any) {
   const travelCost = Number(body.travelCost) || 0;
   const markupMode: CostMode = body.markupMode === 'FIXED' ? 'FIXED' : 'PCT';
   const markupValue = Number(body.markupValue) || 0;
+  const discountMode: CostMode = body.discountMode === 'FIXED' ? 'FIXED' : 'PCT';
+  const discountValue = Number(body.discountValue) || 0;
   const taxPercentage = Number(body.taxPercentage) || 0;
   const overrideAmount = Number(body.overrideAmount) || 0;
   const validityDays = Number(body.validityDays) || 30;
@@ -41,12 +43,13 @@ function buildResourceBasedCosting(body: any) {
   if (outsourcingCost < 0) throw new Error('Outsourcing cost cannot be negative');
   if (travelCost < 0) throw new Error('Travel cost cannot be negative');
   if (markupValue < 0) throw new Error('Markup value cannot be negative');
+  if (discountValue < 0) throw new Error('Discount value cannot be negative');
   if (taxPercentage < 0) throw new Error('Tax percentage cannot be negative');
   if (overrideAmount < 0) throw new Error('Override amount cannot be negative');
   if (validityDays < 1) throw new Error('Quotation validity must be at least 1 day');
 
   const costing = computeResourceCosting({
-    resources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, taxPercentage, overrideAmount,
+    resources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, discountMode, discountValue, taxPercentage, overrideAmount,
   });
 
   return {
@@ -58,6 +61,8 @@ function buildResourceBasedCosting(body: any) {
     adminCost: costing.adminCost,
     markupPercentage: markupMode === 'PCT' ? markupValue : null,
     markupAmount: costing.markupAmount,
+    discountPercentage: discountMode === 'PCT' ? discountValue : null,
+    discountAmount: costing.discountAmount,
     marginPercent: costing.marginPercent,
     calculatedTotalAmount: costing.calculatedTotalAmount,
     totalAmount: costing.totalAmount,
@@ -71,6 +76,8 @@ function buildResourceBasedCosting(body: any) {
       adminValue,
       markupMode,
       markupValue,
+      discountMode,
+      discountValue,
       projectManagerName: body.projectManagerName ? String(body.projectManagerName).trim() : null,
       packageName: body.packageName ? String(body.packageName).trim() : null,
       validityDays,

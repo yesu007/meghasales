@@ -26,6 +26,8 @@ export interface ResourceCostingInput {
   travelCost: number;
   markupMode: CostMode;
   markupValue: number;
+  discountMode?: CostMode;
+  discountValue?: number;
   taxPercentage: number;
   overrideAmount?: number;
 }
@@ -35,6 +37,8 @@ export interface ResourceCostingResult {
   adminCost: number;
   baseCost: number;
   markupAmount: number;
+  subtotal: number;
+  discountAmount: number;
   preTax: number;
   taxAmount: number;
   calculatedTotalAmount: number;
@@ -65,7 +69,16 @@ export function computeResourceCosting(input: ResourceCostingInput): ResourceCos
 
   const markupAmount = input.markupMode === 'PCT' ? baseCost * (input.markupValue / 100) : input.markupValue;
 
-  const preTax = baseCost + markupAmount;
+  // subtotal is the pre-discount sale price (cost + markup) — same quantity
+  // catalog-mode quotations call "subtotal". Discount comes off that, same
+  // order of operations as catalog mode (see quotation-config/calculate):
+  // subtotal -> discount -> taxable amount -> tax -> total.
+  const subtotal = baseCost + markupAmount;
+  const discountMode: CostMode = input.discountMode === 'FIXED' ? 'FIXED' : 'PCT';
+  const discountValue = input.discountValue || 0;
+  const discountAmount = discountMode === 'PCT' ? subtotal * (discountValue / 100) : discountValue;
+
+  const preTax = subtotal - discountAmount;
   const taxAmount = preTax * (input.taxPercentage / 100);
   const calculatedTotalAmount = preTax + taxAmount;
 
@@ -80,6 +93,8 @@ export function computeResourceCosting(input: ResourceCostingInput): ResourceCos
     adminCost,
     baseCost,
     markupAmount,
+    subtotal,
+    discountAmount,
     preTax,
     taxAmount,
     calculatedTotalAmount,

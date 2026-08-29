@@ -53,6 +53,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [adminValue, setAdminValue] = useState('10');
   const [markupMode, setMarkupMode] = useState<CostMode>('PCT');
   const [markupValue, setMarkupValue] = useState('25');
+  const [discountMode, setDiscountMode] = useState<CostMode>('PCT');
+  const [discountValue, setDiscountValue] = useState('0');
   const [taxPercentage, setTaxPercentage] = useState('18');
   const [validityDays, setValidityDays] = useState('30');
   const [overrideAmount, setOverrideAmount] = useState('');
@@ -105,6 +107,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setAdminValue(String(Number(snap.adminValue) || 0));
     setMarkupMode(snap.markupMode === 'FIXED' ? 'FIXED' : 'PCT');
     setMarkupValue(String(Number(snap.markupValue) || 0));
+    setDiscountMode(snap.discountMode === 'FIXED' ? 'FIXED' : 'PCT');
+    setDiscountValue(String(Number(snap.discountValue) || 0));
     setProjectManagerName(snap.projectManagerName || '');
     setPackageName(snap.packageName || '');
     setValidityDays(String(Number(snap.validityDays) || 30));
@@ -163,9 +167,11 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     travelCost: Number(travelCost) || 0,
     markupMode,
     markupValue: Number(markupValue) || 0,
+    discountMode,
+    discountValue: Number(discountValue) || 0,
     taxPercentage: Number(taxPercentage) || 0,
     overrideAmount: Number(overrideAmount) || 0,
-  }), [validResources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, taxPercentage, overrideAmount]);
+  }), [validResources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, discountMode, discountValue, taxPercentage, overrideAmount]);
 
   const fmt = (n: number) => formatCurrency(n, currencyCode, { symbol: currencySymbol });
 
@@ -192,6 +198,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
         travelCost: Number(travelCost) || 0,
         markupMode,
         markupValue: Number(markupValue) || 0,
+        discountMode,
+        discountValue: Number(discountValue) || 0,
         taxPercentage: Number(taxPercentage) || 0,
         validityDays: Number(validityDays) || 30,
         overrideAmount: Number(overrideAmount) || 0,
@@ -210,6 +218,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
           adminCost: costing.adminCost,
           markupPercentage: markupMode === 'PCT' ? Number(markupValue) || 0 : null,
           markupAmount: costing.markupAmount,
+          discountPercentage: discountMode === 'PCT' ? Number(discountValue) || 0 : null,
+          discountAmount: costing.discountAmount,
           marginPercent: costing.marginPercent,
           calculatedTotalAmount: costing.calculatedTotalAmount,
           totalAmount: costing.totalAmount,
@@ -222,6 +232,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             adminValue: Number(adminValue) || 0,
             markupMode,
             markupValue: Number(markupValue) || 0,
+            discountMode,
+            discountValue: Number(discountValue) || 0,
             projectManagerName: projectManagerName || null,
             packageName: packageName || null,
             validityDays: Number(validityDays) || 30,
@@ -406,6 +418,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <ModeToggle mode={markupMode} onChange={setMarkupMode} pctLabel="% of base cost" fixedLabel="Fixed amount" />
               <input type="number" min="0" value={markupValue} onChange={(e) => setMarkupValue(e.target.value)} className={inputCls} />
             </div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Discount</label>
+            <div className="grid grid-cols-2 gap-3 mb-1">
+              <ModeToggle mode={discountMode} onChange={setDiscountMode} pctLabel="% of subtotal" fixedLabel="Fixed amount" />
+              <input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className={inputCls} />
+            </div>
+            <p className="text-xs text-slate-400 mb-3">Applied to the subtotal (cost + markup) before tax.</p>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Tax % (where applicable)</label><input type="number" min="0" value={taxPercentage} onChange={(e) => setTaxPercentage(e.target.value)} className={inputCls} /></div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Quotation Validity (days)</label><input type="number" min="1" value={validityDays} onChange={(e) => setValidityDays(e.target.value)} className={inputCls} /></div>
@@ -444,6 +462,9 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Admin / overhead</span><span className="font-mono font-medium text-slate-700">{fmt(costing.adminCost)}{adminMode === 'PCT' && ` (${adminValue}%)`}</span></div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100 font-semibold"><span className="text-slate-800">Base project cost</span><span className="font-mono text-slate-800">{fmt(costing.baseCost)}</span></div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Markup</span><span className="font-mono font-medium text-slate-700">{fmt(costing.markupAmount)}{markupMode === 'PCT' && ` (${markupValue}%)`}</span></div>
+              {costing.discountAmount > 0 && (
+                <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Discount</span><span className="font-mono font-medium text-red-600">-{fmt(costing.discountAmount)}{discountMode === 'PCT' && ` (${discountValue}%)`}</span></div>
+              )}
               <div className="flex justify-between py-1"><span className="text-slate-500">Tax</span><span className="font-mono font-medium text-slate-700">{fmt(costing.taxAmount)} ({taxPercentage}%)</span></div>
             </div>
 
