@@ -149,6 +149,10 @@ export async function GET(request: NextRequest) {
       pricingSnapshot: q.pricingSnapshot,
       costingMode: q.costingMode,
       projectName: q.projectName,
+      outsourcingCost: q.outsourcingCost ? Number(q.outsourcingCost) : 0,
+      travelCost: q.travelCost ? Number(q.travelCost) : 0,
+      adminCost: q.adminCost ? Number(q.adminCost) : 0,
+      markupAmount: q.markupAmount ? Number(q.markupAmount) : 0,
       createdAt: q.createdAt,
     }));
 
