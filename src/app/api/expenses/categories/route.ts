@@ -5,9 +5,9 @@ import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
-// Create-only, like LeaveType and AdminTicketCategory — no [id] route.
-// These master lists just grow; nothing in this app edits/retires a
-// category once created.
+// List + create. Update/delete for a single category live in
+// ./[id]/route.ts (added for the Expense Categories table's Edit/Delete
+// actions).
 export async function GET() {
   const denied = await requirePermission('view_expenses');
   if (denied) return denied;

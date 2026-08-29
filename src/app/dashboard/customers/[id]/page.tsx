@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
-import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, PhoneIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, DocumentTextIcon, BanknotesIcon, PhoneIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { LEAD_STATUSES, leadStatusColor } from '@/lib/leadStatus';
@@ -15,6 +15,8 @@ import ActivityTimeline from '@/components/leads/ActivityTimeline';
 import FollowUpsTab from '@/components/leads/FollowUpsTab';
 import CustomerKycCard from '@/components/customers/CustomerKycCard';
 import CustomerContractsCard from '@/components/customers/CustomerContractsCard';
+import LeadDocumentsTab from '@/components/leads/LeadDocumentsTab';
+import InvoiceListPage from '@/components/accounting/InvoiceListPage';
 
 // A Customer is a Lead with status = CONFIRMED (see the module note atop
 // src/app/dashboard/customers/page.tsx) — there is no separate Customer
@@ -70,7 +72,7 @@ function classNames(...classes: (string | boolean)[]) {
 // query param, so a refresh (or a shared link) lands back on the same tab —
 // the Lead detail page doesn't need this (it's never deep-linked to a
 // specific tab), but the Customer detail page is expected to preserve it.
-const TAB_KEYS = ['overview', 'events', 'documents', 'follow-up', 'activity'] as const;
+const TAB_KEYS = ['overview', 'events', 'documents', 'follow-up', 'activity', 'invoices', 'paid-invoices'] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 export default function CustomerDetailPage() {
@@ -164,7 +166,7 @@ export default function CustomerDetailPage() {
           value={customer.status}
           disabled={statusMutation.isPending}
           onChange={(e) => statusMutation.mutate(e.target.value)}
-          className={`self-start sm:self-auto px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(customer.status)}`}
+          className={`self-start sm:self-auto px-3 py-1.5 min-h-[44px] rounded-lg text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(customer.status)}`}
         >
           {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
@@ -177,11 +179,16 @@ export default function CustomerDetailPage() {
           same relationship border-b-2/-mb-px had to the content below it in
           the horizontal layout). `vertical` on Tab.Group switches keyboard
           navigation to Up/Down to match, per Headless UI. */}
+      {/* No items-start override here — the flex row's default `stretch`
+          cross-axis alignment is what makes the sidebar's height (and its
+          border-r divider) automatically track whichever is taller between
+          itself and the active Tab.Panel, so it always matches the current
+          tab's content height and both columns end at the same line. */}
       <Tab.Group selectedIndex={selectedIndex} onChange={setSelectedIndex} vertical>
         <div className="flex flex-col sm:flex-row gap-4">
           <Tab.List className="flex flex-row sm:flex-col overflow-x-auto sm:overflow-x-visible border-b sm:border-b-0 sm:border-r border-slate-200 sm:w-48 sm:flex-shrink-0">
             <Tab className={({ selected }) => classNames(
-              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px text-left',
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px text-left focus:outline-none',
               selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             )}>
               Overview
@@ -189,7 +196,7 @@ export default function CustomerDetailPage() {
             <Tab
               disabled={!isConfirmed}
               className={({ selected }) => classNames(
-                'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5',
+                'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
                 !isConfirmed ? 'border-transparent text-slate-300 cursor-not-allowed' : selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
               )}
               title={!isConfirmed ? 'Events unlock once this customer is Confirmed' : undefined}
@@ -199,7 +206,7 @@ export default function CustomerDetailPage() {
             <Tab
               disabled={!isConfirmed}
               className={({ selected }) => classNames(
-                'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5',
+                'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
                 !isConfirmed ? 'border-transparent text-slate-300 cursor-not-allowed' : selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
               )}
               title={!isConfirmed ? 'Documents unlock once this customer is Confirmed' : undefined}
@@ -207,7 +214,7 @@ export default function CustomerDetailPage() {
               <FolderOpenIcon className="h-4 w-4" /> Documents
             </Tab>
             <Tab className={({ selected }) => classNames(
-              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5',
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
               selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             )}>
               <PhoneIcon className="h-4 w-4" /> Follow-up
@@ -217,6 +224,18 @@ export default function CustomerDetailPage() {
               selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             )}>
               <ClockIcon className="h-4 w-4" /> Activity
+            </Tab>
+            <Tab className={({ selected }) => classNames(
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+              selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}>
+              <DocumentTextIcon className="h-4 w-4" /> Invoices
+            </Tab>
+            <Tab className={({ selected }) => classNames(
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+              selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}>
+              <BanknotesIcon className="h-4 w-4" /> Paid Invoices
             </Tab>
           </Tab.List>
           <Tab.Panels className="flex-1 min-w-0">
@@ -291,6 +310,18 @@ export default function CustomerDetailPage() {
             </Tab.Panel>
             <Tab.Panel>
               <ActivityTimeline leadId={customer.id} />
+            </Tab.Panel>
+            <Tab.Panel>
+              {/* Same InvoiceListPage component/API/data as Accounting → Pending
+                  Invoices (mode="open") — the leadId prop pins it to this
+                  customer only; empty state falls out of the component
+                  unchanged when there are none. */}
+              <InvoiceListPage mode="open" leadId={customer.id} />
+            </Tab.Panel>
+            <Tab.Panel>
+              {/* Same InvoiceListPage component/API/data as Accounting → Paid
+                  Invoices (mode="paid"), pinned to this customer. */}
+              <InvoiceListPage mode="paid" leadId={customer.id} />
             </Tab.Panel>
           </Tab.Panels>
         </div>

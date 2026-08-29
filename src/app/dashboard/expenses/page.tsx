@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
@@ -79,8 +79,10 @@ export default function ExpensesPage() {
   const [form, setForm] = useState(blankForm);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [showSubCategoryForm, setShowSubCategoryForm] = useState(false);
   const [subCategoryForm, setSubCategoryForm] = useState({ categoryId: '', name: '' });
+  const [editingSubCategoryId, setEditingSubCategoryId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({ queryKey: ['expenses', statusFilter, page, size], queryFn: () => fetchExpenses(statusFilter, page, size) });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
@@ -138,25 +140,69 @@ export default function ExpensesPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const createCategory = useMutation({
+  const closeCategoryForm = () => { setShowCategoryForm(false); setEditingCategoryId(null); setCategoryForm({ name: '', description: '' }); };
+  const openAddCategory = () => { setEditingCategoryId(null); setCategoryForm({ name: '', description: '' }); setShowCategoryForm(true); };
+  const openEditCategory = (c: ExpenseCategory) => { setEditingCategoryId(c.id); setCategoryForm({ name: c.name, description: c.description || '' }); setShowCategoryForm(true); };
+
+  // Create (POST) or update (PUT) — same editingId-branches-the-request
+  // pattern as every other module's save mutation in this app (see Leads,
+  // Invoices, etc).
+  const saveCategory = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/expenses/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(categoryForm) });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to create category'); }
+      const url = editingCategoryId ? `/api/expenses/categories/${editingCategoryId}` : '/api/expenses/categories';
+      const method = editingCategoryId ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(categoryForm) });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save category'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-categories'] }); toast.success('Category created'); setShowCategoryForm(false); setCategoryForm({ name: '', description: '' }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-categories'] }); toast.success(editingCategoryId ? 'Category updated' : 'Category created'); closeCategoryForm(); },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const createSubCategory = useMutation({
-    mutationFn: async () => {
-      const res = await fetch('/api/expenses/sub-categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subCategoryForm) });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to create sub-category'); }
-      return res.json();
+  const deleteCategory = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/expenses/categories/${id}`, { method: 'DELETE' });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to delete category'); }
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-categories'] }); toast.success('Sub-category created'); setShowSubCategoryForm(false); setSubCategoryForm({ categoryId: '', name: '' }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-categories'] }); toast.success('Category deleted'); },
     onError: (err: Error) => toast.error(err.message),
   });
+  const handleDeleteCategory = (c: ExpenseCategory) => {
+    if (window.confirm(`Delete category "${c.name}"? This cannot be undone.`)) deleteCategory.mutate(c.id);
+  };
+
+  const closeSubCategoryForm = () => { setShowSubCategoryForm(false); setEditingSubCategoryId(null); setSubCategoryForm({ categoryId: '', name: '' }); };
+  const openAddSubCategory = () => { setEditingSubCategoryId(null); setSubCategoryForm({ categoryId: '', name: '' }); setShowSubCategoryForm(true); };
+  const openEditSubCategory = (s: ExpenseSubCategory) => { setEditingSubCategoryId(s.id); setSubCategoryForm({ categoryId: String(s.categoryId), name: s.name }); setShowSubCategoryForm(true); };
+
+  const saveSubCategory = useMutation({
+    mutationFn: async () => {
+      const url = editingSubCategoryId ? `/api/expenses/sub-categories/${editingSubCategoryId}` : '/api/expenses/sub-categories';
+      const method = editingSubCategoryId ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subCategoryForm) });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save sub-category'); }
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-categories'] }); toast.success(editingSubCategoryId ? 'Sub-category updated' : 'Sub-category created'); closeSubCategoryForm(); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteSubCategory = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/expenses/sub-categories/${id}`, { method: 'DELETE' });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to delete sub-category'); }
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-categories'] }); toast.success('Sub-category deleted'); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+  const handleDeleteSubCategory = (s: ExpenseSubCategory) => {
+    if (window.confirm(`Delete sub-category "${s.name}"? This cannot be undone.`)) deleteSubCategory.mutate(s.id);
+  };
+
+  // Flattened for the standalone Sub Categories table — each row keeps its
+  // parent category's name for display, same underlying data as the
+  // per-category list embedded in the Categories table.
+  const allSubCategories = categories.flatMap((c) => c.subCategories.map((s) => ({ ...s, categoryName: c.name })));
 
   const selectedCategory = categories.find((c) => c.id === Number(form.categoryId));
   const subCategoryOptions = selectedCategory?.subCategories || [];
@@ -380,60 +426,146 @@ export default function ExpensesPage() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-800">Expense Categories</h2>
-          <div className="flex items-center gap-4">
-            <button onClick={() => setShowSubCategoryForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
-              <PlusIcon className="h-4 w-4" /> Add Sub Category
-            </button>
-            <button onClick={() => setShowCategoryForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
-              <PlusIcon className="h-4 w-4" /> Add Category
-            </button>
-          </div>
+      {/* Expense Categories — table layout/header/row/action-button style
+          matches the Leads main table (src/app/dashboard/leads/page.tsx)
+          exactly; only the columns and data are Expense Category's own. */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <h2 className="text-lg font-semibold text-slate-800">Expense Categories</h2>
+          <button onClick={openAddCategory} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+            <PlusIcon className="h-4 w-4" /> Add Category
+          </button>
         </div>
+
         {showCategoryForm && (
           <form
-            onSubmit={(e) => { e.preventDefault(); if (!categoryForm.name) { toast.error('Name is required'); return; } createCategory.mutate(); }}
-            className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200"
+            onSubmit={(e) => { e.preventDefault(); if (!categoryForm.name) { toast.error('Name is required'); return; } saveCategory.mutate(); }}
+            className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 gap-3"
           >
             <input placeholder="Name" value={categoryForm.name} onChange={(e) => setCategoryForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} />
             <input placeholder="Description (optional)" value={categoryForm.description} onChange={(e) => setCategoryForm((f) => ({ ...f, description: e.target.value }))} className={inputCls} />
             <div className="col-span-2 flex justify-end gap-2">
-              <button type="button" onClick={() => setShowCategoryForm(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-              <button type="submit" disabled={createCategory.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">Add</button>
+              <button type="button" onClick={closeCategoryForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+              <button type="submit" disabled={saveCategory.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                {saveCategory.isPending ? 'Saving...' : editingCategoryId ? 'Save Changes' : 'Add'}
+              </button>
             </div>
           </form>
         )}
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          {categories.length === 0 ? (
+            <p className="text-center py-16 text-slate-400">No expense categories yet</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-900">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Name</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Sub Categories</th>
+                    <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map((c, idx) => (
+                    <tr key={c.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                      <td className="px-4 py-3 font-medium text-slate-800 align-top whitespace-nowrap">{c.name}</td>
+                      <td className="px-4 py-3 text-slate-600">{c.subCategories.length > 0 ? c.subCategories.map((s) => s.name).join(', ') : '—'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEditCategory(c)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View">
+                            <EyeIcon className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => openEditCategory(c)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                            <PencilIcon className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => handleDeleteCategory(c)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Expense Sub Categories — same table treatment as Categories above,
+          flattened across all categories (allSubCategories). Deleting a
+          sub-category here never touches its parent category row. */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <h2 className="text-lg font-semibold text-slate-800">Expense Sub Categories</h2>
+          <button onClick={openAddSubCategory} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+            <PlusIcon className="h-4 w-4" /> Add Sub Category
+          </button>
+        </div>
+
         {showSubCategoryForm && (
           <form
-            onSubmit={(e) => { e.preventDefault(); if (!subCategoryForm.categoryId || !subCategoryForm.name) { toast.error('Category and name are required'); return; } createSubCategory.mutate(); }}
-            className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200"
+            onSubmit={(e) => { e.preventDefault(); if (!subCategoryForm.categoryId || !subCategoryForm.name) { toast.error('Category and name are required'); return; } saveSubCategory.mutate(); }}
+            className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 gap-3"
           >
-            <select value={subCategoryForm.categoryId} onChange={(e) => setSubCategoryForm((f) => ({ ...f, categoryId: e.target.value }))} className={inputCls}>
+            <select
+              value={subCategoryForm.categoryId}
+              onChange={(e) => setSubCategoryForm((f) => ({ ...f, categoryId: e.target.value }))}
+              disabled={!!editingSubCategoryId}
+              className={`${inputCls} ${editingSubCategoryId ? 'bg-slate-100 text-slate-500' : ''}`}
+            >
               <option value="">Select category</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <input placeholder="Sub-category name" value={subCategoryForm.name} onChange={(e) => setSubCategoryForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} />
             <div className="col-span-2 flex justify-end gap-2">
-              <button type="button" onClick={() => setShowSubCategoryForm(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-              <button type="submit" disabled={createSubCategory.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">Add</button>
+              <button type="button" onClick={closeSubCategoryForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+              <button type="submit" disabled={saveSubCategory.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                {saveSubCategory.isPending ? 'Saving...' : editingSubCategoryId ? 'Save Changes' : 'Add'}
+              </button>
             </div>
           </form>
         )}
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs text-slate-500 uppercase">
-            <tr><th className="py-1.5 pr-4">Name</th><th className="py-1.5">Sub Categories</th></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {categories.map((c) => (
-              <tr key={c.id}>
-                <td className="py-2 pr-4 text-slate-800 align-top whitespace-nowrap">{c.name}</td>
-                <td className="py-2 text-slate-600">{c.subCategories.length > 0 ? c.subCategories.map((s) => s.name).join(', ') : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          {allSubCategories.length === 0 ? (
+            <p className="text-center py-16 text-slate-400">No expense sub-categories yet</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-900">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Name</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
+                    <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allSubCategories.map((s, idx) => (
+                    <tr key={s.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                      <td className="px-4 py-3 font-medium text-slate-800">{s.name}</td>
+                      <td className="px-4 py-3 text-slate-600">{s.categoryName}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEditSubCategory(s)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View">
+                            <EyeIcon className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => openEditSubCategory(s)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                            <PencilIcon className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => handleDeleteSubCategory(s)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

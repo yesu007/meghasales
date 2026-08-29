@@ -104,7 +104,12 @@ function fmt(amount: string | number, currencyCode = 'INR'): string {
   return formatCurrency(amount, currencyCode);
 }
 
-export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
+// leadId is optional and only passed when this is embedded in a specific
+// customer's Invoices/Paid Invoices tab (Customer Detail page) — it pins
+// the list to that customer and hides the standalone "All Customers"
+// filter below. The two Accounting pages (pending-invoices, paid-invoices)
+// don't pass it, so their behavior is unchanged.
+export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid'; leadId?: number }) {
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -126,7 +131,10 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
 
   const params: Record<string, string> = { page: String(page), size: String(size), sortBy, sortDir };
   if (search) params.search = search;
-  if (leadFilter) params.leadId = leadFilter;
+  // A leadId prop (customer-tab embedding) always wins over the standalone
+  // "All Customers" filter — see the leadId prop comment above.
+  const effectiveLeadId = leadId ? String(leadId) : leadFilter;
+  if (effectiveLeadId) params.leadId = effectiveLeadId;
   if (dueDateFrom) params.dueDateFrom = dueDateFrom;
   if (dueDateTo) params.dueDateTo = dueDateTo;
   if (mode === 'paid') params.status = 'PAID';
@@ -294,10 +302,12 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
               </button>
             )}
           </div>
-          <select value={leadFilter} onChange={(e) => { setLeadFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-            <option value="">All Customers</option>
-            {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-          </select>
+          {!leadId && (
+            <select value={leadFilter} onChange={(e) => { setLeadFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+              <option value="">All Customers</option>
+              {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
+            </select>
+          )}
           <div className="flex items-center gap-2">
             <label className="text-xs font-medium text-slate-600">Due From</label>
             <input type="date" value={dueDateFrom} onChange={(e) => { setDueDateFrom(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800" />
@@ -390,7 +400,19 @@ export default function InvoiceListPage({ mode }: { mode: 'open' | 'paid' }) {
                       )}
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <Link href={`/dashboard/accounting/invoices/${inv.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View">
+                          {/* Embedded in a Customer tab (leadId set): route to
+                              the Customer module's OWN invoice route (a real
+                              child route, not a query param) — see
+                              src/app/dashboard/customers/[id]/invoices/[invoiceId]/page.tsx.
+                              Standalone Accounting pages (no leadId) get the
+                              exact same Accounting href as always. */}
+                          <Link
+                            href={leadId
+                              ? `/dashboard/customers/${leadId}/invoices/${inv.id}`
+                              : `/dashboard/accounting/invoices/${inv.id}`}
+                            className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                            title="View"
+                          >
                             <EyeIcon className="h-4 w-4" />
                           </Link>
                           {mode === 'open' && (
