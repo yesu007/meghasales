@@ -10,7 +10,7 @@ import { formatCurrency } from '@/lib/currency';
 import { defaultMonthlySpread } from '@/lib/expenseBudgetVariance';
 
 interface Vertical { id: number; name: string; headName?: string | null }
-interface ExpenseCategory { id: number; name: string; legacy?: boolean }
+interface ExpenseCategory { id: number; name: string }
 interface CurrencyOption { currencyCode: string }
 interface BudgetRow {
   id: number;
@@ -74,6 +74,15 @@ const blankForm = () => {
   };
 };
 
+// Page numbers with ellipsis, e.g. 1 2 3 4 … 10 — same helper as the
+// Expenses list page, for a consistent pagination look across the app.
+function getPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+  if (current <= 3) return [0, 1, 2, 3, 'ellipsis', total - 1];
+  if (current >= total - 4) return [0, 'ellipsis', total - 4, total - 3, total - 2, total - 1];
+  return [0, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total - 1];
+}
+
 function cellKey(categoryId: number, verticalId: number | null) {
   return `${categoryId}|${verticalId ?? 'company-wide'}`;
 }
@@ -105,7 +114,15 @@ export default function ExpenseBudgetsPage() {
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
 
-  const matrixBudgets = useMemo(() => matrixData?.content || [], [matrixData]);
+  // A category deactivated (or since deleted) after budgets were recorded
+  // against it can still have rows in matrixData — excluded here so it
+  // never shows as a matrix row nor counts toward Column/Row/Grand Total;
+  // the matrix is scoped to the current, active category list only.
+  const activeCategoryIds = useMemo(() => new Set(categories.map((c) => c.id)), [categories]);
+  const matrixBudgets = useMemo(
+    () => (matrixData?.content || []).filter((b) => activeCategoryIds.has(b.categoryId)),
+    [matrixData, activeCategoryIds]
+  );
   const budgetsByCell = useMemo(() => {
     const map = new Map<string, BudgetRow>();
     for (const b of matrixBudgets) map.set(cellKey(b.categoryId, b.verticalId), b);
@@ -121,23 +138,15 @@ export default function ExpenseBudgetsPage() {
   );
   const grandTotals = useMemo(() => sumByCurrency(matrixBudgets), [matrixBudgets]);
 
-  // The matrix's Column/Row totals are always summed from the full
-  // matrixBudgets list, so any category with budget rows for this FY must
-  // appear here too — otherwise a category deactivated after budgets were
-  // recorded against it (see Expense Categories master list) would vanish
-  // as a row while its amount still silently counts toward the totals,
-  // making Column Total not reconcile with what's visibly displayed.
-  const displayCategories = useMemo(() => {
-    const activeIds = new Set(categories.map((c) => c.id));
-    const legacy = new Map<number, string>();
-    for (const b of matrixBudgets) {
-      if (!activeIds.has(b.categoryId) && !legacy.has(b.categoryId)) legacy.set(b.categoryId, b.categoryName);
-    }
-    return [
-      ...categories,
-      ...Array.from(legacy, ([id, name]) => ({ id, name, legacy: true as const })),
-    ];
-  }, [categories, matrixBudgets]);
+  const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+  const [categoryPage, setCategoryPage] = useState(0);
+  const [categoryPageSize, setCategoryPageSize] = useState(10);
+  const categoryTotalPages = Math.max(1, Math.ceil(categories.length / categoryPageSize));
+  const safeCategoryPage = Math.min(categoryPage, categoryTotalPages - 1);
+  const pagedCategories = useMemo(
+    () => categories.slice(safeCategoryPage * categoryPageSize, safeCategoryPage * categoryPageSize + categoryPageSize),
+    [categories, safeCategoryPage, categoryPageSize]
+  );
 
   const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); setEditingBudget(null); };
 
@@ -450,29 +459,38 @@ export default function ExpenseBudgetsPage() {
           </div>
           {matrixLoading ? (
             <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
-          ) : displayCategories.length === 0 ? (
+          ) : categories.length === 0 ? (
             <p className="text-center py-16 text-slate-400">No expense categories found</p>
           ) : (
             <div className="flex-1 overflow-auto px-4 py-3">
-              <table className="w-full border-collapse text-sm">
+              {/* table-fixed + explicit per-column widths so every cell in a
+                  column occupies identical width regardless of how long that
+                  column's header text is — a variable-width auto-layout
+                  column was the root cause of numbers not lining up. */}
+              <table className="w-full border-collapse text-sm table-fixed">
+                <colgroup>
+                  <col className="w-44" />
+                  {columns.map((col) => <col key={col.verticalId ?? 'company-wide'} className="w-36" />)}
+                  <col className="w-36" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th className="sticky top-0 left-0 z-20 bg-white text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 pr-3 border-b border-slate-200 min-w-[160px]">
+                    <th className="sticky top-0 left-0 z-20 bg-white text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 pr-3 border-b border-slate-200">
                       Category
                     </th>
                     {columns.map((col) => (
-                      <th key={col.verticalId ?? 'company-wide'} className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 px-3 border-b border-slate-200 min-w-[130px]">
-                        <div>{col.label}</div>
-                        {col.headName && <div className="text-[10px] font-normal normal-case text-slate-400">Head: {col.headName}</div>}
+                      <th key={col.verticalId ?? 'company-wide'} className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 px-3 border-b border-slate-200">
+                        <div className="truncate" title={col.label}>{col.label}</div>
+                        {col.headName && <div className="truncate text-[10px] font-normal normal-case text-slate-400" title={`Head: ${col.headName}`}>Head: {col.headName}</div>}
                       </th>
                     ))}
-                    <th className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-700 uppercase tracking-wide py-2 pl-3 border-b border-slate-200 min-w-[130px]">
+                    <th className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-700 uppercase tracking-wide py-2 pl-3 border-b border-slate-200">
                       Row Total
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {displayCategories.map((cat) => {
+                  {pagedCategories.map((cat) => {
                     const isActive = cat.id === activeCategoryId;
                     const rowBudgets = matrixBudgets.filter((b) => b.categoryId === cat.id);
                     return (
@@ -481,13 +499,8 @@ export default function ExpenseBudgetsPage() {
                         onClick={() => setActiveCategoryId(cat.id)}
                         className={`cursor-pointer border-b border-slate-100 ${isActive ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
                       >
-                        <td className={`sticky left-0 z-10 py-2 pr-3 ${isActive ? 'bg-amber-50' : 'bg-white'}`}>
+                        <td className={`sticky left-0 z-10 py-2 pr-3 truncate ${isActive ? 'bg-amber-50' : 'bg-white'}`}>
                           <span className={isActive ? 'font-medium text-amber-700' : 'text-slate-700'}>{cat.name}</span>
-                          {cat.legacy && (
-                            <span className="ml-1.5 text-[10px] font-medium text-slate-400 uppercase" title="Category deactivated — shown because it still has budget data for this year">
-                              inactive
-                            </span>
-                          )}
                         </td>
                         {columns.map((col) => {
                           const key = cellKey(cat.id, col.verticalId);
@@ -562,6 +575,52 @@ export default function ExpenseBudgetsPage() {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+          )}
+          {!matrixLoading && categories.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Rows per page</span>
+                <select
+                  value={categoryPageSize}
+                  onChange={(e) => { setCategoryPageSize(Number(e.target.value)); setCategoryPage(0); }}
+                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
+                >
+                  {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCategoryPage((p) => Math.max(0, p - 1))}
+                  disabled={safeCategoryPage === 0}
+                  className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  <ChevronLeftIcon className="h-4 w-4" /> Previous
+                </button>
+                {getPageNumbers(safeCategoryPage, categoryTotalPages).map((p, i) =>
+                  p === 'ellipsis' ? (
+                    <span key={`ellipsis-${i}`} className="px-2 text-sm text-slate-400">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setCategoryPage(p)}
+                      className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === safeCategoryPage ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                    >
+                      {p + 1}
+                    </button>
+                  )
+                )}
+                <button
+                  onClick={() => setCategoryPage((p) => Math.min(categoryTotalPages - 1, p + 1))}
+                  disabled={safeCategoryPage >= categoryTotalPages - 1}
+                  className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  Next <ChevronRightIcon className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-sm text-slate-500">
+                Showing {safeCategoryPage * categoryPageSize + 1}–{Math.min((safeCategoryPage + 1) * categoryPageSize, categories.length)} of {categories.length}
+              </p>
             </div>
           )}
         </div>
