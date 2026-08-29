@@ -1305,16 +1305,38 @@ model ExpenseCategory {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  expenses Expense[]
-  budgets  ExpenseBudget[]
+  expenses      Expense[]
+  budgets       ExpenseBudget[]
+  subCategories ExpenseSubCategory[]
 
   @@map("expense_categories")
+}
+
+// A category's sub-categories (e.g. "Subscriptions" -> "Cursor"/"Claude") —
+// scoped to one parent category rather than a flat/global list, since the
+// same sub-category name has no meaning outside its category.
+model ExpenseSubCategory {
+  id         Int      @id @default(autoincrement())
+  categoryId Int      @map("category_id")
+  name       String
+  isActive   Boolean  @default(true) @map("is_active")
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  category ExpenseCategory @relation(fields: [categoryId], references: [id])
+  expenses Expense[]
+
+  @@unique([categoryId, name])
+  @@index([categoryId])
+  @@map("expense_sub_categories")
 }
 
 model Expense {
   id              Int       @id @default(autoincrement())
   expenseNumber   String    @unique @map("expense_number")
   categoryId      Int       @map("category_id")
+  subCategoryId   Int?      @map("sub_category_id")
   vendor          String?
   expenseDate     DateTime  @map("expense_date")
   amount          Decimal   @db.Decimal(14, 2)
@@ -1335,11 +1357,13 @@ model Expense {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  category   ExpenseCategory @relation(fields: [categoryId], references: [id])
-  recordedBy User?           @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
+  category    ExpenseCategory      @relation(fields: [categoryId], references: [id])
+  subCategory ExpenseSubCategory?  @relation(fields: [subCategoryId], references: [id])
+  recordedBy  User?                @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
 
   @@index([status])
   @@index([categoryId])
+  @@index([subCategoryId])
   @@index([expenseDate])
   @@map("expenses")
 }

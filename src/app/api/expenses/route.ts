@@ -46,6 +46,8 @@ export async function GET(request: NextRequest) {
 
     if (status) AND.push({ status: status.toUpperCase() });
     if (categoryId) AND.push({ categoryId: parseInt(categoryId) });
+    const subCategoryId = searchParams.get('subCategoryId') || '';
+    if (subCategoryId) AND.push({ subCategoryId: parseInt(subCategoryId) });
     if (dateFrom) AND.push({ expenseDate: { gte: new Date(dateFrom) } });
     if (dateTo) AND.push({ expenseDate: { lte: new Date(dateTo) } });
 
@@ -63,6 +65,7 @@ export async function GET(request: NextRequest) {
         take: size,
         include: {
           category: { select: { name: true } },
+          subCategory: { select: { name: true } },
           recordedBy: { select: { firstName: true, lastName: true } },
         },
       }),
@@ -74,6 +77,8 @@ export async function GET(request: NextRequest) {
       expenseNumber: e.expenseNumber,
       categoryId: e.categoryId,
       categoryName: e.category.name,
+      subCategoryId: e.subCategoryId,
+      subCategoryName: e.subCategory?.name ?? null,
       vendor: e.vendor,
       expenseDate: e.expenseDate,
       amount: e.amount,
@@ -121,6 +126,15 @@ export async function POST(request: NextRequest) {
     const category = await prisma.expenseCategory.findUnique({ where: { id: parseInt(body.categoryId) } });
     if (!category) return NextResponse.json({ message: 'Category not found' }, { status: 404 });
 
+    let subCategoryId: number | null = null;
+    if (body.subCategoryId !== undefined && body.subCategoryId !== null && body.subCategoryId !== '') {
+      const subCategory = await prisma.expenseSubCategory.findUnique({ where: { id: parseInt(body.subCategoryId) } });
+      if (!subCategory || subCategory.categoryId !== category.id) {
+        return NextResponse.json({ message: 'Sub-category not found for the selected category' }, { status: 404 });
+      }
+      subCategoryId = subCategory.id;
+    }
+
     const currencyCode: string = body.currencyCode || 'INR';
     const expenseDate = new Date(body.expenseDate);
     const dateStr = expenseDate.toISOString().slice(0, 10);
@@ -160,6 +174,7 @@ export async function POST(request: NextRequest) {
       data: {
         expenseNumber,
         categoryId: category.id,
+        subCategoryId,
         vendor: body.vendor || null,
         expenseDate,
         amount: Number(body.amount),
