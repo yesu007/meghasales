@@ -24,6 +24,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const existing = await prisma.expenseBudget.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Expense budget not found' }, { status: 404 });
 
+    // An approved budget is a signed-off commitment — changing it still goes
+    // through this same endpoint (there's no separate "edit" path), but only
+    // with a reason on record, so the revision history explains why an
+    // approved figure moved instead of just silently overwriting it.
+    if (existing.status === 'APPROVED' && !String(body.reason || '').trim()) {
+      return NextResponse.json({ message: 'A reason is required to revise an approved budget' }, { status: 400 });
+    }
+
     if (body.newAmount === undefined || body.newAmount === null || body.newAmount === '') {
       return NextResponse.json({ message: 'newAmount is required' }, { status: 400 });
     }

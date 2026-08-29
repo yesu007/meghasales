@@ -63,7 +63,12 @@ export default function ExpenseBudgetDetailPage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to approve budget'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-budget', params.id] }); toast.success('Budget approved'); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expense-budget', params.id] });
+      queryClient.invalidateQueries({ queryKey: ['expense-budgets-matrix'] });
+      toast.success('Budget approved');
+      router.push('/dashboard/expense-budgets');
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -141,19 +146,34 @@ export default function ExpenseBudgetDetailPage() {
 
       {showRevise && (
         <form
-          onSubmit={(e) => { e.preventDefault(); if (!reviseForm.newAmount) { toast.error('New amount is required'); return; } revise.mutate(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!reviseForm.newAmount) { toast.error('New amount is required'); return; }
+            if (budget.status === 'APPROVED' && !reviseForm.reason.trim()) { toast.error('A reason is required to revise an approved budget'); return; }
+            revise.mutate();
+          }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
         >
           <h2 className="text-base font-semibold text-slate-800 mb-3">Revise Budget</h2>
-          <p className="text-sm text-slate-500 mb-3">The monthly spread is re-split evenly across the remaining financial year; each revision keeps a permanent before/after record below.</p>
+          <p className="text-sm text-slate-500 mb-3">
+            The monthly spread is re-split evenly across the remaining financial year; each revision keeps a permanent before/after record below.
+            {budget.status === 'APPROVED' && ' This budget is approved, so a reason is required to change its amount.'}
+          </p>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">New Total Amount</label>
               <input type="number" min="0.01" step="0.01" value={reviseForm.newAmount} onChange={(e) => setReviseForm((f) => ({ ...f, newAmount: e.target.value }))} className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Reason</label>
-              <input value={reviseForm.reason} onChange={(e) => setReviseForm((f) => ({ ...f, reason: e.target.value }))} className={inputCls} placeholder="e.g. Added a new hire mid-year" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Reason {budget.status === 'APPROVED' && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                value={reviseForm.reason}
+                onChange={(e) => setReviseForm((f) => ({ ...f, reason: e.target.value }))}
+                className={inputCls}
+                placeholder={budget.status === 'APPROVED' ? 'Required — e.g. Added a new hire mid-year' : 'e.g. Added a new hire mid-year'}
+              />
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">

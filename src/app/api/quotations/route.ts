@@ -1,8 +1,82 @@
 import { NextRequest, NextResponse } from 'next/server';
+import dayjs from 'dayjs';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
+import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/quotationResourceCosting';
+
+// Validates and normalizes the raw request body for a resource-based
+// (Quotation Calculator) quotation, then runs it through the shared pure
+// costing math. Throws a descriptive Error on bad input — caught by the
+// route's existing try/catch and reported as a 400, same convention as
+// every other module's inline create-time validation (e.g. Expense Budgets).
+function buildResourceBasedCosting(body: any) {
+  const rawResources = Array.isArray(body.resources) ? body.resources : [];
+  if (rawResources.length === 0) throw new Error('At least one resource line item is required');
+
+  const resources: ResourceLine[] = rawResources.map((r: any, idx: number) => {
+    const role = String(r.role || '').trim();
+    const qty = Number(r.qty);
+    const durationDays = Number(r.durationDays);
+    const dayRate = Number(r.dayRate);
+    if (!role) throw new Error(`Resource #${idx + 1} is missing a role`);
+    if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Resource #${idx + 1} must have a quantity greater than 0`);
+    if (!Number.isFinite(durationDays) || durationDays <= 0) throw new Error(`Resource #${idx + 1} must have a duration greater than 0`);
+    if (!Number.isFinite(dayRate) || dayRate <= 0) throw new Error(`Resource #${idx + 1} must have a day rate greater than 0`);
+    return { role, qty, durationDays, dayRate };
+  });
+
+  const adminMode: CostMode = body.adminMode === 'FIXED' ? 'FIXED' : 'PCT';
+  const adminValue = Number(body.adminValue) || 0;
+  const outsourcingCost = Number(body.outsourcingCost) || 0;
+  const travelCost = Number(body.travelCost) || 0;
+  const markupMode: CostMode = body.markupMode === 'FIXED' ? 'FIXED' : 'PCT';
+  const markupValue = Number(body.markupValue) || 0;
+  const taxPercentage = Number(body.taxPercentage) || 0;
+  const overrideAmount = Number(body.overrideAmount) || 0;
+  const validityDays = Number(body.validityDays) || 30;
+
+  if (adminValue < 0) throw new Error('Admin/overhead value cannot be negative');
+  if (outsourcingCost < 0) throw new Error('Outsourcing cost cannot be negative');
+  if (travelCost < 0) throw new Error('Travel cost cannot be negative');
+  if (markupValue < 0) throw new Error('Markup value cannot be negative');
+  if (taxPercentage < 0) throw new Error('Tax percentage cannot be negative');
+  if (overrideAmount < 0) throw new Error('Override amount cannot be negative');
+  if (validityDays < 1) throw new Error('Quotation validity must be at least 1 day');
+
+  const costing = computeResourceCosting({
+    resources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, taxPercentage, overrideAmount,
+  });
+
+  return {
+    costingMode: 'RESOURCE_BASED' as const,
+    projectName: body.projectName ? String(body.projectName).trim() : null,
+    resourceCostTotal: costing.resourceCostTotal,
+    outsourcingCost,
+    travelCost,
+    adminCost: costing.adminCost,
+    markupPercentage: markupMode === 'PCT' ? markupValue : null,
+    markupAmount: costing.markupAmount,
+    marginPercent: costing.marginPercent,
+    calculatedTotalAmount: costing.calculatedTotalAmount,
+    totalAmount: costing.totalAmount,
+    totalAmountOverridden: costing.totalAmountOverridden,
+    taxPercentage,
+    taxAmount: costing.taxAmount,
+    validUntil: dayjs().add(validityDays, 'day').toDate(),
+    pricingSnapshot: {
+      resources,
+      adminMode,
+      adminValue,
+      markupMode,
+      markupValue,
+      projectManagerName: body.projectManagerName ? String(body.projectManagerName).trim() : null,
+      packageName: body.packageName ? String(body.packageName).trim() : null,
+      validityDays,
+    },
+  };
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -73,6 +147,12 @@ export async function GET(request: NextRequest) {
       version: q.version,
       validUntil: q.validUntil,
       pricingSnapshot: q.pricingSnapshot,
+      costingMode: q.costingMode,
+      projectName: q.projectName,
+      outsourcingCost: q.outsourcingCost ? Number(q.outsourcingCost) : 0,
+      travelCost: q.travelCost ? Number(q.travelCost) : 0,
+      adminCost: q.adminCost ? Number(q.adminCost) : 0,
+      markupAmount: q.markupAmount ? Number(q.markupAmount) : 0,
       createdAt: q.createdAt,
     }));
 
@@ -98,6 +178,19 @@ export async function POST(request: NextRequest) {
 
     if (!body.leadId && !body.companyName) {
       return NextResponse.json({ message: 'leadId or companyName is required' }, { status: 400 });
+    }
+
+    // Resource-based (Quotation Calculator) costing is validated up front,
+    // before any lead is created or country/currency work happens below —
+    // a validation failure here must never leave behind an orphaned
+    // auto-created Lead with no quotation to show for it.
+    let resourceBasedFields: ReturnType<typeof buildResourceBasedCosting> | null = null;
+    if (body.costingMode === 'RESOURCE_BASED') {
+      resourceBasedFields = buildResourceBasedCosting(body);
+      if (body.verticalId) {
+        const vertical = await prisma.vertical.findUnique({ where: { id: parseInt(body.verticalId) } });
+        if (!vertical) return NextResponse.json({ message: 'Selected vertical not found' }, { status: 404 });
+      }
     }
 
     // Country/currency for the quotation always comes from the Country
@@ -151,10 +244,20 @@ export async function POST(request: NextRequest) {
     const count = await prisma.quotation.count();
     const quotationNumber = `QTN-${String(count + 1).padStart(5, '0')}`;
 
-    const quotation = await prisma.quotation.create({
-      data: {
-        leadId: leadId!,
-        quotationNumber,
+    const data: Prisma.QuotationUncheckedCreateInput = {
+      leadId: leadId!,
+      quotationNumber,
+      clientCountry,
+      clientState,
+      currencyCode,
+      exchangeRate: body.exchangeRate || 1,
+      notes: body.notes || null,
+      status: 'DRAFT',
+    };
+    if (resourceBasedFields) {
+      Object.assign(data, resourceBasedFields, { verticalId: body.verticalId ? parseInt(body.verticalId) : null });
+    } else {
+      Object.assign(data, {
         softwareModules: body.softwareModules || null,
         businessModule: body.businessModule || null,
         implementationCost: body.implementationCost || null,
@@ -167,16 +270,14 @@ export async function POST(request: NextRequest) {
         taxAmount: body.taxAmount || null,
         taxInclusive: !!body.taxInclusive,
         totalAmount: body.totalAmount || null,
-        clientCountry,
-        clientState,
-        currencyCode,
-        exchangeRate: body.exchangeRate || 1,
         taxBreakdown: body.taxBreakdown || null,
         addons: body.addons || null,
         pricingSnapshot: body.pricingSnapshot || null,
-        notes: body.notes || null,
-        status: 'DRAFT',
-      },
+      });
+    }
+
+    const quotation = await prisma.quotation.create({
+      data,
       include: {
         lead: { select: { companyName: true } },
       },

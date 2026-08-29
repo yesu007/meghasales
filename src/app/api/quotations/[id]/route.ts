@@ -103,6 +103,22 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           ...(body.pricingSnapshot !== undefined && { pricingSnapshot: body.pricingSnapshot }),
           ...(body.notes !== undefined && { notes: body.notes }),
           ...(body.validUntil !== undefined && { validUntil: body.validUntil ? new Date(body.validUntil) : null }),
+          // Resource-based (Quotation Calculator) fields — see POST above for
+          // where these are computed. This PUT stays a generic spread updater
+          // for both costing modes; a resource-based edit resubmits its own
+          // freshly server-recomputed values for all of these at once.
+          ...(body.costingMode !== undefined && { costingMode: body.costingMode }),
+          ...(body.projectName !== undefined && { projectName: body.projectName }),
+          ...(body.verticalId !== undefined && { verticalId: body.verticalId ? parseInt(body.verticalId) : null }),
+          ...(body.resourceCostTotal !== undefined && { resourceCostTotal: body.resourceCostTotal }),
+          ...(body.outsourcingCost !== undefined && { outsourcingCost: body.outsourcingCost }),
+          ...(body.travelCost !== undefined && { travelCost: body.travelCost }),
+          ...(body.adminCost !== undefined && { adminCost: body.adminCost }),
+          ...(body.markupPercentage !== undefined && { markupPercentage: body.markupPercentage }),
+          ...(body.markupAmount !== undefined && { markupAmount: body.markupAmount }),
+          ...(body.marginPercent !== undefined && { marginPercent: body.marginPercent }),
+          ...(body.calculatedTotalAmount !== undefined && { calculatedTotalAmount: body.calculatedTotalAmount }),
+          ...(body.totalAmountOverridden !== undefined && { totalAmountOverridden: !!body.totalAmountOverridden }),
         },
       });
 
