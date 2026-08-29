@@ -13,6 +13,9 @@ import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/
 interface ExistingLead { id: number; companyName: string; contactPerson: string; email: string | null; mobile: string | null }
 interface Vertical { id: number; name: string; headName?: string | null }
 interface CurrencyOption { currencyCode: string; currencySymbol: string }
+interface ResourceEmployee { id: number; firstName: string; lastName: string; employeeCode: string; designation: string | null; department: string | null; dayRate: number | null }
+
+const employeeLabel = (e: ResourceEmployee) => `${e.firstName} ${e.lastName} — ${e.designation || 'Employee'} (${e.employeeCode})`;
 
 const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
 const blankResource = (): ResourceLine => ({ role: '', qty: 1, durationDays: 10, dayRate: 5000 });
@@ -76,6 +79,11 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     queryFn: async () => { const r = await fetch('/api/currencies?activeOnly=true'); if (!r.ok) throw new Error('Failed to fetch currencies'); return r.json(); },
   });
   const currencySymbol = currencies.find((c) => c.currencyCode === currencyCode)?.currencySymbol || currencyCode;
+  const { data: resourceEmployees = [] } = useQuery<ResourceEmployee[]>({
+    queryKey: ['quotation-resource-employees'],
+    queryFn: async () => { const r = await fetch('/api/quotations/resource-employees'); if (!r.ok) throw new Error('Failed to fetch employees'); return r.json(); },
+  });
+  const employeeByLabel = useMemo(() => new Map(resourceEmployees.map((e) => [employeeLabel(e), e])), [resourceEmployees]);
 
   useEffect(() => {
     if (!existing) return;
@@ -123,6 +131,20 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
       if (i !== idx) return r;
       if (field === 'role') return { ...r, role: value };
       return { ...r, [field]: Number(value) || 0 };
+    }));
+  };
+
+  // Typing/selecting a role that exactly matches an autocomplete suggestion
+  // (see the datalist in the Resources table) auto-fills that row's day
+  // rate from the employee's derived rate — mirrors the vertical-head and
+  // existing-lead auto-fill patterns elsewhere in this form. Free typing
+  // that doesn't match any employee just sets the role text, unchanged.
+  const updateResourceRole = (idx: number, value: string) => {
+    const matched = employeeByLabel.get(value);
+    setResources((prev) => prev.map((r, i) => {
+      if (i !== idx) return r;
+      if (matched?.dayRate != null) return { ...r, role: value, dayRate: matched.dayRate };
+      return { ...r, role: value };
     }));
   };
   const addResource = () => setResources((prev) => [...prev, blankResource()]);
@@ -329,7 +351,15 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 <tbody className="divide-y divide-slate-100">
                   {resources.map((r, idx) => (
                     <tr key={idx}>
-                      <td className="py-1.5 pr-2 min-w-[200px]"><input value={r.role} onChange={(e) => updateResource(idx, 'role', e.target.value)} placeholder="e.g. Backend Developer" className={inputCls} /></td>
+                      <td className="py-1.5 pr-2 min-w-[200px]">
+                        <input
+                          value={r.role}
+                          onChange={(e) => updateResourceRole(idx, e.target.value)}
+                          list="resource-employee-options"
+                          placeholder="Type a role, or pick an employee"
+                          className={inputCls}
+                        />
+                      </td>
                       <td className="py-1.5 px-2"><input type="number" min="0" value={r.qty || ''} onChange={(e) => updateResource(idx, 'qty', e.target.value)} className={inputCls} /></td>
                       <td className="py-1.5 px-2"><input type="number" min="0" value={r.durationDays || ''} onChange={(e) => updateResource(idx, 'durationDays', e.target.value)} className={inputCls} /></td>
                       <td className="py-1.5 px-2"><input type="number" min="0" value={r.dayRate || ''} onChange={(e) => updateResource(idx, 'dayRate', e.target.value)} className={inputCls} /></td>
@@ -347,6 +377,10 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             <button type="button" onClick={addResource} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-sm font-medium text-amber-700 hover:bg-amber-50">
               <PlusIcon className="h-4 w-4" /> Add resource
             </button>
+            <p className="text-xs text-slate-400 mt-2">Picking an employee from the role suggestions fills in a day rate estimated from their CTC — still editable afterward.</p>
+            <datalist id="resource-employee-options">
+              {resourceEmployees.map((e) => <option key={e.id} value={employeeLabel(e)} />)}
+            </datalist>
           </div>
 
           {/* Other Project Costs */}

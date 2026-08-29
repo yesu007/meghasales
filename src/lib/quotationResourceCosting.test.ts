@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { computeResourceCosting } from './quotationResourceCosting';
+import { computeResourceCosting, dayRateFromAnnualCtc } from './quotationResourceCosting';
+
+describe('dayRateFromAnnualCtc', () => {
+  it('divides annual CTC by the 260-working-day convention', () => {
+    expect(dayRateFromAnnualCtc(1300000)).toBe(5000);
+  });
+
+  it('rounds to 2 decimal places', () => {
+    expect(dayRateFromAnnualCtc(1000000)).toBeCloseTo(3846.15, 2);
+  });
+});
 
 describe('computeResourceCosting', () => {
   // Same figures as the approved mockup's seed data (resources, 10% admin,

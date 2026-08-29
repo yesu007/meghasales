@@ -43,6 +43,19 @@ export interface ResourceCostingResult {
   marginPercent: number;
 }
 
+// Standard 5-day-week annual working-days approximation, used only to turn
+// an employee's annual CTC into a per-day billing-rate estimate for the
+// Resources autocomplete below. Deliberately distinct from Payroll's own
+// day-rate convention (src/lib/payroll/runEngine.ts's daysInMonth), which
+// prorates by the actual calendar days in one specific month for payslip
+// generation — a different purpose (net pay for a month) than this one
+// (a general costing/billing-rate basis for a quotation).
+export const ANNUAL_WORKING_DAYS = 260;
+
+export function dayRateFromAnnualCtc(ctcAnnual: number): number {
+  return Math.round((ctcAnnual / ANNUAL_WORKING_DAYS) * 100) / 100;
+}
+
 export function computeResourceCosting(input: ResourceCostingInput): ResourceCostingResult {
   const resourceCostTotal = input.resources.reduce((sum, r) => sum + r.qty * r.durationDays * r.dayRate, 0);
 
