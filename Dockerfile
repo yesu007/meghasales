@@ -3,6 +3,7 @@
 # ---- deps: install once, cached separately from source changes ----
 FROM node:20-alpine AS deps
 WORKDIR /app
+RUN apk add --no-cache openssl
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 RUN npm ci
@@ -10,6 +11,7 @@ RUN npm ci
 # ---- builder: generate Prisma client + Next.js build ----
 FROM node:20-alpine AS builder
 WORKDIR /app
+RUN apk add --no-cache openssl
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # DATABASE_URL isn't needed at build time (no migrate here), but Prisma's
