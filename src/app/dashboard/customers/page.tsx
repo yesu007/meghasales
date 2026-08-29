@@ -321,7 +321,7 @@ export default function CustomersPage() {
                   {customers.map((customer, idx) => (
                     <tr key={customer.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                       <td className="px-4 py-3 font-medium text-slate-800">
-                        <Link href={`/dashboard/leads/${customer.id}`} className="hover:text-amber-600 hover:underline">{customer.companyName}</Link>
+                        <Link href={`/dashboard/customers/${customer.id}`} className="hover:text-amber-600 hover:underline">{customer.companyName}</Link>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{customer.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{customer.mobile || '—'}</td>
@@ -344,7 +344,7 @@ export default function CustomersPage() {
                       <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{dayjs(customer.createdAt).format('DD MMM YYYY')}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <Link href={`/dashboard/leads/${customer.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-block" title="View">
+                          <Link href={`/dashboard/customers/${customer.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-block" title="View">
                             <EyeIcon className="h-4 w-4" />
                           </Link>
                           <button onClick={() => openEdit(customer.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
