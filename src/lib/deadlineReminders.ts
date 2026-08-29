@@ -48,6 +48,14 @@ export async function dispatchDeadlineReminders(now: Date = new Date()): Promise
   let notified = 0;
   let emailed = 0;
   let emailFailed = 0;
+  // Set the first time sendMail() itself throws (as opposed to a per-
+  // recipient "no email on file" pre-check) — a transport-level failure
+  // (bad SMTP credentials, unreachable host, ...) fails identically for
+  // every remaining candidate this run, so retrying it once per candidate
+  // just pays N sequential SMTP round-trips synchronously inside the
+  // /api/leads request that triggered this. One failure is enough signal;
+  // the rest stay PENDING and get a fresh attempt on the next dispatch.
+  let emailTransportBroken = false;
 
   for (const candidate of candidates) {
     const hoursRemaining = dayjs(candidate.dueDate).diff(now, 'hour', true);
@@ -79,17 +87,24 @@ export async function dispatchDeadlineReminders(now: Date = new Date()): Promise
     if (
       hoursRemaining <= EMAIL_WINDOW_HOURS &&
       mailConfigured &&
+      !emailTransportBroken &&
       !alreadySentSet.has(sentKey(candidate.entityType, candidate.entityId, 'EMAILED'))
     ) {
       try {
         const email = await resolveRecipientEmail(candidate.recipientUserId);
         if (!email) throw new Error('recipient has no email on file');
 
-        await sendMail({
-          to: email,
-          subject: `${notificationTitle(candidate.entityType)}: ${candidate.title}`,
-          html: emailHtml(candidate, now),
-        });
+        try {
+          await sendMail({
+            to: email,
+            subject: `${notificationTitle(candidate.entityType)}: ${candidate.title}`,
+            html: emailHtml(candidate, now),
+          });
+        } catch (sendError) {
+          emailTransportBroken = true;
+          throw sendError;
+        }
+
         await prisma.deadlineReminderLog.create({
           data: { entityType: candidate.entityType, entityId: candidate.entityId, stage: 'EMAILED' },
         });

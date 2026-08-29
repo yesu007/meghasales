@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 import { requirePermission } from '@/lib/rbac';
 import { isMeetingsModuleEnabled } from '@/lib/meetings/featureFlag';
 import { createActionItem } from '@/lib/meetings/actionItemService';
+import { dispatchActionItemReminders } from '@/lib/meetings/actionItemReminderDispatcher';
 import { ACTION_ITEM_STATUSES, ACTION_ITEM_PRIORITIES, MEETING_REF_TYPES } from '@/lib/meetings/constants';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,17 @@ export async function GET(request: NextRequest) {
   if (!isMeetingsModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
   const denied = await requirePermission('view_meetings');
   if (denied) return denied;
+
+  // On-demand dispatch, same pattern as /api/leads and
+  // /api/admin-ticket/tickets — Vercel Hobby crons only run once a day, so
+  // the action-items list (hit by every worklist visit too) doubles as the
+  // trigger that catches SLA reminders/escalations due between cron ticks.
+  // Best-effort: a dispatch hiccup must not block the list.
+  try {
+    await dispatchActionItemReminders();
+  } catch (error) {
+    console.error('GET /api/action-items on-demand SLA dispatch error:', error);
+  }
 
   try {
     const { searchParams } = new URL(request.url);
@@ -34,7 +46,7 @@ export async function GET(request: NextRequest) {
     const priorities = (searchParams.get('priority') || '').split(',').filter((p) => (ACTION_ITEM_PRIORITIES as readonly string[]).includes(p));
 
     // baseWhere excludes status so tab counts reflect the OTHER active
-    // filters, same convention as /api/meetings and /api/admin-ticket/tickets.
+    // filters, same convention as /api/todo and /api/admin-ticket/tickets.
     const baseWhere: Prisma.ActionItemWhereInput = {};
     if (search) baseWhere.description = { contains: search, mode: 'insensitive' };
     if (meetingId != null) baseWhere.meetingId = meetingId;

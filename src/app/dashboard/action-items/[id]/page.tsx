@@ -646,7 +646,7 @@ export default function ActionItemDetailPage() {
   return (
     <div className="space-y-6">
       <button
-        onClick={() => router.push(`/dashboard/meetings/${actionItem.meetingId}`)}
+        onClick={() => router.push(`/dashboard/todo/${actionItem.meetingId}`)}
         className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
       >
         <ArrowLeftIcon className="h-4 w-4" /> Back to Meeting
@@ -660,7 +660,7 @@ export default function ActionItemDetailPage() {
             {actionItem.meeting && (
               <p className="text-sm text-slate-500 mt-2">
                 Meeting:{' '}
-                <Link href={`/dashboard/meetings/${actionItem.meetingId}`} className="text-amber-600 hover:underline">
+                <Link href={`/dashboard/todo/${actionItem.meetingId}`} className="text-amber-600 hover:underline">
                   {actionItem.meeting.title}
                 </Link>
               </p>

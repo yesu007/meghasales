@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 async function fetchProfile() {
   const res = await fetch('/api/settings/profile');
@@ -366,9 +367,147 @@ function EmailSettingsManager() {
   );
 }
 
+interface NotificationTemplateRow {
+  id: number;
+  eventType: string;
+  channel: 'IN_APP' | 'EMAIL';
+  subject: string | null;
+  body: string;
+  isActive: boolean;
+}
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  ACTION_ITEM_DUE_SOON: 'Action Item Due Soon',
+  ACTION_ITEM_OVERDUE: 'Action Item Overdue',
+  ACTION_ITEM_ESCALATED: 'Action Item Escalated',
+  MOM_PUBLISHED: 'MOM Published',
+  MEETING_CANCELLED: 'Meeting Cancelled',
+  MEETING_RESCHEDULED: 'Meeting Rescheduled',
+};
+
+// List + inline-edit, same pattern as accounting's ReminderTemplate
+// TemplatesTab — a fixed, pre-seeded set of (eventType, channel) rows
+// (no create/delete), so admins only ever edit subject/body/active here.
+function NotificationTemplatesManager() {
+  const queryClient = useQueryClient();
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState({ subject: '', body: '', isActive: true });
+
+  const { data: templates = [], isLoading, isError } = useQuery<NotificationTemplateRow[]>({
+    queryKey: ['notification-templates'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/notification-templates');
+      if (!res.ok) throw new Error('Failed to fetch notification templates');
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (isError) toast.error('Failed to load notification templates');
+  }, [isError]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/settings/notification-templates/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      });
+      if (!res.ok) throw new Error('Failed to save template');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notification-templates'] });
+      toast.success('Template saved');
+      setEditingId(null);
+    },
+    onError: () => toast.error('Failed to save template'),
+  });
+
+  if (isLoading) {
+    return <p className="text-sm text-slate-500">Loading notification templates...</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-800 mb-1">Notification Templates</h2>
+        <p className="text-sm text-slate-500">
+          Copy sent for SLA reminders/escalations on action items, and for MOM-published/meeting-cancelled/meeting-rescheduled notifications.
+          Use <code className="text-xs bg-slate-100 px-1 rounded">{'{{token}}'}</code> placeholders — unmatched tokens render blank.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {templates.map((t) => (
+          <div key={t.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">{EVENT_TYPE_LABELS[t.eventType] || t.eventType}</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {t.channel} {!t.isActive && <span className="text-red-500">· inactive</span>}
+                </p>
+              </div>
+              {editingId !== t.id && (
+                <button
+                  onClick={() => { setEditingId(t.id); setDraft({ subject: t.subject || '', body: t.body, isActive: t.isActive }); }}
+                  className="px-2 py-1 text-xs font-medium text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+            {editingId === t.id ? (
+              <div className="mt-3 space-y-2">
+                {t.channel === 'EMAIL' && (
+                  <input
+                    value={draft.subject}
+                    onChange={(e) => setDraft((d) => ({ ...d, subject: e.target.value }))}
+                    placeholder="Subject"
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm"
+                  />
+                )}
+                <textarea
+                  rows={3}
+                  value={draft.body}
+                  onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm"
+                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`template-active-${t.id}`}
+                    checked={draft.isActive}
+                    onChange={(e) => setDraft((d) => ({ ...d, isActive: e.target.checked }))}
+                    className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                  />
+                  <label htmlFor={`template-active-${t.id}`} className="text-sm text-slate-700">Active</label>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setEditingId(null)} className="px-3 py-1.5 text-sm text-slate-600">Cancel</button>
+                  <button onClick={() => saveMutation.mutate(t.id)} disabled={saveMutation.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg disabled:opacity-50">
+                    {saveMutation.isPending ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {t.subject && <p className="text-sm text-slate-600 mt-2 font-medium">{t.subject}</p>}
+                <p className="text-sm text-slate-500 mt-1">{t.body}</p>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { data: session } = useSession();
   const isAdmin = (session?.user?.roles || []).includes('ADMIN');
+  const { has: hasPermission } = usePermissions();
+  const canManageNotificationTemplates = hasPermission('manage_notification_templates');
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('company');
 
@@ -463,6 +602,7 @@ export default function SettingsPage() {
     { id: 'branding', label: 'Branding' },
     { id: 'terms', label: 'Terms & Policies' },
     ...(isAdmin ? [{ id: 'regional', label: 'Regional' }, { id: 'email', label: 'Email (Zoho)' }] : []),
+    ...(canManageNotificationTemplates ? [{ id: 'notifications', label: 'Notification Templates' }] : []),
   ];
 
   if (isLoading) {
@@ -785,6 +925,8 @@ export default function SettingsPage() {
           )}
 
           {activeTab === 'email' && isAdmin && <EmailSettingsManager />}
+
+          {activeTab === 'notifications' && canManageNotificationTemplates && <NotificationTemplatesManager />}
         </div>
 
         {/* Save Button */}

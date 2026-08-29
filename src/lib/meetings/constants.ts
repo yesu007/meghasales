@@ -1,4 +1,4 @@
-export const MEETING_TYPES = ['INTERNAL', 'CLIENT', 'VENDOR', 'REVIEW', 'OTHER'] as const;
+export const MEETING_TYPES = ['INTERNAL', 'CLIENT', 'VENDOR', 'REVIEW', 'OTHER', 'TO_DO'] as const;
 export type MeetingType = (typeof MEETING_TYPES)[number];
 
 export const MEETING_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH'] as const;
@@ -84,23 +84,31 @@ export type ActionItemStatus = (typeof ACTION_ITEM_STATUSES)[number];
 export const ACTION_ITEM_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
 export type ActionItemPriority = (typeof ACTION_ITEM_PRIORITIES)[number];
 
-// Reopening (CLOSED/CANCELLED -> an open status) is a dedicated operation
-// with its own permission and its own target-status rule (see
-// reopenActionItem in actionItemService.ts) — it deliberately doesn't
-// appear here, same reasoning as Meeting's reschedule being a dedicated
-// endpoint rather than a generic status edge.
-const ACTION_ITEM_STATUS_TRANSITIONS: Record<ActionItemStatus, ActionItemStatus[]> = {
-  DRAFT: ['ASSIGNED', 'CANCELLED'],
-  ASSIGNED: ['ACCEPTED', 'CANCELLED'],
-  ACCEPTED: ['IN_PROGRESS', 'CANCELLED'],
-  IN_PROGRESS: ['PENDING', 'BLOCKED', 'COMPLETED', 'CANCELLED'],
-  PENDING: ['IN_PROGRESS', 'BLOCKED', 'CANCELLED'],
-  BLOCKED: ['IN_PROGRESS', 'PENDING', 'CANCELLED'],
-  COMPLETED: ['VERIFIED', 'IN_PROGRESS'], // IN_PROGRESS = verifier rejecting the completion claim back for rework
-  VERIFIED: ['CLOSED'],
-  CLOSED: [],
-  CANCELLED: [],
-};
+// Every open status can move directly to every other open status, or be
+// closed/cancelled outright — same "every status can move to every other"
+// flexibility as AdminTicket's STATUS_TRANSITIONS, so fixing a mistaken
+// status doesn't mean walking back through each intermediate step.
+//
+// CLOSED and CANCELLED are the two exceptions, and stay terminal here on
+// purpose: reopening one has to clear completedAt/verifiedAt/
+// closureRemarks, which only reopenActionItem() does correctly, so
+// reopening is a dedicated operation with its own permission
+// (reopen_action_items) rather than a generic status edge — same
+// reasoning as Meeting's reschedule being a dedicated endpoint instead of
+// a generic status edge.
+// Exported for reuse by the Phase 5 dashboard/report services, which need
+// the same "still in the pipeline" definition as the transition graph below.
+export const ACTION_ITEM_OPEN_STATUSES: ActionItemStatus[] = ['DRAFT', 'ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'PENDING', 'BLOCKED', 'COMPLETED', 'VERIFIED'];
+
+const ACTION_ITEM_STATUS_TRANSITIONS: Record<ActionItemStatus, ActionItemStatus[]> = ACTION_ITEM_STATUSES.reduce(
+  (acc, status) => {
+    acc[status] = ACTION_ITEM_OPEN_STATUSES.includes(status)
+      ? [...ACTION_ITEM_OPEN_STATUSES.filter((s) => s !== status), 'CLOSED', 'CANCELLED']
+      : [];
+    return acc;
+  },
+  {} as Record<ActionItemStatus, ActionItemStatus[]>
+);
 
 export function isValidActionItemStatusTransition(from: ActionItemStatus, to: ActionItemStatus): boolean {
   if (from === to) return false;
@@ -130,3 +138,87 @@ export type FollowUpFrequency = (typeof FOLLOWUP_FREQUENCIES)[number];
 
 export const FOLLOWUP_STATUSES = ['PENDING', 'COMPLETED'] as const;
 export type FollowUpStatus = (typeof FOLLOWUP_STATUSES)[number];
+
+// ============================================================
+// SLA ENGINE + NOTIFICATION TEMPLATES (Phase 4)
+// ============================================================
+
+export const NOTIFICATION_EVENT_TYPES = [
+  'ACTION_ITEM_DUE_SOON',
+  'ACTION_ITEM_OVERDUE',
+  'ACTION_ITEM_ESCALATED',
+  'MOM_PUBLISHED',
+  'MEETING_CANCELLED',
+  'MEETING_RESCHEDULED',
+] as const;
+export type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number];
+
+export const NOTIFICATION_CHANNELS = ['IN_APP', 'EMAIL'] as const;
+export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
+
+export const REMINDER_RECIPIENT_TYPES = ['ASSIGNEE', 'ORGANIZER'] as const;
+export type ReminderRecipientType = (typeof REMINDER_RECIPIENT_TYPES)[number];
+
+export const MAX_REMINDER_ATTEMPTS = 3;
+
+// Sane starting defaults, not fixed policy — editable later the same way
+// AdminTicket's DEFAULT_REMINDER_OFFSETS would be. Tighter cadence and an
+// earlier hand-off to the meeting organizer as priority rises.
+export const SLA_OFFSETS_BY_PRIORITY: Record<ActionItemPriority, Array<{ offsetDays: number; recipientType: ReminderRecipientType }>> = {
+  LOW: [
+    { offsetDays: -2, recipientType: 'ASSIGNEE' },
+    { offsetDays: 3, recipientType: 'ASSIGNEE' },
+    { offsetDays: 7, recipientType: 'ORGANIZER' },
+  ],
+  MEDIUM: [
+    { offsetDays: -1, recipientType: 'ASSIGNEE' },
+    { offsetDays: 2, recipientType: 'ASSIGNEE' },
+    { offsetDays: 4, recipientType: 'ORGANIZER' },
+  ],
+  HIGH: [
+    { offsetDays: -1, recipientType: 'ASSIGNEE' },
+    { offsetDays: 1, recipientType: 'ASSIGNEE' },
+    { offsetDays: 2, recipientType: 'ORGANIZER' },
+  ],
+  CRITICAL: [
+    { offsetDays: 0, recipientType: 'ASSIGNEE' },
+    { offsetDays: 1, recipientType: 'ORGANIZER' },
+    { offsetDays: 2, recipientType: 'ORGANIZER' },
+  ],
+};
+
+// ============================================================
+// DASHBOARDS & REPORTING (Phase 5)
+// ============================================================
+
+// Shared with the reminder dispatcher: an item in one of these statuses no
+// longer needs a due-date-driven urgency signal, whether or not it has been
+// formally verified/closed.
+export const ACTION_ITEM_RESOLVED_STATUSES: ActionItemStatus[] = ['COMPLETED', 'VERIFIED', 'CLOSED', 'CANCELLED'];
+
+export const ACTION_ITEM_SLA_STATUSES = ['ON_TRACK', 'DUE_SOON', 'OVERDUE', 'ON_TIME', 'BREACHED', 'NOT_APPLICABLE'] as const;
+export type ActionItemSlaStatus = (typeof ACTION_ITEM_SLA_STATUSES)[number];
+
+const DUE_SOON_WINDOW_DAYS = 2;
+
+// Computed on read, not stored — Phase 4 shipped a reminder-offset SLA
+// model (per-priority scheduled nudges), not the tiered sla_configs/
+// sla_transactions engine with pause/resume the design doc originally
+// specced, so there is no persisted breach log to read "SLA status" from.
+// ON_TIME/BREACHED apply once resolved (was resolution before or after the
+// due date); DUE_SOON/OVERDUE/ON_TRACK apply while still open; a CANCELLED
+// item never had an SLA outcome, so it's NOT_APPLICABLE rather than
+// counted as either a pass or a breach.
+export function classifyActionItemSlaStatus(
+  item: { status: string; dueDate: Date; completedAt: Date | null },
+  now: Date = new Date()
+): ActionItemSlaStatus {
+  if (item.status === 'CANCELLED') return 'NOT_APPLICABLE';
+  if ((ACTION_ITEM_RESOLVED_STATUSES as string[]).includes(item.status)) {
+    const resolvedAt = item.completedAt ?? now;
+    return resolvedAt.getTime() > item.dueDate.getTime() ? 'BREACHED' : 'ON_TIME';
+  }
+  if (item.dueDate.getTime() < now.getTime()) return 'OVERDUE';
+  const daysToDue = (item.dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+  return daysToDue <= DUE_SOON_WINDOW_DAYS ? 'DUE_SOON' : 'ON_TRACK';
+}

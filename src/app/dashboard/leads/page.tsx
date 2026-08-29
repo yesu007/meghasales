@@ -1,11 +1,9 @@
 'use client';
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Dialog, Transition } from '@headlessui/react';
 import Link from 'next/link';
-import CountrySelect, { type Country } from '@/components/CountrySelect';
 import {
   PlusIcon,
   MagnifyingGlassIcon,
@@ -24,6 +22,7 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { LEAD_STATUSES } from '@/lib/leadStatus';
+import LeadFormDrawer, { SOURCES, VERTICALS, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 
 const VIEW_TABS = [
   { value: '', label: 'All Leads' },
@@ -31,25 +30,7 @@ const VIEW_TABS = [
   { value: 'followed-up', label: 'Followed-up Leads' },
 ];
 
-const SOURCES = [
-  { value: 'WEBSITE', label: 'Website' },
-  { value: 'WHATSAPP', label: 'WhatsApp' },
-  { value: 'REFERRAL', label: 'Referral' },
-  { value: 'EMAIL', label: 'Email' },
-  { value: 'TRADE_SHOW', label: 'Trade Show' },
-  { value: 'COLD_CALL', label: 'Cold Call' },
-  { value: 'SALES_EXECUTIVE', label: 'Sales Executive' },
-];
-
 const STATUSES = LEAD_STATUSES;
-
-const VERTICALS = [
-  { value: 'TRADING', label: 'Trading' },
-  { value: 'JEWELLERY', label: 'Jewellery' },
-  { value: 'MANUFACTURING', label: 'Manufacturing' },
-  { value: 'TRADING_MANUFACTURING', label: 'Trading + Manufacturing' },
-  { value: 'TRADING_JEWELLERY_MANUFACTURING', label: 'Trading + Jewellery + Manufacturing' },
-];
 
 interface Lead {
   id: number;
@@ -92,12 +73,6 @@ async function fetchUsers(): Promise<UserOption[]> {
   if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
-}
-
-interface CurrencyOption {
-  currencyCode: string;
-  currencyName: string;
-  currencySymbol: string;
 }
 
 export default function LeadsPage() {
@@ -186,13 +161,10 @@ export default function LeadsPage() {
     if (isUsersError) toast.error('Failed to load users');
   }, [isUsersError]);
 
-  // Create/edit lead form
-  const blankForm = {
-    companyName: '', contactPerson: '', mobile: '', email: '', leadSource: '', businessVerticals: '',
-    countryId: null as number | null, currencyCode: '', currencySymbol: '', taxType: '', taxPercentage: 0 as number | string,
-    state: '', city: '', notes: '',
-  };
-  const [form, setForm] = useState(blankForm);
+  // Create/edit lead form — form state lives here (page-owned), rendering
+  // and validation live in the shared LeadFormDrawer (also used by the
+  // Customers/Converted-Leads page).
+  const [form, setForm] = useState<LeadFormState>(blankLeadForm);
   const [editingId, setEditingId] = useState<number | null>(null);
 
   // Only Administrators can override the currency a country implies —
@@ -213,31 +185,10 @@ export default function LeadsPage() {
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
-
-  const validateForm = (data: typeof form) => {
-    const errs: Record<string, string> = {};
-    if (!data.companyName) errs.companyName = 'Company name is required';
-    if (!data.contactPerson) errs.contactPerson = 'Contact person is required';
-    if (!data.mobile) errs.mobile = 'Mobile is required';
-    if (!data.leadSource) errs.leadSource = 'Lead source is required';
-    if (!data.countryId) errs.countryId = 'Country is required';
-    return errs;
-  };
-
-  const handleCountryChange = (country: Country) => {
-    setForm((f) => ({
-      ...f,
-      countryId: country.id,
-      currencyCode: country.currencyCode,
-      currencySymbol: country.currencySymbol,
-      taxType: country.defaultTaxType,
-      taxPercentage: country.defaultTaxPercentage,
-    }));
-  };
+  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankLeadForm); setFormErrors({}); };
 
   const saveMutation = useMutation({
-    mutationFn: async (data: typeof form) => {
+    mutationFn: async (data: LeadFormState) => {
       const url = editingId ? `/api/leads/${editingId}` : '/api/leads';
       const method = editingId ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
@@ -253,29 +204,9 @@ export default function LeadsPage() {
   });
 
   const openEdit = async (id: number) => {
-    const res = await fetch(`/api/leads/${id}`);
-    if (!res.ok) { toast.error('Failed to load lead'); return; }
-    const lead = await res.json();
-    let businessVerticals = '';
-    if (lead.businessVerticals) {
-      try { businessVerticals = JSON.parse(lead.businessVerticals); } catch { businessVerticals = lead.businessVerticals; }
-    }
-    setForm({
-      companyName: lead.companyName || '',
-      contactPerson: lead.contactPerson || '',
-      mobile: lead.mobile || '',
-      email: lead.email || '',
-      leadSource: lead.leadSource || '',
-      businessVerticals,
-      countryId: lead.countryId || null,
-      currencyCode: lead.currencyCode || '',
-      currencySymbol: lead.currencySymbol || '',
-      taxType: lead.taxType || '',
-      taxPercentage: 0,
-      state: lead.state || '',
-      city: lead.city || '',
-      notes: lead.notes || '',
-    });
+    const data = await fetchLeadForEdit(id);
+    if (!data) { toast.error('Failed to load lead'); return; }
+    setForm(data);
     setEditingId(id);
     setDrawerOpen(true);
   };
@@ -362,7 +293,7 @@ export default function LeadsPage() {
             {showDashboard ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
             {showDashboard ? 'Hide Dashboard' : 'Show Dashboard'}
           </button>
-          <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+          <button onClick={() => { setEditingId(null); setForm(blankLeadForm); setDrawerOpen(true); }} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
             <PlusIcon className="h-4 w-4" /> New Lead
           </button>
         </div>
@@ -556,115 +487,19 @@ export default function LeadsPage() {
       </div>
 
       {/* Create/Edit Lead Drawer */}
-      <Transition appear show={drawerOpen} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={closeDrawer}>
-          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
-            <div className="fixed inset-0 bg-black/40" />
-          </Transition.Child>
-          <div className="fixed inset-0 overflow-hidden">
-            <div className="fixed inset-y-0 right-0 flex max-w-full pl-10">
-              <Transition.Child as={Fragment} enter="transform transition ease-in-out duration-300" enterFrom="translate-x-full" enterTo="translate-x-0" leave="transform transition ease-in-out duration-200" leaveFrom="translate-x-0" leaveTo="translate-x-full">
-                <Dialog.Panel className="w-screen max-w-lg">
-                  <div className="flex h-full flex-col bg-white shadow-xl overflow-y-auto">
-                    <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b">
-                      <Dialog.Title className="text-lg font-semibold text-slate-800">{editingId ? 'Edit Lead' : 'Create New Lead'}</Dialog.Title>
-                      <button onClick={closeDrawer} className="p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-slate-600 rounded"><XMarkIcon className="h-5 w-5" /></button>
-                    </div>
-                    <form onSubmit={(e) => {
-                      e.preventDefault();
-                      const errs = validateForm(form);
-                      setFormErrors(errs);
-                      if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
-                      saveMutation.mutate(form);
-                    }} className="flex-1 px-4 sm:px-6 py-4 space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="col-span-2">
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Company Name *</label>
-                          <input value={form.companyName} onChange={(e) => setForm(f => ({...f, companyName: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />
-                          {formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person *</label>
-                          <input value={form.contactPerson} onChange={(e) => setForm(f => ({...f, contactPerson: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.contactPerson ? 'border-red-400' : 'border-slate-300'}`} />
-                          {formErrors.contactPerson && <p className="text-xs text-red-600 mt-1">{formErrors.contactPerson}</p>}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Mobile *</label>
-                          <input value={form.mobile} onChange={(e) => setForm(f => ({...f, mobile: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.mobile ? 'border-red-400' : 'border-slate-300'}`} />
-                          {formErrors.mobile && <p className="text-xs text-red-600 mt-1">{formErrors.mobile}</p>}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                          <input type="email" value={form.email} onChange={(e) => setForm(f => ({...f, email: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Lead Source *</label>
-                          <select value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
-                            <option value="">Select</option>
-                            {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                          </select>
-                          {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
-                          <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                            <option value="">Select</option>
-                            {VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
-                          </select>
-                        </div>
-                        <div className="col-span-2">
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Country *</label>
-                          <CountrySelect value={form.countryId} onChange={handleCountryChange} />
-                          {formErrors.countryId && <p className="text-xs text-red-600 mt-1">{formErrors.countryId}</p>}
-                          {form.currencyCode && (
-                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                              <span>Currency: <strong>{form.currencyCode} ({form.currencySymbol})</strong></span>
-                              <span>Tax: <strong>{form.taxType}</strong></span>
-                            </div>
-                          )}
-                          {isAdmin && form.countryId && (
-                            <div className="mt-2">
-                              <label className="block text-xs font-medium text-slate-500 mb-1">Override currency (Administrator only)</label>
-                              <select
-                                value={form.currencyCode}
-                                onChange={(e) => {
-                                  const c = currencies.find((cur) => cur.currencyCode === e.target.value);
-                                  if (c) setForm(f => ({ ...f, currencyCode: c.currencyCode, currencySymbol: c.currencySymbol }));
-                                }}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                              >
-                                {currencies.map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode} — {c.currencyName}</option>)}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">State</label>
-                          <input value={form.state} onChange={(e) => setForm(f => ({...f, state: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
-                          <input value={form.city} onChange={(e) => setForm(f => ({...f, city: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-                          <textarea rows={3} value={form.notes} onChange={(e) => setForm(f => ({...f, notes: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
-                        </div>
-                      </div>
-                      <div className="flex justify-end gap-3 pt-4 border-t">
-                        <button type="button" onClick={closeDrawer} className="px-4 py-2 min-h-[44px] text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-                        <button type="submit" disabled={saveMutation.isPending} className="px-4 py-2 min-h-[44px] bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-                          {saveMutation.isPending ? 'Saving...' : editingId ? 'Save Changes' : 'Save Lead'}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </Dialog.Panel>
-              </Transition.Child>
-            </div>
-          </div>
-        </Dialog>
-      </Transition>
+      <LeadFormDrawer
+        open={drawerOpen}
+        onClose={closeDrawer}
+        editingId={editingId}
+        form={form}
+        setForm={setForm}
+        formErrors={formErrors}
+        setFormErrors={setFormErrors}
+        onSave={(data) => saveMutation.mutate(data)}
+        isSaving={saveMutation.isPending}
+        isAdmin={isAdmin}
+        currencies={currencies}
+      />
     </div>
   );
 }

@@ -98,14 +98,18 @@ model User {
   assignedDiscussions      EventDiscussion[]      @relation("EventDiscussionAssignedTo")
 
   // Accounting
-  managedInvoices      Invoice[]         @relation("InvoiceAccountManager")
-  createdInvoices      Invoice[]         @relation("InvoiceCreatedBy")
-  updatedInvoices      Invoice[]         @relation("InvoiceUpdatedBy")
-  recordedPayments     Payment[]         @relation("PaymentRecordedBy")
-  reminderFollowUps    PaymentReminder[] @relation("ReminderFollowedUpBy")
-  issuedCreditNotes    CreditNote[]      @relation("CreditNoteIssuedBy")
-  createdExchangeRates ExchangeRate[]    @relation("ExchangeRateCreatedBy")
-  recordedExpenses     Expense[]         @relation("ExpenseRecordedBy")
+  managedInvoices        Invoice[]               @relation("InvoiceAccountManager")
+  createdInvoices        Invoice[]               @relation("InvoiceCreatedBy")
+  updatedInvoices        Invoice[]               @relation("InvoiceUpdatedBy")
+  recordedPayments       Payment[]               @relation("PaymentRecordedBy")
+  reminderFollowUps      PaymentReminder[]       @relation("ReminderFollowedUpBy")
+  issuedCreditNotes      CreditNote[]            @relation("CreditNoteIssuedBy")
+  createdExchangeRates   ExchangeRate[]          @relation("ExchangeRateCreatedBy")
+  recordedExpenses       Expense[]               @relation("ExpenseRecordedBy")
+  approvedExpenseBudgets ExpenseBudget[]         @relation("ExpenseBudgetApprovedBy")
+  createdExpenseBudgets  ExpenseBudget[]         @relation("ExpenseBudgetCreatedBy")
+  revisedExpenseBudgets  ExpenseBudgetRevision[] @relation("ExpenseBudgetRevisedBy")
+  headOfVerticals        Vertical[]              @relation("VerticalHead")
 
   @@map("users")
 }
@@ -159,6 +163,18 @@ model Lead {
   events          Event[]
   documents       EventDocument[]
 
+  // The leads list's default (unfiltered) view sorts by createdAt, the
+  // dashboard stats widget counts by status/leadSource/nextFollowUpDate on
+  // every page load, and the on-demand deadline-reminder scan (piggybacked
+  // on every GET /api/leads) filters on nextFollowUpDate + assignedBaId —
+  // this model had zero indexes beyond its primary key despite all of that,
+  // forcing a full table scan on every one of those queries.
+  @@index([createdAt])
+  @@index([status])
+  @@index([leadSource])
+  @@index([assignedBaId])
+  @@index([nextFollowUpDate])
+  @@index([lastFollowUpDate])
   @@map("leads")
 }
 
@@ -327,8 +343,14 @@ model EventDiscussion {
   assignedTo  User?           @relation("EventDiscussionAssignedTo", fields: [assignedToId], references: [id])
   attachments EventDocument[]
 
+  // completionStatus/targetDate/assignedToId are exactly the columns the
+  // on-demand deadline-reminder scan filters on (piggybacked on every
+  // GET /api/leads) — previously unindexed, forcing a full table scan.
   @@index([eventId])
   @@index([createdAt])
+  @@index([completionStatus])
+  @@index([targetDate])
+  @@index([assignedToId])
   @@map("event_discussions")
 }
 
@@ -1284,6 +1306,7 @@ model ExpenseCategory {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   expenses Expense[]
+  budgets  ExpenseBudget[]
 
   @@map("expense_categories")
 }
@@ -1319,6 +1342,103 @@ model Expense {
   @@index([categoryId])
   @@index([expenseDate])
   @@map("expenses")
+}
+
+// ============================================================
+// VERTICALS & EXPENSE BUDGET (BRD §6, §10 — vertical-wise budgeting)
+//
+// Vertical carries just what its own admin screen needs (name, head,
+// headline budget) plus the code every other module keys off. Wiring
+// verticalId onto Lead/Implementation/Employee (and backfilling their
+// existing free-text businessVerticals values) is separate follow-on work,
+// not required for this screen or for ExpenseBudget to be useful on
+// their own. `budget` here is a simple headline figure the vertical's own
+// admin screen edits directly — a separate, simpler thing from the
+// category-by-month ExpenseBudget rows below, which stay the source of
+// truth for actual Budget vs Actual variance reporting.
+// ============================================================
+
+model Vertical {
+  id                 Int      @id @default(autoincrement())
+  name               String   @unique
+  code               String   @unique
+  headId             Int?     @map("head_id")
+  budget             Decimal? @map("budget") @db.Decimal(15, 2)
+  budgetCurrencyCode String?  @default("INR") @map("budget_currency_code")
+  isActive           Boolean  @default(true) @map("is_active")
+  sortOrder          Int      @default(0) @map("sort_order")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  head    User?           @relation("VerticalHead", fields: [headId], references: [id])
+  budgets ExpenseBudget[]
+
+  @@map("verticals")
+}
+
+model ExpenseBudget {
+  id                 Int       @id @default(autoincrement())
+  financialYearStart DateTime  @map("financial_year_start")
+  financialYearEnd   DateTime  @map("financial_year_end")
+  verticalId         Int?      @map("vertical_id") // null = company-wide
+  categoryId         Int       @map("category_id")
+  totalAmount        Decimal   @map("total_amount") @db.Decimal(15, 2)
+  currencyCode       String    @default("INR") @map("currency_code")
+  status             String    @default("DRAFT") // DRAFT | APPROVED
+  notes              String?
+  approvedById       Int?      @map("approved_by")
+  approvedAt         DateTime? @map("approved_at")
+  createdById        Int?      @map("created_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  vertical   Vertical?               @relation(fields: [verticalId], references: [id])
+  category   ExpenseCategory         @relation(fields: [categoryId], references: [id])
+  approvedBy User?                   @relation("ExpenseBudgetApprovedBy", fields: [approvedById], references: [id])
+  createdBy  User?                   @relation("ExpenseBudgetCreatedBy", fields: [createdById], references: [id])
+  months     ExpenseBudgetMonth[]
+  revisions  ExpenseBudgetRevision[]
+
+  // One budget per financial-year/vertical/category combination — a second
+  // budget for the same slice should be a revision of this one, not a
+  // sibling row competing with it in variance reports.
+  @@unique([financialYearStart, verticalId, categoryId])
+  @@index([verticalId])
+  @@index([categoryId])
+  @@index([status])
+  @@map("expense_budgets")
+}
+
+// The monthly spread that makes "month-wise Budget vs Actual" (BRD §6, §9)
+// possible — a budget's totalAmount is the sum of its months, enforced in
+// application code at write time (see /api/expense-budgets) rather than a
+// DB constraint, matching this codebase's existing convention of validating
+// cross-row invariants in the route handler.
+model ExpenseBudgetMonth {
+  id       Int      @id @default(autoincrement())
+  budgetId Int      @map("budget_id")
+  month    DateTime // first day of the month, e.g. 2026-08-01
+  amount   Decimal  @db.Decimal(15, 2)
+
+  budget ExpenseBudget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@unique([budgetId, month])
+  @@map("expense_budget_months")
+}
+
+model ExpenseBudgetRevision {
+  id             Int      @id @default(autoincrement())
+  budgetId       Int      @map("budget_id")
+  previousAmount Decimal  @map("previous_amount") @db.Decimal(15, 2)
+  newAmount      Decimal  @map("new_amount") @db.Decimal(15, 2)
+  reason         String?
+  revisedById    Int?     @map("revised_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  budget    ExpenseBudget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  revisedBy User?         @relation("ExpenseBudgetRevisedBy", fields: [revisedById], references: [id])
+
+  @@map("expense_budget_revisions")
 }
 
 // ============================================================
@@ -1502,7 +1622,7 @@ model AdminTicketAttachment {
 model Meeting {
   id              Int      @id @default(autoincrement())
   title           String
-  meetingType     String   @map("meeting_type") // INTERNAL | CLIENT | VENDOR | REVIEW | OTHER
+  meetingType     String   @map("meeting_type") // INTERNAL | CLIENT | VENDOR | REVIEW | OTHER | TO_DO
   purpose         String?
   scheduledAt     DateTime @map("scheduled_at")
   durationMinutes Int?     @map("duration_minutes")
@@ -1753,6 +1873,7 @@ model ActionItem {
   history    ActionItemHistory[]
   comments   ActionItemComment[]
   followUps  ActionItemFollowUp[]
+  reminders  ActionItemReminder[]
 
   @@index([status, dueDate])
   @@index([assignedToId])
@@ -1816,4 +1937,53 @@ model ActionItemFollowUp {
   @@index([actionItemId])
   @@index([nextFollowUpDate])
   @@map("action_item_followups")
+}
+
+// ============================================================
+// ACTION ITEM SLA ENGINE + NOTIFICATION TEMPLATES (Phase 4)
+//
+// ActionItemReminder mirrors AdminTicketReminder's materialize-then-dispatch
+// shape (see reminderMaterializer.ts/dispatcher.ts precedent) — negative
+// offsetDays are advance warnings to the assignee, 0/positive are overdue
+// escalations that hand off to the meeting organizer as priority rises.
+// NotificationTemplate is a fixed, pre-seeded set of (eventType, channel)
+// rows (not user-creatable) so notification copy for SLA reminders and the
+// one-off Meeting/MOM event notifications is admin-editable rather than a
+// hardcoded string, mirroring ReminderTemplate's {{token}} convention in
+// the accounting module.
+// ============================================================
+
+model ActionItemReminder {
+  id            Int       @id @default(autoincrement())
+  actionItemId  Int       @map("action_item_id")
+  offsetDays    Int       @map("offset_days") // negative = advance warning, 0/positive = overdue escalation
+  channel       String // IN_APP | EMAIL
+  recipientType String    @map("recipient_type") // ASSIGNEE | ORGANIZER
+  scheduledAt   DateTime  @map("scheduled_at")
+  status        String    @default("PENDING") // PENDING | SENT | FAILED | SKIPPED | CANCELLED
+  attemptCount  Int       @default(0) @map("attempt_count")
+  lastError     String?   @map("last_error")
+  sentAt        DateTime? @map("sent_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  actionItem ActionItem @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+
+  @@unique([actionItemId, offsetDays, channel, recipientType])
+  @@index([scheduledAt, status])
+  @@index([actionItemId])
+  @@map("action_item_reminders")
+}
+
+model NotificationTemplate {
+  id        Int      @id @default(autoincrement())
+  eventType String   @map("event_type") // ACTION_ITEM_DUE_SOON | ACTION_ITEM_OVERDUE | ACTION_ITEM_ESCALATED | MOM_PUBLISHED | MEETING_CANCELLED | MEETING_RESCHEDULED
+  channel   String // IN_APP | EMAIL
+  subject   String? // EMAIL only
+  body      String // {{token}} substitution — see notificationTemplates.ts for the token set per eventType
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([eventType, channel])
+  @@map("notification_templates")
 }

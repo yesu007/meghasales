@@ -1,5 +1,12 @@
 import prisma from '@/lib/prisma';
 import { isMomContentEditable, isValidMomStatusTransition, MomStatus } from './constants';
+import { resolveMeetingRecipientUserIds } from './meetingService';
+import { notifyManyViaTemplate } from './notificationTemplates';
+
+function appUrl(path: string): string {
+  const base = process.env.NEXTAUTH_URL || '';
+  return `${base}${path}`;
+}
 
 export class OptimisticLockError extends Error {}
 export class InvalidStatusTransitionError extends Error {}
@@ -127,7 +134,27 @@ export async function rejectMom(momId: number, version: number, performedById: n
 }
 
 export async function publishMom(momId: number, version: number, performedById: number | null) {
-  // TODO(Phase 4): fan out a MOM_PUBLISHED notification to all meeting
-  // participants once the notification-template/preference tables exist.
-  return transitionMomStatus(momId, 'PUBLISHED', version, performedById, { publishedAt: new Date() }, 'MOM_PUBLISHED');
+  const mom = await transitionMomStatus(momId, 'PUBLISHED', version, performedById, { publishedAt: new Date() }, 'MOM_PUBLISHED');
+
+  // Best-effort — a notification failure must never fail the publish
+  // action itself, same reasoning as every other best-effort dispatch in
+  // this codebase (e.g. the on-demand deadline-reminder calls).
+  try {
+    const meeting = await prisma.meeting.findUnique({ where: { id: mom.meetingId }, select: { title: true } });
+    const recipientUserIds = await resolveMeetingRecipientUserIds(mom.meetingId);
+    if (meeting && recipientUserIds.length > 0) {
+      await notifyManyViaTemplate({
+        eventType: 'MOM_PUBLISHED',
+        channels: ['IN_APP', 'EMAIL'],
+        entityType: 'MOM',
+        entityId: mom.id,
+        recipientUserIds,
+        vars: { meetingTitle: meeting.title, actionUrl: appUrl(`/dashboard/todo/${mom.meetingId}`) },
+      });
+    }
+  } catch (error) {
+    console.error(`MOM_PUBLISHED notification fan-out failed for mom ${mom.id}:`, error);
+  }
+
+  return mom;
 }
