@@ -13,6 +13,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       where: { id: parseInt(params.id) },
       include: {
         category: { select: { name: true } },
+        subCategory: { select: { name: true } },
         recordedBy: { select: { firstName: true, lastName: true } },
       },
     });
@@ -43,11 +44,26 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       if (!category) return NextResponse.json({ message: 'Category not found' }, { status: 404 });
     }
 
+    let subCategoryId: number | null | undefined = undefined;
+    if (body.subCategoryId !== undefined) {
+      if (body.subCategoryId === null || body.subCategoryId === '') {
+        subCategoryId = null;
+      } else {
+        const effectiveCategoryId = body.categoryId !== undefined ? parseInt(body.categoryId) : existing.categoryId;
+        const subCategory = await prisma.expenseSubCategory.findUnique({ where: { id: parseInt(body.subCategoryId) } });
+        if (!subCategory || subCategory.categoryId !== effectiveCategoryId) {
+          return NextResponse.json({ message: 'Sub-category not found for the selected category' }, { status: 404 });
+        }
+        subCategoryId = subCategory.id;
+      }
+    }
+
     const nextStatus = body.status !== undefined ? body.status : existing.status;
     const expense = await prisma.expense.update({
       where: { id },
       data: {
         ...(body.categoryId !== undefined && { categoryId: parseInt(body.categoryId) }),
+        ...(subCategoryId !== undefined && { subCategoryId }),
         ...(body.vendor !== undefined && { vendor: body.vendor || null }),
         ...(body.expenseDate !== undefined && { expenseDate: new Date(body.expenseDate) }),
         ...(body.amount !== undefined && { amount: Number(body.amount) }),

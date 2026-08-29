@@ -392,7 +392,27 @@ model Quotation {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
+  // Resource-based costing mode (Quotation Calculator) — additive alongside
+  // the catalog/module-driven fields above. costingMode discriminates which
+  // set of fields is meaningful for a given row; resource line items and the
+  // admin/markup input config live in pricingSnapshot (matching this model's
+  // existing convention of storing calculator input/output as Json rather
+  // than a normalized child table — see softwareModules/addons above).
+  costingMode           String    @default("CATALOG") @map("costing_mode")
+  projectName           String?   @map("project_name")
+  verticalId            Int?      @map("vertical_id")
+  resourceCostTotal     Decimal?  @map("resource_cost_total") @db.Decimal(15, 2)
+  outsourcingCost       Decimal?  @map("outsourcing_cost") @db.Decimal(15, 2)
+  travelCost            Decimal?  @map("travel_cost") @db.Decimal(15, 2)
+  adminCost             Decimal?  @map("admin_cost") @db.Decimal(15, 2)
+  markupPercentage      Decimal?  @map("markup_percentage") @db.Decimal(5, 2)
+  markupAmount          Decimal?  @map("markup_amount") @db.Decimal(15, 2)
+  marginPercent         Decimal?  @map("margin_percent") @db.Decimal(5, 2)
+  calculatedTotalAmount Decimal?  @map("calculated_total_amount") @db.Decimal(15, 2)
+  totalAmountOverridden Boolean   @default(false) @map("total_amount_overridden")
+
   lead     Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  vertical Vertical? @relation(fields: [verticalId], references: [id])
   invoices Invoice[]
 
   @@map("quotations")
@@ -1305,16 +1325,38 @@ model ExpenseCategory {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  expenses Expense[]
-  budgets  ExpenseBudget[]
+  expenses      Expense[]
+  budgets       ExpenseBudget[]
+  subCategories ExpenseSubCategory[]
 
   @@map("expense_categories")
+}
+
+// A category's sub-categories (e.g. "Subscriptions" -> "Cursor"/"Claude") —
+// scoped to one parent category rather than a flat/global list, since the
+// same sub-category name has no meaning outside its category.
+model ExpenseSubCategory {
+  id         Int      @id @default(autoincrement())
+  categoryId Int      @map("category_id")
+  name       String
+  isActive   Boolean  @default(true) @map("is_active")
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  category ExpenseCategory @relation(fields: [categoryId], references: [id])
+  expenses Expense[]
+
+  @@unique([categoryId, name])
+  @@index([categoryId])
+  @@map("expense_sub_categories")
 }
 
 model Expense {
   id              Int       @id @default(autoincrement())
   expenseNumber   String    @unique @map("expense_number")
   categoryId      Int       @map("category_id")
+  subCategoryId   Int?      @map("sub_category_id")
   vendor          String?
   expenseDate     DateTime  @map("expense_date")
   amount          Decimal   @db.Decimal(14, 2)
@@ -1335,11 +1377,13 @@ model Expense {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  category   ExpenseCategory @relation(fields: [categoryId], references: [id])
-  recordedBy User?           @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
+  category    ExpenseCategory      @relation(fields: [categoryId], references: [id])
+  subCategory ExpenseSubCategory?  @relation(fields: [subCategoryId], references: [id])
+  recordedBy  User?                @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
 
   @@index([status])
   @@index([categoryId])
+  @@index([subCategoryId])
   @@index([expenseDate])
   @@map("expenses")
 }
@@ -1370,8 +1414,9 @@ model Vertical {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  head    User?           @relation("VerticalHead", fields: [headId], references: [id])
-  budgets ExpenseBudget[]
+  head       User?           @relation("VerticalHead", fields: [headId], references: [id])
+  budgets    ExpenseBudget[]
+  quotations Quotation[]
 
   @@map("verticals")
 }

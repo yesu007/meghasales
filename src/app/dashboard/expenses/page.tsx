@@ -7,13 +7,16 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 
-interface ExpenseCategory { id: number; name: string; description: string | null; isActive: boolean }
+interface ExpenseSubCategory { id: number; categoryId: number; name: string; isActive: boolean }
+interface ExpenseCategory { id: number; name: string; description: string | null; isActive: boolean; subCategories: ExpenseSubCategory[] }
 interface CurrencyOption { currencyCode: string }
 interface ExpenseRow {
   id: number;
   expenseNumber: string;
   categoryId: number;
   categoryName: string;
+  subCategoryId: number | null;
+  subCategoryName: string | null;
   vendor: string | null;
   expenseDate: string;
   amount: string;
@@ -62,7 +65,7 @@ async function fetchCurrencies(): Promise<CurrencyOption[]> {
 }
 
 const blankForm = {
-  categoryId: '', vendor: '', expenseDate: dayjs().format('YYYY-MM-DD'), amount: '', currencyCode: 'INR',
+  categoryId: '', subCategoryId: '', vendor: '', expenseDate: dayjs().format('YYYY-MM-DD'), amount: '', currencyCode: 'INR',
   exchangeRate: '', paymentMethod: '', referenceNumber: '', notes: '', status: 'PENDING',
 };
 
@@ -76,6 +79,8 @@ export default function ExpensesPage() {
   const [form, setForm] = useState(blankForm);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
+  const [showSubCategoryForm, setShowSubCategoryForm] = useState(false);
+  const [subCategoryForm, setSubCategoryForm] = useState({ categoryId: '', name: '' });
 
   const { data, isLoading } = useQuery({ queryKey: ['expenses', statusFilter, page, size], queryFn: () => fetchExpenses(statusFilter, page, size) });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
@@ -87,6 +92,7 @@ export default function ExpensesPage() {
     setEditingId(row.id);
     setForm({
       categoryId: String(row.categoryId),
+      subCategoryId: row.subCategoryId ? String(row.subCategoryId) : '',
       vendor: row.vendor || '',
       expenseDate: dayjs(row.expenseDate).format('YYYY-MM-DD'),
       amount: row.amount,
@@ -142,6 +148,19 @@ export default function ExpensesPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const createSubCategory = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/expenses/sub-categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subCategoryForm) });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to create sub-category'); }
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-categories'] }); toast.success('Sub-category created'); setShowSubCategoryForm(false); setSubCategoryForm({ categoryId: '', name: '' }); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const selectedCategory = categories.find((c) => c.id === Number(form.categoryId));
+  const subCategoryOptions = selectedCategory?.subCategories || [];
+
   const expenses = data?.content || [];
   const totalElements = data?.totalElements || 0;
   const totalPages = data?.totalPages || 0;
@@ -170,6 +189,10 @@ export default function ExpensesPage() {
               toast.error('Category, amount, date, and payment method are required');
               return;
             }
+            if (subCategoryOptions.length > 0 && !form.subCategoryId) {
+              toast.error('Sub-category is required');
+              return;
+            }
             save.mutate();
           }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
@@ -178,9 +201,16 @@ export default function ExpensesPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-              <select value={form.categoryId} onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))} className={inputCls}>
+              <select value={form.categoryId} onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value, subCategoryId: '' }))} className={inputCls}>
                 <option value="">Select category</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Sub Category</label>
+              <select value={form.subCategoryId} onChange={(e) => setForm((f) => ({ ...f, subCategoryId: e.target.value }))} className={inputCls} disabled={subCategoryOptions.length === 0}>
+                <option value="">{subCategoryOptions.length === 0 ? 'No sub-categories' : 'Select sub-category'}</option>
+                {subCategoryOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
@@ -264,6 +294,7 @@ export default function ExpensesPage() {
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-white">Expense</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Sub Category</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Date</th>
                   <th className="px-4 py-3 text-right font-semibold text-white">Amount</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
@@ -278,6 +309,7 @@ export default function ExpensesPage() {
                       <p className="text-xs text-slate-400">{e.vendor || 'No vendor'}{e.referenceNumber ? ` · ${e.referenceNumber}` : ''}</p>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{e.categoryName}</td>
+                    <td className="px-4 py-3 text-slate-600">{e.subCategoryName || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{dayjs(e.expenseDate).format('DD MMM YYYY')}</td>
                     <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(e.amount, e.currencyCode)}</td>
                     <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[e.status]}`}>{e.status}</span></td>
@@ -351,9 +383,14 @@ export default function ExpensesPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-800">Expense Categories</h2>
-          <button onClick={() => setShowCategoryForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
-            <PlusIcon className="h-4 w-4" /> Add Category
-          </button>
+          <div className="flex items-center gap-4">
+            <button onClick={() => setShowSubCategoryForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
+              <PlusIcon className="h-4 w-4" /> Add Sub Category
+            </button>
+            <button onClick={() => setShowCategoryForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
+              <PlusIcon className="h-4 w-4" /> Add Category
+            </button>
+          </div>
         </div>
         {showCategoryForm && (
           <form
@@ -368,15 +405,31 @@ export default function ExpensesPage() {
             </div>
           </form>
         )}
+        {showSubCategoryForm && (
+          <form
+            onSubmit={(e) => { e.preventDefault(); if (!subCategoryForm.categoryId || !subCategoryForm.name) { toast.error('Category and name are required'); return; } createSubCategory.mutate(); }}
+            className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200"
+          >
+            <select value={subCategoryForm.categoryId} onChange={(e) => setSubCategoryForm((f) => ({ ...f, categoryId: e.target.value }))} className={inputCls}>
+              <option value="">Select category</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <input placeholder="Sub-category name" value={subCategoryForm.name} onChange={(e) => setSubCategoryForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} />
+            <div className="col-span-2 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowSubCategoryForm(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+              <button type="submit" disabled={createSubCategory.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">Add</button>
+            </div>
+          </form>
+        )}
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-slate-500 uppercase">
-            <tr><th className="py-1.5 pr-4">Name</th><th className="py-1.5">Description</th></tr>
+            <tr><th className="py-1.5 pr-4">Name</th><th className="py-1.5">Sub Categories</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {categories.map((c) => (
               <tr key={c.id}>
-                <td className="py-2 pr-4 text-slate-800">{c.name}</td>
-                <td className="py-2 text-slate-600">{c.description || '—'}</td>
+                <td className="py-2 pr-4 text-slate-800 align-top whitespace-nowrap">{c.name}</td>
+                <td className="py-2 text-slate-600">{c.subCategories.length > 0 ? c.subCategories.map((s) => s.name).join(', ') : '—'}</td>
               </tr>
             ))}
           </tbody>

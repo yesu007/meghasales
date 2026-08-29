@@ -3,13 +3,13 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import dayjs from 'dayjs';
+import dayjs, { Dayjs } from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { defaultMonthlySpread } from '@/lib/expenseBudgetVariance';
 
-interface Vertical { id: number; name: string }
+interface Vertical { id: number; name: string; headName?: string | null }
 interface ExpenseCategory { id: number; name: string }
 interface CurrencyOption { currencyCode: string }
 interface BudgetRow {
@@ -25,27 +25,16 @@ interface BudgetRow {
   status: string;
   createdByName: string | null;
 }
-interface CurrencyTotal { currencyCode: string; totalAmount: string | null }
-interface BudgetListResponse { content: BudgetRow[]; page: number; totalPages: number; totalElements: number; totalsByCurrency: CurrencyTotal[] }
+interface BudgetListResponse { content: BudgetRow[]; page: number; totalPages: number; totalElements: number }
 
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'bg-slate-100 text-slate-700',
-  APPROVED: 'bg-green-100 text-green-700',
-};
 const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
 
-function getPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i);
-  if (current <= 3) return [0, 1, 2, 3, 'ellipsis', total - 1];
-  if (current >= total - 4) return [0, 'ellipsis', total - 4, total - 3, total - 2, total - 1];
-  return [0, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total - 1];
-}
+// Matches the underlying decimal amounts (which come back as strings from
+// Prisma) into the comma-grouped display the matrix cells show at rest.
+const fmt = (n: number | string) => (n === 0 || n ? Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '0');
 
-async function fetchBudgets(status: string, verticalId: string, categoryId: string, page: number, size: number): Promise<BudgetListResponse> {
-  const params = new URLSearchParams({ page: String(page), size: String(size) });
-  if (status) params.set('status', status);
-  if (verticalId) params.set('verticalId', verticalId);
-  if (categoryId) params.set('categoryId', categoryId);
+async function fetchMatrixBudgets(financialYearStart: string): Promise<BudgetListResponse> {
+  const params = new URLSearchParams({ page: '0', size: '500', financialYearStart });
   const res = await fetch(`/api/expense-budgets?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch expense budgets');
   return res.json();
@@ -85,27 +74,88 @@ const blankForm = () => {
   };
 };
 
+// Page numbers with ellipsis, e.g. 1 2 3 4 … 10 — same helper as the
+// Expenses list page, for a consistent pagination look across the app.
+function getPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+  if (current <= 3) return [0, 1, 2, 3, 'ellipsis', total - 1];
+  if (current >= total - 4) return [0, 'ellipsis', total - 4, total - 3, total - 2, total - 1];
+  return [0, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total - 1];
+}
+
+function cellKey(categoryId: number, verticalId: number | null) {
+  return `${categoryId}|${verticalId ?? 'company-wide'}`;
+}
+
+function sumByCurrency(rows: BudgetRow[]): { currencyCode: string; total: number }[] {
+  const map = new Map<string, number>();
+  for (const b of rows) map.set(b.currencyCode, (map.get(b.currencyCode) || 0) + Number(b.totalAmount));
+  return Array.from(map, ([currencyCode, total]) => ({ currencyCode, total }));
+}
+
 export default function ExpenseBudgetsPage() {
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState('');
-  const [verticalFilter, setVerticalFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [page, setPage] = useState(0);
-  const [size, setSize] = useState(10);
+  const [fyStart, setFyStart] = useState<Dayjs>(() => thisFinancialYearStart());
+  const fyEnd = useMemo(() => fyStart.add(1, 'year').subtract(1, 'day'), [fyStart]);
+
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(blankForm());
   const [categoryAmounts, setCategoryAmounts] = useState<Record<number, string>>({});
   const [editingBudget, setEditingBudget] = useState<BudgetRow | null>(null);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['expense-budgets', statusFilter, verticalFilter, categoryFilter, page, size],
-    queryFn: () => fetchBudgets(statusFilter, verticalFilter, categoryFilter, page, size),
+  const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
+  const [editingCell, setEditingCell] = useState<{ key: string; value: string } | null>(null);
+
+  const { data: matrixData, isLoading: matrixLoading } = useQuery({
+    queryKey: ['expense-budgets-matrix', fyStart.format('YYYY-MM-DD')],
+    queryFn: () => fetchMatrixBudgets(fyStart.format('YYYY-MM-DD')),
   });
   const { data: verticals = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticals });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
 
+  // A category deactivated (or since deleted) after budgets were recorded
+  // against it can still have rows in matrixData — excluded here so it
+  // never shows as a matrix row nor counts toward Column/Row/Grand Total;
+  // the matrix is scoped to the current, active category list only.
+  const activeCategoryIds = useMemo(() => new Set(categories.map((c) => c.id)), [categories]);
+  const matrixBudgets = useMemo(
+    () => (matrixData?.content || []).filter((b) => activeCategoryIds.has(b.categoryId)),
+    [matrixData, activeCategoryIds]
+  );
+  const budgetsByCell = useMemo(() => {
+    const map = new Map<string, BudgetRow>();
+    for (const b of matrixBudgets) map.set(cellKey(b.categoryId, b.verticalId), b);
+    return map;
+  }, [matrixBudgets]);
+
+  const columns = useMemo(
+    () => [
+      ...verticals.map((v) => ({ verticalId: v.id, label: v.name, headName: v.headName })),
+      { verticalId: null as number | null, label: 'Company-wide', headName: null as string | null },
+    ],
+    [verticals]
+  );
+  const grandTotals = useMemo(() => sumByCurrency(matrixBudgets), [matrixBudgets]);
+
+  const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+  const [categoryPage, setCategoryPage] = useState(0);
+  const [categoryPageSize, setCategoryPageSize] = useState(10);
+  const categoryTotalPages = Math.max(1, Math.ceil(categories.length / categoryPageSize));
+  const safeCategoryPage = Math.min(categoryPage, categoryTotalPages - 1);
+  const pagedCategories = useMemo(
+    () => categories.slice(safeCategoryPage * categoryPageSize, safeCategoryPage * categoryPageSize + categoryPageSize),
+    [categories, safeCategoryPage, categoryPageSize]
+  );
+
   const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); setEditingBudget(null); };
+
+  const openNewForm = () => {
+    setEditingBudget(null);
+    setForm(blankForm());
+    setCategoryAmounts({});
+    setShowForm(true);
+  };
 
   const openEdit = async (row: BudgetRow) => {
     const res = await fetch(`/api/expense-budgets/${row.id}`);
@@ -122,25 +172,6 @@ export default function ExpenseBudgetsPage() {
     setShowForm(true);
   };
 
-  const deleteBudget = async (b: BudgetRow) => {
-    if (b.status === 'APPROVED') {
-      toast.error('Approved budgets cannot be deleted — use View to revise it instead');
-      return;
-    }
-    if (!window.confirm(`Delete the expense budget for "${b.categoryName}"? This cannot be undone.`)) return;
-    const res = await fetch(`/api/expense-budgets/${b.id}`, { method: 'DELETE' });
-    if (!res.ok) { const err = await res.json().catch(() => ({})); toast.error(err.message || 'Failed to delete budget'); return; }
-    queryClient.invalidateQueries({ queryKey: ['expense-budgets'] });
-    toast.success('Expense budget deleted');
-  };
-
-  const approveBudget = async (id: number) => {
-    const res = await fetch(`/api/expense-budgets/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'APPROVED' }) });
-    if (!res.ok) { const err = await res.json().catch(() => ({})); toast.error(err.message || 'Failed to approve budget'); return; }
-    queryClient.invalidateQueries({ queryKey: ['expense-budgets'] });
-    toast.success('Expense budget approved');
-  };
-
   const setCategoryAmount = (categoryId: number, value: string) =>
     setCategoryAmounts((prev) => ({ ...prev, [categoryId]: value }));
 
@@ -151,6 +182,8 @@ export default function ExpenseBudgetsPage() {
     [categoryAmounts]
   );
   const categoryEntriesTotal = useMemo(() => categoryEntries.reduce((sum, e) => sum + e.amount, 0), [categoryEntries]);
+
+  const invalidateMatrix = () => queryClient.invalidateQueries({ queryKey: ['expense-budgets-matrix'] });
 
   const save = useMutation({
     mutationFn: async () => {
@@ -174,7 +207,7 @@ export default function ExpenseBudgetsPage() {
       return { succeeded: results.length - failures.length, failures };
     },
     onSuccess: ({ succeeded, failures }) => {
-      queryClient.invalidateQueries({ queryKey: ['expense-budgets'] });
+      invalidateMatrix();
       if (succeeded > 0) toast.success(`${succeeded} expense budget${succeeded > 1 ? 's' : ''} created`);
       failures.forEach((f) => toast.error(f.reason instanceof Error ? f.reason.message : 'Failed to create a budget'));
       if (failures.length === 0) closeForm();
@@ -196,18 +229,80 @@ export default function ExpenseBudgetsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['expense-budgets'] });
+      invalidateMatrix();
       toast.success('Expense budget updated');
       closeForm();
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const budgets = data?.content || [];
-  const totalElements = data?.totalElements || 0;
-  const totalPages = data?.totalPages || 0;
-  const totalsByCurrency = (data?.totalsByCurrency || []).filter((t) => Number(t.totalAmount) > 0);
-  const pageNumbers = getPageNumbers(page, totalPages || 1);
+  const createCellMutation = useMutation({
+    mutationFn: async ({ categoryId, verticalId, amount }: { categoryId: number; verticalId: number | null; amount: number }) => {
+      const months = defaultMonthlySpread(amount, fyStart.format('YYYY-MM-DD'), fyEnd.format('YYYY-MM-DD'));
+      const res = await fetch('/api/expense-budgets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          financialYearStart: fyStart.format('YYYY-MM-DD'),
+          financialYearEnd: fyEnd.format('YYYY-MM-DD'),
+          verticalId, categoryId, totalAmount: amount, currencyCode: 'INR', months,
+        }),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to create budget'); }
+      return res.json();
+    },
+    onSuccess: () => { invalidateMatrix(); toast.success('Budget created'); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const reviseCellMutation = useMutation({
+    mutationFn: async ({ id, newAmount }: { id: number; newAmount: number }) => {
+      const res = await fetch(`/api/expense-budgets/${id}/revise`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newAmount }),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to update budget'); }
+      return res.json();
+    },
+    onSuccess: () => { invalidateMatrix(); toast.success('Budget updated'); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteCellMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/expense-budgets/${id}`, { method: 'DELETE' });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || 'Failed to delete budget'); }
+    },
+    onSuccess: () => { invalidateMatrix(); toast.success('Budget removed'); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const commitCell = (cat: ExpenseCategory, verticalId: number | null) => {
+    const key = cellKey(cat.id, verticalId);
+    if (editingCell?.key !== key) return;
+    const raw = editingCell.value.trim();
+    setEditingCell(null);
+    const newValue = raw === '' ? 0 : Number(raw);
+    const existing = budgetsByCell.get(key);
+
+    if (!existing) {
+      if (newValue > 0) createCellMutation.mutate({ categoryId: cat.id, verticalId, amount: newValue });
+      return;
+    }
+    if (newValue === Number(existing.totalAmount)) return;
+    if (newValue <= 0) {
+      if (existing.status === 'APPROVED') {
+        toast.error("Approved budgets can't be cleared this way — open it to revise the amount instead");
+        return;
+      }
+      const verticalLabel = verticalId != null ? (verticals.find((v) => v.id === verticalId)?.name || 'this vertical') : 'Company-wide';
+      if (!window.confirm(`Remove the ${cat.name} budget for ${verticalLabel}? This cannot be undone.`)) return;
+      deleteCellMutation.mutate(existing.id);
+      return;
+    }
+    reviseCellMutation.mutate({ id: existing.id, newAmount: newValue });
+  };
 
   return (
     <div className="space-y-4">
@@ -217,7 +312,7 @@ export default function ExpenseBudgetsPage() {
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Plan annual, vertical-wise budgets and track them against actual spend</p>
         </div>
         <button
-          onClick={() => (showForm ? closeForm() : setShowForm(true))}
+          onClick={() => (showForm ? closeForm() : openNewForm())}
           className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
         >
           <PlusIcon className="h-4 w-4" /> New Budget
@@ -339,146 +434,196 @@ export default function ExpenseBudgetsPage() {
         </form>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center gap-3">
-          <div className="flex gap-2">
-            {['', 'DRAFT', 'APPROVED'].map((s) => (
-              <button
-                key={s}
-                onClick={() => { setStatusFilter(s); setPage(0); }}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-50'}`}
-              >
-                {s || 'All'}
-              </button>
-            ))}
-          </div>
-          <select
-            value={verticalFilter}
-            onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }}
-            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Verticals</option>
-            {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-          <select
-            value={categoryFilter}
-            onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }}
-            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Categories</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          {(verticalFilter || categoryFilter) && (
-            <button
-              onClick={() => { setVerticalFilter(''); setCategoryFilter(''); setPage(0); }}
-              className="text-xs font-medium text-slate-500 hover:text-slate-700"
-            >
-              Clear filters
-            </button>
-          )}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          <button onClick={() => setFyStart((d) => d.subtract(1, 'year'))} className="p-1.5 rounded text-slate-500 hover:bg-slate-100" title="Previous financial year">
+            <ChevronLeftIcon className="h-4 w-4" />
+          </button>
+          <span className="text-sm font-medium text-slate-700 px-2">
+            FY {fyStart.format('YYYY')}–{fyEnd.format('YY')}
+          </span>
+          <button onClick={() => setFyStart((d) => d.add(1, 'year'))} className="p-1.5 rounded text-slate-500 hover:bg-slate-100" title="Next financial year">
+            <ChevronRightIcon className="h-4 w-4" />
+          </button>
         </div>
+        <div className="text-xs text-slate-500">
+          {dayjs(fyStart).format('DD MMM YYYY')} – {dayjs(fyEnd).format('DD MMM YYYY')}
+        </div>
+      </div>
 
-        {isLoading ? (
-          <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
-        ) : budgets.length === 0 ? (
-          <p className="text-center py-16 text-slate-400">No expense budgets created yet</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-900">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Financial Year</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Vertical</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
-                  <th className="px-4 py-3 text-right font-semibold text-white">Total Budget</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {budgets.map((b, idx) => (
-                  <tr key={b.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                    <td className="px-4 py-3 text-slate-700">{dayjs(b.financialYearStart).format('DD MMM YYYY')} – {dayjs(b.financialYearEnd).format('DD MMM YYYY')}</td>
-                    <td className="px-4 py-3 text-slate-600">{b.verticalName}</td>
-                    <td className="px-4 py-3 text-slate-600">{b.categoryName}</td>
-                    <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(b.totalAmount, b.currencyCode)}</td>
-                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[b.status]}`}>{b.status}</span></td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Link href={`/dashboard/expense-budgets/${b.id}`} className="text-xs font-medium text-amber-700 hover:text-amber-800">View</Link>
-                        <span className="text-slate-300">|</span>
-                        <button
-                          onClick={() => approveBudget(b.id)}
-                          disabled={b.status !== 'DRAFT'}
-                          title={b.status !== 'DRAFT' ? 'Already approved' : undefined}
-                          className="text-xs font-medium text-green-700 hover:text-green-800 disabled:text-slate-300 disabled:cursor-not-allowed disabled:hover:text-slate-300"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => openEdit(b)}
-                          className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
-                          title="Edit"
-                        >
-                          <PencilIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => deleteBudget(b)}
-                          title={b.status === 'APPROVED' ? 'Approved budgets cannot be deleted' : 'Delete'}
-                          className={`p-1.5 rounded ${b.status === 'APPROVED' ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      </div>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" style={{ minHeight: 420 }}>
+        {/* Category x vertical matrix, one cell = one expense budget */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div className="px-4 py-2.5 border-b border-slate-200 text-sm font-medium text-slate-700">
+            Category vs. Vertical
+          </div>
+          {matrixLoading ? (
+            <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
+          ) : categories.length === 0 ? (
+            <p className="text-center py-16 text-slate-400">No expense categories found</p>
+          ) : (
+            <div className="flex-1 overflow-auto px-4 py-3">
+              {/* table-fixed + explicit per-column widths so every cell in a
+                  column occupies identical width regardless of how long that
+                  column's header text is — a variable-width auto-layout
+                  column was the root cause of numbers not lining up. */}
+              <table className="w-full border-collapse text-sm table-fixed">
+                <colgroup>
+                  <col className="w-44" />
+                  {columns.map((col) => <col key={col.verticalId ?? 'company-wide'} className="w-36" />)}
+                  <col className="w-36" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th className="sticky top-0 left-0 z-20 bg-white text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 pr-3 border-b border-slate-200">
+                      Category
+                    </th>
+                    {columns.map((col) => (
+                      <th key={col.verticalId ?? 'company-wide'} className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 px-3 border-b border-slate-200">
+                        <div className="truncate" title={col.label}>{col.label}</div>
+                        {col.headName && <div className="truncate text-[10px] font-normal normal-case text-slate-400" title={`Head: ${col.headName}`}>Head: {col.headName}</div>}
+                      </th>
+                    ))}
+                    <th className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-700 uppercase tracking-wide py-2 pl-3 border-b border-slate-200">
+                      Row Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedCategories.map((cat) => {
+                    const isActive = cat.id === activeCategoryId;
+                    const rowBudgets = matrixBudgets.filter((b) => b.categoryId === cat.id);
+                    return (
+                      <tr
+                        key={cat.id}
+                        onClick={() => setActiveCategoryId(cat.id)}
+                        className={`cursor-pointer border-b border-slate-100 ${isActive ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
+                      >
+                        <td className={`sticky left-0 z-10 py-2 pr-3 truncate ${isActive ? 'bg-amber-50' : 'bg-white'}`}>
+                          <span className={isActive ? 'font-medium text-amber-700' : 'text-slate-700'}>{cat.name}</span>
+                        </td>
+                        {columns.map((col) => {
+                          const key = cellKey(cat.id, col.verticalId);
+                          const budget = budgetsByCell.get(key);
+                          const isEditing = editingCell?.key === key;
+                          const displayValue = isEditing ? editingCell!.value : fmt(budget ? budget.totalAmount : 0);
+                          return (
+                            <td key={col.verticalId ?? 'company-wide'} className="py-1.5 px-3 text-right">
+                              <div className="group flex items-center justify-end gap-1">
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${budget ? (budget.status === 'APPROVED' ? 'bg-green-500' : 'bg-slate-300') : 'bg-transparent'}`}
+                                  title={budget?.status}
+                                />
+                                <span className="text-slate-400 text-xs">₹</span>
+                                <input
+                                  value={displayValue}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onFocus={() => setEditingCell({ key, value: budget ? String(budget.totalAmount) : '' })}
+                                  onChange={(e) => setEditingCell({ key, value: e.target.value.replace(/[^0-9.]/g, '') })}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                                  onBlur={() => commitCell(cat, col.verticalId)}
+                                  className="w-[84px] text-right bg-transparent outline-none rounded px-1.5 py-1 focus:bg-white focus:ring-1 focus:ring-amber-500 text-slate-800"
+                                />
+                                {/* Always rendered (never conditionally omitted) so its reserved
+                                    width doesn't shift the input/₹ left only on rows that have a
+                                    budget — that mismatch was the cause of the ragged alignment. */}
+                                <div className={`flex items-center gap-1 shrink-0 transition-opacity ${budget ? 'opacity-0 group-hover:opacity-100' : 'invisible'}`}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); if (budget) openEdit(budget); }}
+                                    className="text-slate-400 hover:text-amber-600"
+                                    title="Edit currency / notes"
+                                    tabIndex={budget ? 0 : -1}
+                                  >
+                                    <PencilIcon className="h-3.5 w-3.5" />
+                                  </button>
+                                  <Link
+                                    href={budget ? `/dashboard/expense-budgets/${budget.id}` : '#'}
+                                    onClick={(e) => { if (!budget) e.preventDefault(); e.stopPropagation(); }}
+                                    className="text-slate-400 hover:text-amber-600"
+                                    title="View / Approve / Revise"
+                                    tabIndex={budget ? 0 : -1}
+                                  >
+                                    <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+                                  </Link>
+                                </div>
+                              </div>
+                            </td>
+                          );
+                        })}
+                        <td className="py-1.5 pl-3 text-right font-medium text-slate-800">
+                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-200">
+                    <td className="py-2.5 pr-3 font-semibold text-slate-800">Column Total</td>
+                    {columns.map((col) => {
+                      const colBudgets = matrixBudgets.filter((b) => b.verticalId === col.verticalId);
+                      return (
+                        <td key={col.verticalId ?? 'company-wide'} className="py-2.5 px-3 text-right font-semibold text-slate-800">
+                          {sumByCurrency(colBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
+                        </td>
+                      );
+                    })}
+                    <td className="py-2.5 pl-3 text-right font-semibold text-amber-700">
+                      {grandTotals.length === 0 ? formatCurrency(0, 'INR') : grandTotals.map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-              {totalsByCurrency.length > 0 && (
-                <tfoot>
-                  {totalsByCurrency.map((t) => (
-                    <tr key={t.currencyCode} className="bg-slate-50 border-t-2 border-slate-200">
-                      <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-slate-600">
-                        Total Budget{statusFilter ? ` (${statusFilter})` : ''}
-                      </td>
-                      <td className="px-4 py-3 text-right text-sm font-semibold text-slate-800">{formatCurrency(t.totalAmount || 0, t.currencyCode)}</td>
-                      <td colSpan={2}></td>
-                    </tr>
-                  ))}
                 </tfoot>
-              )}
-            </table>
-          </div>
-        )}
-
-        {budgets.length > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <span>Rows per page</span>
-              <select value={size} onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }} className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500">
-                {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+              </table>
             </div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent">
-                <ChevronLeftIcon className="h-4 w-4" /> Previous
-              </button>
-              {pageNumbers.map((p, i) =>
-                p === 'ellipsis' ? (
-                  <span key={`ellipsis-${i}`} className="px-2 text-sm text-slate-400">…</span>
-                ) : (
-                  <button key={p} onClick={() => setPage(p)} className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === page ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
-                    {p + 1}
-                  </button>
-                )
-              )}
-              <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent">
-                Next <ChevronRightIcon className="h-4 w-4" />
-              </button>
+          )}
+          {!matrixLoading && categories.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Rows per page</span>
+                <select
+                  value={categoryPageSize}
+                  onChange={(e) => { setCategoryPageSize(Number(e.target.value)); setCategoryPage(0); }}
+                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
+                >
+                  {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCategoryPage((p) => Math.max(0, p - 1))}
+                  disabled={safeCategoryPage === 0}
+                  className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  <ChevronLeftIcon className="h-4 w-4" /> Previous
+                </button>
+                {getPageNumbers(safeCategoryPage, categoryTotalPages).map((p, i) =>
+                  p === 'ellipsis' ? (
+                    <span key={`ellipsis-${i}`} className="px-2 text-sm text-slate-400">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setCategoryPage(p)}
+                      className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === safeCategoryPage ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                    >
+                      {p + 1}
+                    </button>
+                  )
+                )}
+                <button
+                  onClick={() => setCategoryPage((p) => Math.min(categoryTotalPages - 1, p + 1))}
+                  disabled={safeCategoryPage >= categoryTotalPages - 1}
+                  className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  Next <ChevronRightIcon className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-sm text-slate-500">
+                Showing {safeCategoryPage * categoryPageSize + 1}–{Math.min((safeCategoryPage + 1) * categoryPageSize, categories.length)} of {categories.length}
+              </p>
             </div>
-            <p className="text-sm text-slate-500">Showing {page * size + 1}–{Math.min((page + 1) * size, totalElements)} of {totalElements}</p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

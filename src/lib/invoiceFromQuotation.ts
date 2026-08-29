@@ -15,7 +15,39 @@ export async function nextInvoiceNumber(client: { $queryRaw: <T = unknown>(query
 // and automatic invoice generation on quotation approval (PUT /api/quotations/[id]),
 // mirroring the same parsing logic used for the Quotation PDF download
 // (src/app/dashboard/quotations/page.tsx downloadQuotationPDF).
+// Resource-based (Quotation Calculator) quotations carry their line items in
+// pricingSnapshot.resources rather than softwareModules/flat cost fields —
+// one invoice line per resource, plus outsourcing/travel/admin/markup as
+// extra summary lines when non-zero. Kept as an early return so it can never
+// fall through into (or be affected by) the catalog-mode logic below.
+function lineItemsFromResourceBasedQuotation(quotation: any) {
+  const snapshot = quotation.pricingSnapshot as any;
+  const resources = Array.isArray(snapshot?.resources) ? snapshot.resources : [];
+
+  const lineItems = resources.map((r: any) => {
+    const qty = Number(r.qty) || 0;
+    const unitPrice = (Number(r.durationDays) || 0) * (Number(r.dayRate) || 0);
+    return { description: r.role || 'Resource', quantity: qty, unitPrice, total: qty * unitPrice };
+  });
+
+  const extra: { label: string; cost: any }[] = [
+    { label: 'Outsourcing', cost: quotation.outsourcingCost },
+    { label: 'Travel / Other', cost: quotation.travelCost },
+    { label: 'Admin / Overhead', cost: quotation.adminCost },
+    { label: 'Markup', cost: quotation.markupAmount },
+  ];
+  for (const e of extra) {
+    const cost = Number(e.cost) || 0;
+    if (cost > 0) lineItems.push({ description: e.label, quantity: 1, unitPrice: cost, total: cost });
+  }
+
+  const subtotal = lineItems.reduce((sum: number, li: any) => sum + li.total, 0);
+  return { lineItems, subtotal };
+}
+
 export function lineItemsFromQuotation(quotation: any) {
+  if (quotation.costingMode === 'RESOURCE_BASED') return lineItemsFromResourceBasedQuotation(quotation);
+
   const snapshot = quotation.pricingSnapshot as any;
   const modulesList = Array.isArray(quotation.softwareModules) ? quotation.softwareModules : [];
 

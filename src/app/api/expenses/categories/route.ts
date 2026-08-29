@@ -16,6 +16,12 @@ export async function GET() {
     const categories = await prisma.expenseCategory.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      include: {
+        subCategories: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        },
+      },
     });
     return NextResponse.json(categories);
   } catch (error) {
