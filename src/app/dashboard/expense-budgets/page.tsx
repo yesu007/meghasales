@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, MagnifyingGlassIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs, { Dayjs } from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
@@ -94,7 +94,6 @@ export default function ExpenseBudgetsPage() {
   const [categoryAmounts, setCategoryAmounts] = useState<Record<number, string>>({});
   const [editingBudget, setEditingBudget] = useState<BudgetRow | null>(null);
 
-  const [categoryQuery, setCategoryQuery] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
   const [editingCell, setEditingCell] = useState<{ key: string; value: string } | null>(null);
   const rowRefs = useRef<Record<number, HTMLTableRowElement | null>>({});
@@ -120,10 +119,6 @@ export default function ExpenseBudgetsPage() {
       { verticalId: null as number | null, label: 'Company-wide', headName: null as string | null },
     ],
     [verticals]
-  );
-  const filteredCategories = useMemo(
-    () => categories.filter((c) => c.name.toLowerCase().includes(categoryQuery.toLowerCase())),
-    [categories, categoryQuery]
   );
   const grandTotals = useMemo(() => sumByCurrency(matrixBudgets), [matrixBudgets]);
 
@@ -431,25 +426,13 @@ export default function ExpenseBudgetsPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col sm:flex-row" style={{ minHeight: 420 }}>
-        {/* Left: expense categories, searchable, each with its running total for the selected FY */}
+        {/* Left: expense categories, each with its running total for the selected FY */}
         <div className="w-full sm:w-64 border-b sm:border-b-0 sm:border-r border-slate-200 flex flex-col shrink-0">
-          <div className="px-3 py-2.5 border-b border-slate-200">
-            <div className="flex items-center gap-2 px-2 py-1.5 border border-slate-300 rounded-lg bg-slate-50">
-              <MagnifyingGlassIcon className="h-4 w-4 text-slate-400 shrink-0" />
-              <input
-                value={categoryQuery}
-                onChange={(e) => setCategoryQuery(e.target.value)}
-                placeholder="Search categories"
-                className="bg-transparent outline-none text-sm w-full placeholder:text-slate-400"
-              />
-            </div>
-          </div>
-
           <div className="flex-1 overflow-y-auto max-h-96 sm:max-h-none">
-            {filteredCategories.length === 0 ? (
+            {categories.length === 0 ? (
               <p className="text-sm text-slate-400 px-3 py-6 text-center">No categories found</p>
             ) : (
-              filteredCategories.map((cat) => {
+              categories.map((cat) => {
                 const total = sumByCurrency(matrixBudgets.filter((b) => b.categoryId === cat.id));
                 const isActive = cat.id === activeCategoryId;
                 return (
@@ -506,7 +489,7 @@ export default function ExpenseBudgetsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCategories.map((cat) => {
+                  {categories.map((cat) => {
                     const isActive = cat.id === activeCategoryId;
                     const rowBudgets = matrixBudgets.filter((b) => b.categoryId === cat.id);
                     return (
