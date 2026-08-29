@@ -203,11 +203,33 @@ export default function ExpenseBudgetsPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const budgets = data?.content || [];
+  const budgets = useMemo(() => data?.content || [], [data]);
   const totalElements = data?.totalElements || 0;
   const totalPages = data?.totalPages || 0;
   const totalsByCurrency = (data?.totalsByCurrency || []).filter((t) => Number(t.totalAmount) > 0);
   const pageNumbers = getPageNumbers(page, totalPages || 1);
+
+  // Group the current page's rows by vertical so each vertical renders as
+  // its own collapsible section (mirrors the reference layout's expandable
+  // transaction-type panels).
+  const groups = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; verticalId: number | null; rows: BudgetRow[] }>();
+    for (const b of budgets) {
+      const key = b.verticalId != null ? String(b.verticalId) : 'company-wide';
+      if (!map.has(key)) map.set(key, { key, label: b.verticalName || 'Company-wide', verticalId: b.verticalId, rows: [] });
+      map.get(key)!.rows.push(b);
+    }
+    return Array.from(map.values());
+  }, [budgets]);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const toggleGroup = (key: string) => setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  const openNewForm = (verticalId: number | null) => {
+    setEditingBudget(null);
+    setForm({ ...blankForm(), verticalId: verticalId != null ? String(verticalId) : '' });
+    setCategoryAmounts({});
+    setShowForm(true);
+  };
 
   return (
     <div className="space-y-4">
@@ -217,7 +239,7 @@ export default function ExpenseBudgetsPage() {
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Plan annual, vertical-wise budgets and track them against actual spend</p>
         </div>
         <button
-          onClick={() => (showForm ? closeForm() : setShowForm(true))}
+          onClick={() => (showForm ? closeForm() : openNewForm(null))}
           className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
         >
           <PlusIcon className="h-4 w-4" /> New Budget
@@ -339,120 +361,148 @@ export default function ExpenseBudgetsPage() {
         </form>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center gap-3">
-          <div className="flex gap-2">
-            {['', 'DRAFT', 'APPROVED'].map((s) => (
-              <button
-                key={s}
-                onClick={() => { setStatusFilter(s); setPage(0); }}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-50'}`}
-              >
-                {s || 'All'}
-              </button>
-            ))}
-          </div>
-          <select
-            value={verticalFilter}
-            onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }}
-            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Verticals</option>
-            {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-          <select
-            value={categoryFilter}
-            onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }}
-            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Categories</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          {(verticalFilter || categoryFilter) && (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-3 flex flex-wrap items-center gap-3">
+        <div className="flex gap-2">
+          {['', 'DRAFT', 'APPROVED'].map((s) => (
             <button
-              onClick={() => { setVerticalFilter(''); setCategoryFilter(''); setPage(0); }}
-              className="text-xs font-medium text-slate-500 hover:text-slate-700"
+              key={s}
+              onClick={() => { setStatusFilter(s); setPage(0); }}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              Clear filters
+              {s || 'All'}
             </button>
-          )}
+          ))}
         </div>
-
-        {isLoading ? (
-          <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
-        ) : budgets.length === 0 ? (
-          <p className="text-center py-16 text-slate-400">No expense budgets created yet</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-900">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Financial Year</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Vertical</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
-                  <th className="px-4 py-3 text-right font-semibold text-white">Total Budget</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {budgets.map((b, idx) => (
-                  <tr key={b.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                    <td className="px-4 py-3 text-slate-700">{dayjs(b.financialYearStart).format('DD MMM YYYY')} – {dayjs(b.financialYearEnd).format('DD MMM YYYY')}</td>
-                    <td className="px-4 py-3 text-slate-600">{b.verticalName}</td>
-                    <td className="px-4 py-3 text-slate-600">{b.categoryName}</td>
-                    <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(b.totalAmount, b.currencyCode)}</td>
-                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[b.status]}`}>{b.status}</span></td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Link href={`/dashboard/expense-budgets/${b.id}`} className="text-xs font-medium text-amber-700 hover:text-amber-800">View</Link>
-                        <span className="text-slate-300">|</span>
-                        <button
-                          onClick={() => approveBudget(b.id)}
-                          disabled={b.status !== 'DRAFT'}
-                          title={b.status !== 'DRAFT' ? 'Already approved' : undefined}
-                          className="text-xs font-medium text-green-700 hover:text-green-800 disabled:text-slate-300 disabled:cursor-not-allowed disabled:hover:text-slate-300"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => openEdit(b)}
-                          className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
-                          title="Edit"
-                        >
-                          <PencilIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => deleteBudget(b)}
-                          title={b.status === 'APPROVED' ? 'Approved budgets cannot be deleted' : 'Delete'}
-                          className={`p-1.5 rounded ${b.status === 'APPROVED' ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              {totalsByCurrency.length > 0 && (
-                <tfoot>
-                  {totalsByCurrency.map((t) => (
-                    <tr key={t.currencyCode} className="bg-slate-50 border-t-2 border-slate-200">
-                      <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-slate-600">
-                        Total Budget{statusFilter ? ` (${statusFilter})` : ''}
-                      </td>
-                      <td className="px-4 py-3 text-right text-sm font-semibold text-slate-800">{formatCurrency(t.totalAmount || 0, t.currencyCode)}</td>
-                      <td colSpan={2}></td>
-                    </tr>
-                  ))}
-                </tfoot>
-              )}
-            </table>
-          </div>
+        <select
+          value={verticalFilter}
+          onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }}
+          className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
+        >
+          <option value="">All Verticals</option>
+          {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+        </select>
+        <select
+          value={categoryFilter}
+          onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }}
+          className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
+        >
+          <option value="">All Categories</option>
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {(verticalFilter || categoryFilter) && (
+          <button
+            onClick={() => { setVerticalFilter(''); setCategoryFilter(''); setPage(0); }}
+            className="text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            Clear filters
+          </button>
         )}
+      </div>
 
-        {budgets.length > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
+      {isLoading ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 text-center py-16">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" />
+        </div>
+      ) : budgets.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+          <p className="text-center py-16 text-slate-400">No expense budgets created yet</p>
+        </div>
+      ) : (
+        <>
+          <div className="space-y-3">
+            {groups.map((group) => {
+              const isOpen = !collapsed[group.key];
+              return (
+                <div key={group.key} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 bg-slate-50">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.key)}
+                      className="flex items-center gap-2 flex-1 text-left"
+                    >
+                      <ChevronRightIcon className={`h-4 w-4 text-slate-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                      <span className="font-semibold text-slate-800">{group.label}</span>
+                      <span className="text-xs text-slate-400">({group.rows.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openNewForm(group.verticalId)}
+                      className="flex items-center gap-1 text-sm font-medium text-amber-700 hover:text-amber-800 shrink-0"
+                    >
+                      <PlusIcon className="h-4 w-4" /> New
+                    </button>
+                  </div>
+
+                  {isOpen && (
+                    <div className="overflow-x-auto border-t border-slate-200">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-900">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-semibold text-white">Financial Year</th>
+                            <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
+                            <th className="px-4 py-3 text-right font-semibold text-white">Total Budget</th>
+                            <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
+                            <th className="px-4 py-3"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map((b, idx) => (
+                            <tr key={b.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                              <td className="px-4 py-3 text-slate-700">{dayjs(b.financialYearStart).format('DD MMM YYYY')} – {dayjs(b.financialYearEnd).format('DD MMM YYYY')}</td>
+                              <td className="px-4 py-3 text-slate-600">{b.categoryName}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(b.totalAmount, b.currencyCode)}</td>
+                              <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[b.status]}`}>{b.status}</span></td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <Link href={`/dashboard/expense-budgets/${b.id}`} className="text-xs font-medium text-amber-700 hover:text-amber-800">View</Link>
+                                  <span className="text-slate-300">|</span>
+                                  <button
+                                    onClick={() => approveBudget(b.id)}
+                                    disabled={b.status !== 'DRAFT'}
+                                    title={b.status !== 'DRAFT' ? 'Already approved' : undefined}
+                                    className="text-xs font-medium text-green-700 hover:text-green-800 disabled:text-slate-300 disabled:cursor-not-allowed disabled:hover:text-slate-300"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    onClick={() => openEdit(b)}
+                                    className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                                    title="Edit"
+                                  >
+                                    <PencilIcon className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => deleteBudget(b)}
+                                    title={b.status === 'APPROVED' ? 'Approved budgets cannot be deleted' : 'Delete'}
+                                    className={`p-1.5 rounded ${b.status === 'APPROVED' ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
+                                  >
+                                    <TrashIcon className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {totalsByCurrency.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-3 space-y-1">
+              {totalsByCurrency.map((t) => (
+                <div key={t.currencyCode} className="flex items-center justify-between text-sm font-semibold text-slate-700">
+                  <span>Total Budget{statusFilter ? ` (${statusFilter})` : ''}</span>
+                  <span>{formatCurrency(t.totalAmount || 0, t.currencyCode)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3">
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <span>Rows per page</span>
               <select value={size} onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }} className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500">
@@ -478,8 +528,8 @@ export default function ExpenseBudgetsPage() {
             </div>
             <p className="text-sm text-slate-500">Showing {page * size + 1}–{Math.min((page + 1) * size, totalElements)} of {totalElements}</p>
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
