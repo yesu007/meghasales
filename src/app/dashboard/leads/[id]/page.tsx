@@ -119,7 +119,7 @@ export default function LeadDetailPage() {
           value={lead.status}
           disabled={statusMutation.isPending}
           onChange={(e) => statusMutation.mutate(e.target.value)}
-          className={`self-start sm:self-auto px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
+          className={`self-start sm:self-auto px-3 py-1.5 min-h-[44px] rounded-lg text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
         >
           {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
