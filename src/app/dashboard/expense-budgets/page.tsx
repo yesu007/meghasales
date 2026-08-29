@@ -10,7 +10,7 @@ import { formatCurrency } from '@/lib/currency';
 import { defaultMonthlySpread } from '@/lib/expenseBudgetVariance';
 
 interface Vertical { id: number; name: string; headName?: string | null }
-interface ExpenseCategory { id: number; name: string }
+interface ExpenseCategory { id: number; name: string; legacy?: boolean }
 interface CurrencyOption { currencyCode: string }
 interface BudgetRow {
   id: number;
@@ -120,6 +120,24 @@ export default function ExpenseBudgetsPage() {
     [verticals]
   );
   const grandTotals = useMemo(() => sumByCurrency(matrixBudgets), [matrixBudgets]);
+
+  // The matrix's Column/Row totals are always summed from the full
+  // matrixBudgets list, so any category with budget rows for this FY must
+  // appear here too — otherwise a category deactivated after budgets were
+  // recorded against it (see Expense Categories master list) would vanish
+  // as a row while its amount still silently counts toward the totals,
+  // making Column Total not reconcile with what's visibly displayed.
+  const displayCategories = useMemo(() => {
+    const activeIds = new Set(categories.map((c) => c.id));
+    const legacy = new Map<number, string>();
+    for (const b of matrixBudgets) {
+      if (!activeIds.has(b.categoryId) && !legacy.has(b.categoryId)) legacy.set(b.categoryId, b.categoryName);
+    }
+    return [
+      ...categories,
+      ...Array.from(legacy, ([id, name]) => ({ id, name, legacy: true as const })),
+    ];
+  }, [categories, matrixBudgets]);
 
   const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); setEditingBudget(null); };
 
@@ -432,7 +450,7 @@ export default function ExpenseBudgetsPage() {
           </div>
           {matrixLoading ? (
             <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
-          ) : categories.length === 0 ? (
+          ) : displayCategories.length === 0 ? (
             <p className="text-center py-16 text-slate-400">No expense categories found</p>
           ) : (
             <div className="flex-1 overflow-auto px-4 py-3">
@@ -454,7 +472,7 @@ export default function ExpenseBudgetsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {categories.map((cat) => {
+                  {displayCategories.map((cat) => {
                     const isActive = cat.id === activeCategoryId;
                     const rowBudgets = matrixBudgets.filter((b) => b.categoryId === cat.id);
                     return (
@@ -465,6 +483,11 @@ export default function ExpenseBudgetsPage() {
                       >
                         <td className={`sticky left-0 z-10 py-2 pr-3 ${isActive ? 'bg-amber-50' : 'bg-white'}`}>
                           <span className={isActive ? 'font-medium text-amber-700' : 'text-slate-700'}>{cat.name}</span>
+                          {cat.legacy && (
+                            <span className="ml-1.5 text-[10px] font-medium text-slate-400 uppercase" title="Category deactivated — shown because it still has budget data for this year">
+                              inactive
+                            </span>
+                          )}
                         </td>
                         {columns.map((col) => {
                           const key = cellKey(cat.id, col.verticalId);
@@ -474,12 +497,10 @@ export default function ExpenseBudgetsPage() {
                           return (
                             <td key={col.verticalId ?? 'company-wide'} className="py-1.5 px-3 text-right">
                               <div className="group flex items-center justify-end gap-1">
-                                {budget && (
-                                  <span
-                                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${budget.status === 'APPROVED' ? 'bg-green-500' : 'bg-slate-300'}`}
-                                    title={budget.status}
-                                  />
-                                )}
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${budget ? (budget.status === 'APPROVED' ? 'bg-green-500' : 'bg-slate-300') : 'bg-transparent'}`}
+                                  title={budget?.status}
+                                />
                                 <span className="text-slate-400 text-xs">₹</span>
                                 <input
                                   value={displayValue}
@@ -490,26 +511,29 @@ export default function ExpenseBudgetsPage() {
                                   onBlur={() => commitCell(cat, col.verticalId)}
                                   className="w-[84px] text-right bg-transparent outline-none rounded px-1.5 py-1 focus:bg-white focus:ring-1 focus:ring-amber-500 text-slate-800"
                                 />
-                                {budget && (
-                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); openEdit(budget); }}
-                                      className="text-slate-400 hover:text-amber-600"
-                                      title="Edit currency / notes"
-                                    >
-                                      <PencilIcon className="h-3.5 w-3.5" />
-                                    </button>
-                                    <Link
-                                      href={`/dashboard/expense-budgets/${budget.id}`}
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="text-slate-400 hover:text-amber-600"
-                                      title="View / Approve / Revise"
-                                    >
-                                      <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
-                                    </Link>
-                                  </div>
-                                )}
+                                {/* Always rendered (never conditionally omitted) so its reserved
+                                    width doesn't shift the input/₹ left only on rows that have a
+                                    budget — that mismatch was the cause of the ragged alignment. */}
+                                <div className={`flex items-center gap-1 shrink-0 transition-opacity ${budget ? 'opacity-0 group-hover:opacity-100' : 'invisible'}`}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); if (budget) openEdit(budget); }}
+                                    className="text-slate-400 hover:text-amber-600"
+                                    title="Edit currency / notes"
+                                    tabIndex={budget ? 0 : -1}
+                                  >
+                                    <PencilIcon className="h-3.5 w-3.5" />
+                                  </button>
+                                  <Link
+                                    href={budget ? `/dashboard/expense-budgets/${budget.id}` : '#'}
+                                    onClick={(e) => { if (!budget) e.preventDefault(); e.stopPropagation(); }}
+                                    className="text-slate-400 hover:text-amber-600"
+                                    title="View / Approve / Revise"
+                                    tabIndex={budget ? 0 : -1}
+                                  >
+                                    <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+                                  </Link>
+                                </div>
                               </div>
                             </td>
                           );
