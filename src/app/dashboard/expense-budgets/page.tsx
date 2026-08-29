@@ -301,6 +301,14 @@ export default function ExpenseBudgetsPage() {
       deleteCellMutation.mutate(existing.id);
       return;
     }
+    // Belt-and-suspenders: the input already refuses to enter edit mode for
+    // an approved cell (see onFocus below), so this should be unreachable —
+    // but a plain in-place edit must never silently overwrite an approved
+    // figure, so it's guarded here too rather than trusted to the UI alone.
+    if (existing.status === 'APPROVED') {
+      toast.error('This budget is approved — only revise (with a reason) is allowed. Open it to revise.');
+      return;
+    }
     reviseCellMutation.mutate({ id: existing.id, newAmount: newValue });
   };
 
@@ -546,11 +554,24 @@ export default function ExpenseBudgetsPage() {
                                 <input
                                   value={displayValue}
                                   onClick={(e) => e.stopPropagation()}
-                                  onFocus={() => setEditingCell({ key, value: budget ? String(budget.totalAmount) : '' })}
+                                  onFocus={(e) => {
+                                    // An approved budget is a signed-off commitment — its amount
+                                    // is never edited in place, only revised (with a reason) from
+                                    // the budget's detail page. Refusing to even enter edit mode
+                                    // here (rather than accepting the keystrokes and rejecting on
+                                    // blur) surfaces that the moment the user tries to edit it.
+                                    if (budget?.status === 'APPROVED') {
+                                      toast.error('This budget is approved — only revise (with a reason) is allowed. Open it to revise.');
+                                      e.target.blur();
+                                      return;
+                                    }
+                                    setEditingCell({ key, value: budget ? String(budget.totalAmount) : '' });
+                                  }}
                                   onChange={(e) => setEditingCell({ key, value: e.target.value.replace(/[^0-9.]/g, '') })}
                                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                                   onBlur={() => commitCell(cat, col.verticalId)}
-                                  className="w-[84px] shrink-0 text-right bg-transparent outline-none rounded px-1.5 py-1 focus:bg-white focus:ring-1 focus:ring-amber-500 text-slate-800"
+                                  title={budget?.status === 'APPROVED' ? 'Approved — open the budget to revise with a reason' : undefined}
+                                  className={`w-[84px] shrink-0 text-right bg-transparent outline-none rounded px-1.5 py-1 text-slate-800 ${budget?.status === 'APPROVED' ? 'cursor-not-allowed' : 'focus:bg-white focus:ring-1 focus:ring-amber-500'}`}
                                 />
                               </div>
                             </td>
