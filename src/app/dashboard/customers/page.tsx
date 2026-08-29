@@ -17,11 +17,13 @@ import {
   PencilIcon,
   TrashIcon,
   EyeIcon,
+  PlusIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { LEAD_STATUSES } from '@/lib/leadStatus';
 import LeadFormDrawer, { SOURCES, VERTICALS, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
+import CustomerFormDrawer, { blankCustomerForm, type CustomerFormState } from '@/components/customers/CustomerFormDrawer';
 
 // Customers are Leads with status = CONFIRMED (labeled "Converted" — see
 // LEAD_STATUSES in src/lib/leadStatus.ts). There is no separate Customer
@@ -157,6 +159,32 @@ export default function CustomersPage() {
     onError: () => toast.error('Failed to update customer'),
   });
 
+  // "+ Create Customer" — Customer-owned create flow. Uses its own
+  // drawer/state/endpoint (CustomerFormDrawer -> POST /api/customers)
+  // rather than the Lead create form/endpoint above.
+  const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CustomerFormState>(blankCustomerForm);
+  const [createFormErrors, setCreateFormErrors] = useState<Record<string, string>>({});
+
+  const closeCreateDrawer = () => { setCreateDrawerOpen(false); setCreateForm(blankCustomerForm); setCreateFormErrors({}); };
+
+  const createMutation = useMutation({
+    mutationFn: async (data: CustomerFormState) => {
+      const res = await fetch('/api/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message || 'Failed to create customer');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      toast.success('Customer created!');
+      closeCreateDrawer();
+    },
+    onError: (error: Error) => toast.error(error.message || 'Failed to create customer'),
+  });
+
   const openEdit = async (id: number) => {
     const data = await fetchLeadForEdit(id);
     if (!data) { toast.error('Failed to load customer'); return; }
@@ -220,8 +248,11 @@ export default function CustomersPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Customers</h1>
+          <button onClick={() => setCreateDrawerOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+            <PlusIcon className="h-4 w-4" /> Create Customer
+          </button>
         </div>
         <p className="text-slate-500 text-sm sm:text-base">Leads that have converted to customers</p>
       </div>
@@ -386,6 +417,20 @@ export default function CustomersPage() {
         setFormErrors={setFormErrors}
         onSave={(data) => saveMutation.mutate(data)}
         isSaving={saveMutation.isPending}
+        isAdmin={isAdmin}
+        currencies={currencies}
+      />
+
+      {/* Create Customer Drawer — Customer-owned form/endpoint */}
+      <CustomerFormDrawer
+        open={createDrawerOpen}
+        onClose={closeCreateDrawer}
+        form={createForm}
+        setForm={setCreateForm}
+        formErrors={createFormErrors}
+        setFormErrors={setCreateFormErrors}
+        onSave={(data) => createMutation.mutate(data)}
+        isSaving={createMutation.isPending}
         isAdmin={isAdmin}
         currencies={currencies}
       />
