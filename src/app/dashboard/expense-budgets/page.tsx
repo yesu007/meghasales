@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
@@ -96,7 +96,6 @@ export default function ExpenseBudgetsPage() {
 
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
   const [editingCell, setEditingCell] = useState<{ key: string; value: string } | null>(null);
-  const rowRefs = useRef<Record<number, HTMLTableRowElement | null>>({});
 
   const { data: matrixData, isLoading: matrixLoading } = useQuery({
     queryKey: ['expense-budgets-matrix', fyStart.format('YYYY-MM-DD')],
@@ -425,42 +424,8 @@ export default function ExpenseBudgetsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col sm:flex-row" style={{ minHeight: 420 }}>
-        {/* Left: expense categories, each with its running total for the selected FY */}
-        <div className="w-full sm:w-64 border-b sm:border-b-0 sm:border-r border-slate-200 flex flex-col shrink-0">
-          <div className="flex-1 overflow-y-auto max-h-96 sm:max-h-none">
-            {categories.length === 0 ? (
-              <p className="text-sm text-slate-400 px-3 py-6 text-center">No categories found</p>
-            ) : (
-              categories.map((cat) => {
-                const total = sumByCurrency(matrixBudgets.filter((b) => b.categoryId === cat.id));
-                const isActive = cat.id === activeCategoryId;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => { setActiveCategoryId(cat.id); rowRefs.current[cat.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}
-                    className={`w-full text-left px-3 py-2.5 border-b border-slate-100 ${isActive ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
-                  >
-                    <p className={`truncate text-sm ${isActive ? 'text-amber-700 font-medium' : 'text-slate-700'}`}>{cat.name}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {total.length === 0 ? '—' : total.map((t) => formatCurrency(t.total, t.currencyCode)).join(' · ')}
-                    </p>
-                  </button>
-                );
-              })
-            )}
-          </div>
-
-          <div className="px-3 py-2.5 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-            <span>{categories.length} categories</span>
-            <span className="font-medium text-slate-800">
-              {grandTotals.length === 0 ? '—' : grandTotals.map((t) => formatCurrency(t.total, t.currencyCode)).join(' · ')}
-            </span>
-          </div>
-        </div>
-
-        {/* Right: category x vertical matrix, one cell = one expense budget */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" style={{ minHeight: 420 }}>
+        {/* Category x vertical matrix, one cell = one expense budget */}
         <div className="flex-1 min-w-0 flex flex-col">
           <div className="px-4 py-2.5 border-b border-slate-200 text-sm font-medium text-slate-700">
             Category vs. Vertical
@@ -495,7 +460,6 @@ export default function ExpenseBudgetsPage() {
                     return (
                       <tr
                         key={cat.id}
-                        ref={(el) => { rowRefs.current[cat.id] = el; }}
                         onClick={() => setActiveCategoryId(cat.id)}
                         className={`cursor-pointer border-b border-slate-100 ${isActive ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
                       >
