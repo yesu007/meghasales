@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, XMarkIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, XMarkIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 interface SalaryComponent {
@@ -86,20 +86,33 @@ export default function SalaryStructuresPage() {
   const [structureDesc, setStructureDesc] = useState('');
   const [structureRows, setStructureRows] = useState<Array<{ componentId: string; value: string }>>([{ componentId: '', value: '' }]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [editingStructureId, setEditingStructureId] = useState<number | null>(null);
 
-  const resetStructureForm = () => { setStructureName(''); setStructureDesc(''); setStructureRows([{ componentId: '', value: '' }]); setShowStructureForm(false); };
+  const resetStructureForm = () => {
+    setStructureName(''); setStructureDesc(''); setStructureRows([{ componentId: '', value: '' }]);
+    setShowStructureForm(false); setEditingStructureId(null);
+  };
+  const openEditStructure = (s: SalaryStructure) => {
+    setEditingStructureId(s.id);
+    setStructureName(s.name);
+    setStructureDesc(s.description || '');
+    setStructureRows(s.components.length > 0 ? s.components.map((c) => ({ componentId: String(c.component.id), value: c.value })) : [{ componentId: '', value: '' }]);
+    setShowStructureForm(true);
+  };
 
-  const createStructure = useMutation({
+  const saveStructure = useMutation({
     mutationFn: async () => {
       const rows = structureRows.filter((r) => r.componentId && r.value !== '');
-      const res = await fetch('/api/payroll/structures', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: structureName, description: structureDesc || null, components: rows.map((r) => ({ componentId: Number(r.componentId), value: Number(r.value) })) }),
+      const body = { name: structureName, description: structureDesc || null, components: rows.map((r) => ({ componentId: Number(r.componentId), value: Number(r.value) })) };
+      const res = await fetch(editingStructureId ? `/api/payroll/structures/${editingStructureId}` : '/api/payroll/structures', {
+        method: editingStructureId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to create structure'); }
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save structure'); }
       return res.json();
     },
-    onSuccess: () => { invalidateAll(); toast.success('Salary structure created'); resetStructureForm(); },
+    onSuccess: () => { invalidateAll(); toast.success(editingStructureId ? 'Salary structure updated' : 'Salary structure created'); resetStructureForm(); },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -188,13 +201,13 @@ export default function SalaryStructuresPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-800">Salary Structure Templates</h2>
-          <button onClick={() => setShowStructureForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
+          <button onClick={() => (showStructureForm ? resetStructureForm() : setShowStructureForm(true))} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
             <PlusIcon className="h-4 w-4" /> New Structure
           </button>
         </div>
 
         {showStructureForm && (
-          <form onSubmit={(e) => { e.preventDefault(); if (!structureName) { toast.error('Name is required'); return; } createStructure.mutate(); }} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+          <form onSubmit={(e) => { e.preventDefault(); if (!structureName) { toast.error('Name is required'); return; } saveStructure.mutate(); }} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <input placeholder="Structure name (e.g. Standard L1)" value={structureName} onChange={(e) => setStructureName(e.target.value)} className={inputCls} />
               <input placeholder="Description (optional)" value={structureDesc} onChange={(e) => setStructureDesc(e.target.value)} className={inputCls} />
@@ -214,7 +227,9 @@ export default function SalaryStructuresPage() {
             </div>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={resetStructureForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-              <button type="submit" disabled={createStructure.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">Create Structure</button>
+              <button type="submit" disabled={saveStructure.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                {saveStructure.isPending ? 'Saving...' : editingStructureId ? 'Save Changes' : 'Create Structure'}
+              </button>
             </div>
           </form>
         )}
@@ -231,6 +246,9 @@ export default function SalaryStructuresPage() {
                   <span onClick={(e) => { e.stopPropagation(); toggleStructureActive.mutate({ id: s.id, isActive: !s.isActive }); }} className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                     {s.isActive ? 'Active' : 'Inactive'}
                   </span>
+                  <button onClick={(e) => { e.stopPropagation(); openEditStructure(s); }} className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                    <PencilIcon className="h-4 w-4" />
+                  </button>
                   {expandedId === s.id ? <ChevronUpIcon className="h-4 w-4 text-slate-400" /> : <ChevronDownIcon className="h-4 w-4 text-slate-400" />}
                 </div>
               </button>

@@ -880,11 +880,34 @@ model SalaryStructureAssignment {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  employee  Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  structure SalaryStructure @relation(fields: [structureId], references: [id])
+  employee  Employee                   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  structure SalaryStructure            @relation(fields: [structureId], references: [id])
+  revisions SalaryAssignmentRevision[]
 
   @@index([employeeId, effectiveFrom])
   @@map("salary_structure_assignments")
+}
+
+// A revision changes an assignment's CTC while keeping a permanent
+// before/after record, same shape as ExpenseBudgetRevision — the assignment
+// row is updated in place (payroll runs always read the current CTC) and
+// this is the append-only history of how it got there. structureId/
+// employeeId/effectiveFrom are edited directly on the assignment itself
+// (plain PATCH, no revision) since only the monetary value needs an
+// audited trail; revisedById is a loose reference to User.id, not a
+// relation, matching SalaryStructureAssignment.createdById above.
+model SalaryAssignmentRevision {
+  id           Int      @id @default(autoincrement())
+  assignmentId Int      @map("assignment_id")
+  previousCtc  Decimal  @map("previous_ctc") @db.Decimal(14, 2)
+  newCtc       Decimal  @map("new_ctc") @db.Decimal(14, 2)
+  reason       String?
+  revisedById  Int?     @map("revised_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  assignment SalaryStructureAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@map("salary_assignment_revisions")
 }
 
 // Payroll Phase 2 — one row per calendar month. Full status-transition

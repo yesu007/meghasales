@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, PencilIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 
@@ -95,7 +95,21 @@ export default function EmployeeDetailPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const [assignForm, setAssignForm] = useState({ structureId: '', ctcAnnual: '', effectiveFrom: dayjs().format('YYYY-MM-DD') });
+  const blankAssignForm = { structureId: '', ctcAnnual: '', effectiveFrom: dayjs().format('YYYY-MM-DD'), effectiveTo: '' };
+  const [assignForm, setAssignForm] = useState(blankAssignForm);
+  const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
+
+  const closeAssignForm = () => { setAssignForm(blankAssignForm); setEditingAssignment(null); };
+  const openEditAssignment = (a: Assignment) => {
+    setEditingAssignment(a);
+    setAssignForm({
+      structureId: String(a.structure.id),
+      ctcAnnual: a.ctcAnnual,
+      effectiveFrom: dayjs(a.effectiveFrom).format('YYYY-MM-DD'),
+      effectiveTo: a.effectiveTo ? dayjs(a.effectiveTo).format('YYYY-MM-DD') : '',
+    });
+  };
+
   const assignMutation = useMutation({
     mutationFn: async (data: typeof assignForm) => {
       const res = await fetch(`/api/payroll/employees/${id}/assignments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
@@ -105,7 +119,49 @@ export default function EmployeeDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payroll-employee', id] });
       toast.success('Salary structure assigned');
-      setAssignForm({ structureId: '', ctcAnnual: '', effectiveFrom: dayjs().format('YYYY-MM-DD') });
+      closeAssignForm();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  // Structure and effective dates edit directly; the CTC itself only ever
+  // changes through reviseMutation below, so a value change always keeps a
+  // tracked before/after (see SalaryAssignmentRevision).
+  const editAssignmentMutation = useMutation({
+    mutationFn: async (data: typeof assignForm) => {
+      if (!editingAssignment) throw new Error('No assignment selected');
+      const res = await fetch(`/api/payroll/employees/${id}/assignments/${editingAssignment.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ structureId: data.structureId, effectiveFrom: data.effectiveFrom, effectiveTo: data.effectiveTo || null }),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to update assignment'); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll-employee', id] });
+      toast.success('Assignment updated');
+      closeAssignForm();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const [revisingAssignment, setRevisingAssignment] = useState<Assignment | null>(null);
+  const [reviseForm, setReviseForm] = useState({ newCtc: '', reason: '' });
+  const reviseMutation = useMutation({
+    mutationFn: async () => {
+      if (!revisingAssignment) throw new Error('No assignment selected');
+      const res = await fetch(`/api/payroll/employees/${id}/assignments/${revisingAssignment.id}/revise`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reviseForm),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to revise CTC'); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll-employee', id] });
+      toast.success('CTC revised');
+      setRevisingAssignment(null);
+      setReviseForm({ newCtc: '', reason: '' });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -196,7 +252,7 @@ export default function EmployeeDetailPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-slate-500 uppercase">
-                    <tr><th className="py-1.5 pr-4">Structure</th><th className="py-1.5 pr-4">CTC / yr</th><th className="py-1.5 pr-4">From</th><th className="py-1.5">To</th></tr>
+                    <tr><th className="py-1.5 pr-4">Structure</th><th className="py-1.5 pr-4">CTC / yr</th><th className="py-1.5 pr-4">From</th><th className="py-1.5 pr-4">To</th><th className="py-1.5"></th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {employee.salaryAssignments.map((a) => (
@@ -204,34 +260,95 @@ export default function EmployeeDetailPage() {
                         <td className="py-2 pr-4 text-slate-700">{a.structure.name}</td>
                         <td className="py-2 pr-4 text-slate-700">₹{Number(a.ctcAnnual).toLocaleString('en-IN')}</td>
                         <td className="py-2 pr-4 text-slate-500">{dayjs(a.effectiveFrom).format('DD MMM YYYY')}</td>
-                        <td className="py-2 text-slate-500">{a.effectiveTo ? dayjs(a.effectiveTo).format('DD MMM YYYY') : <span className="text-green-600 font-medium">Current</span>}</td>
+                        <td className="py-2 pr-4 text-slate-500">{a.effectiveTo ? dayjs(a.effectiveTo).format('DD MMM YYYY') : <span className="text-green-600 font-medium">Current</span>}</td>
+                        <td className="py-2 text-right whitespace-nowrap">
+                          <button onClick={() => openEditAssignment(a)} className="text-xs font-medium text-amber-700 hover:text-amber-800 mr-3">Edit</button>
+                          <button onClick={() => { setRevisingAssignment(a); setReviseForm({ newCtc: a.ctcAnnual, reason: '' }); }} className="text-xs font-medium text-slate-500 hover:text-slate-700">Revise CTC</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
+
+            {revisingAssignment && (
+              <form
+                onSubmit={(e) => { e.preventDefault(); if (!reviseForm.newCtc) { toast.error('New CTC is required'); return; } reviseMutation.mutate(); }}
+                className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3"
+              >
+                <p className="text-sm font-medium text-slate-700">
+                  Revise CTC — {revisingAssignment.structure.name} (currently ₹{Number(revisingAssignment.ctcAnnual).toLocaleString('en-IN')}/yr)
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="New Annual CTC (₹)">
+                    <input type="number" min="0" step="1000" value={reviseForm.newCtc} onChange={(e) => setReviseForm((f) => ({ ...f, newCtc: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <Field label="Reason">
+                    <input value={reviseForm.reason} onChange={(e) => setReviseForm((f) => ({ ...f, reason: e.target.value }))} className={inputCls} placeholder="e.g. Annual increment" />
+                  </Field>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setRevisingAssignment(null)} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+                  <button type="submit" disabled={reviseMutation.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                    {reviseMutation.isPending ? 'Saving...' : 'Save Revision'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 h-fit">
-          <h2 className="text-base font-semibold text-slate-800 mb-3">Assign Salary Structure</h2>
-          <form onSubmit={(e) => { e.preventDefault(); if (!assignForm.structureId || !assignForm.ctcAnnual) { toast.error('Structure and CTC are required'); return; } assignMutation.mutate(assignForm); }} className="space-y-3">
+          <h2 className="text-base font-semibold text-slate-800 mb-3">{editingAssignment ? 'Edit Assignment' : 'Assign Salary Structure'}</h2>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!assignForm.structureId || (!editingAssignment && !assignForm.ctcAnnual)) { toast.error('Structure and CTC are required'); return; }
+              if (editingAssignment) editAssignmentMutation.mutate(assignForm);
+              else assignMutation.mutate(assignForm);
+            }}
+            className="space-y-3"
+          >
             <Field label="Structure">
               <select value={assignForm.structureId} onChange={(e) => setAssignForm((f) => ({ ...f, structureId: e.target.value }))} className={inputCls}>
                 <option value="">Select structure</option>
                 {structures.filter((s) => s.isActive).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </Field>
-            <Field label="Annual CTC (₹)">
-              <input type="number" min="0" step="1000" value={assignForm.ctcAnnual} onChange={(e) => setAssignForm((f) => ({ ...f, ctcAnnual: e.target.value }))} className={inputCls} />
-            </Field>
+            {editingAssignment ? (
+              <Field label="Annual CTC (₹)">
+                <input value={`₹${Number(assignForm.ctcAnnual).toLocaleString('en-IN')}`} disabled title="Use Revise CTC on the row to change this — it keeps a tracked before/after" className={`${inputCls} bg-slate-50 text-slate-400`} />
+              </Field>
+            ) : (
+              <Field label="Annual CTC (₹)">
+                <input type="number" min="0" step="1000" value={assignForm.ctcAnnual} onChange={(e) => setAssignForm((f) => ({ ...f, ctcAnnual: e.target.value }))} className={inputCls} />
+              </Field>
+            )}
             <Field label="Effective From">
               <input type="date" value={assignForm.effectiveFrom} onChange={(e) => setAssignForm((f) => ({ ...f, effectiveFrom: e.target.value }))} className={inputCls} />
             </Field>
-            <button type="submit" disabled={assignMutation.isPending} className="w-full px-4 py-2 min-h-[44px] bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-900 disabled:opacity-50">
-              {assignMutation.isPending ? 'Assigning...' : 'Assign'}
-            </button>
+            {editingAssignment && (
+              <Field label="Effective To (blank = current)">
+                <input type="date" value={assignForm.effectiveTo} onChange={(e) => setAssignForm((f) => ({ ...f, effectiveTo: e.target.value }))} className={inputCls} />
+              </Field>
+            )}
+            <div className="flex gap-2">
+              {editingAssignment && (
+                <button type="button" onClick={closeAssignForm} className="flex-1 px-4 py-2 min-h-[44px] border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">
+                  Cancel
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={assignMutation.isPending || editAssignmentMutation.isPending}
+                className="flex-1 px-4 py-2 min-h-[44px] bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-900 disabled:opacity-50"
+              >
+                {editingAssignment
+                  ? (editAssignmentMutation.isPending ? 'Saving...' : 'Save Changes')
+                  : (assignMutation.isPending ? 'Assigning...' : 'Assign')}
+              </button>
+            </div>
             {structures.length === 0 && <p className="text-xs text-slate-400">No salary structures yet — <Link href="/dashboard/payroll/structures" className="text-amber-700 hover:underline">create one first</Link>.</p>}
           </form>
         </div>
