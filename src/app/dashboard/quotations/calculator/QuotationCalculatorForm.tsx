@@ -103,6 +103,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setOverrideAmount(existing.totalAmountOverridden ? String(Number(existing.totalAmount)) : '');
   }, [existing]);
 
+  const selectVertical = (id: string) => {
+    setVerticalId(id);
+    const vertical = verticals.find((v) => String(v.id) === id);
+    if (vertical?.headName) setProjectManagerName(vertical.headName);
+  };
+
   const selectExistingLead = (id: string) => {
     setSelectedLeadId(id);
     const lead = existingLeads.find((l) => String(l.id) === id);
@@ -282,14 +288,14 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
-                <select value={verticalId} onChange={(e) => setVerticalId(e.target.value)} className={inputCls}>
+                <select value={verticalId} onChange={(e) => selectVertical(e.target.value)} className={inputCls}>
                   <option value="">Company-wide</option>
                   {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Project Manager</label>
-                <input value={projectManagerName} onChange={(e) => setProjectManagerName(e.target.value)} className={inputCls} />
+                <input value={projectManagerName} onChange={(e) => setProjectManagerName(e.target.value)} placeholder="Auto-filled from the vertical's head" className={inputCls} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Package Name</label>
