@@ -63,7 +63,12 @@ export default function ExpenseBudgetDetailPage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to approve budget'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-budget', params.id] }); toast.success('Budget approved'); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expense-budget', params.id] });
+      queryClient.invalidateQueries({ queryKey: ['expense-budgets-matrix'] });
+      toast.success('Budget approved');
+      router.push('/dashboard/expense-budgets');
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 
