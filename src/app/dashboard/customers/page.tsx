@@ -22,7 +22,7 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { LEAD_STATUSES } from '@/lib/leadStatus';
-import LeadFormDrawer, { SOURCES, VERTICALS, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
+import LeadFormDrawer, { SOURCES, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 import CustomerFormDrawer, { blankCustomerForm, type CustomerFormState } from '@/components/customers/CustomerFormDrawer';
 
 // Customers are Leads with status = CONFIRMED (labeled "Converted" — see
@@ -139,6 +139,11 @@ export default function CustomersPage() {
   useEffect(() => {
     if (isCurrenciesError) toast.error('Failed to load currencies');
   }, [isCurrenciesError]);
+
+  const { data: verticalOptions = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ['verticals'],
+    queryFn: async () => { const res = await fetch('/api/verticals'); if (!res.ok) throw new Error('Failed to fetch verticals'); return res.json(); },
+  });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -282,7 +287,7 @@ export default function CustomersPage() {
               <label className="block text-xs font-medium text-slate-600 mb-1">Business Vertical</label>
               <select value={verticalFilter} onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
                 <option value="">All</option>
-                {VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+                {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
               </select>
             </div>
           </div>

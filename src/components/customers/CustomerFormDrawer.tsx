@@ -2,9 +2,17 @@
 
 import { Fragment, Dispatch, SetStateAction } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
+import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+
+interface VerticalOption { id: number; name: string }
+async function fetchVerticalOptions(): Promise<VerticalOption[]> {
+  const res = await fetch('/api/verticals');
+  if (!res.ok) throw new Error('Failed to fetch verticals');
+  return res.json();
+}
 
 // Customer-owned create form. Mirrors the UI/UX of
 // src/components/leads/LeadFormDrawer.tsx (same layout, field set and
@@ -24,14 +32,6 @@ export const CUSTOMER_SOURCES = [
   { value: 'TRADE_SHOW', label: 'Trade Show' },
   { value: 'COLD_CALL', label: 'Cold Call' },
   { value: 'SALES_EXECUTIVE', label: 'Sales Executive' },
-];
-
-export const CUSTOMER_VERTICALS = [
-  { value: 'TRADING', label: 'Trading' },
-  { value: 'JEWELLERY', label: 'Jewellery' },
-  { value: 'MANUFACTURING', label: 'Manufacturing' },
-  { value: 'TRADING_MANUFACTURING', label: 'Trading + Manufacturing' },
-  { value: 'TRADING_JEWELLERY_MANUFACTURING', label: 'Trading + Jewellery + Manufacturing' },
 ];
 
 export interface CustomerFormState {
@@ -98,6 +98,8 @@ export interface CustomerFormDrawerProps {
 export default function CustomerFormDrawer({
   open, onClose, form, setForm, formErrors, setFormErrors, onSave, isSaving, isAdmin, currencies,
 }: CustomerFormDrawerProps) {
+  const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
+
   const handleCountryChange = (country: Country) => {
     setForm((f) => ({
       ...f,
@@ -164,7 +166,7 @@ export default function CustomerFormDrawer({
                         <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
                         <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
                           <option value="">Select</option>
-                          {CUSTOMER_VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+                          {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                         </select>
                       </div>
                       <div className="col-span-2">
