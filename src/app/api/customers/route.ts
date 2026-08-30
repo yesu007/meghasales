@@ -46,6 +46,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
     }
 
+    // Find-or-create the Customer Company Master by exact (case-insensitive)
+    // name match, then find-or-create its legal entity for the selected
+    // country. This is what makes "one company, several country
+    // registrations" happen naturally from this same form: creating a
+    // second customer named "Tekfilo" with Hong Kong selected locates the
+    // existing "Tekfilo" company and adds a Hong Kong entity under it,
+    // rather than a disconnected duplicate. Address/tax fields are
+    // optional; documents can't attach until the entity exists, so those
+    // are added afterward from the customer's own Company tab.
+    const trimmedCompanyName = String(body.companyName).trim();
+    let company = await prisma.company.findFirst({ where: { name: { equals: trimmedCompanyName, mode: 'insensitive' } } });
+    if (!company) {
+      const createdById = session?.user ? parseInt((session.user as any).id, 10) : null;
+      company = await prisma.company.create({ data: { name: trimmedCompanyName, createdById: Number.isFinite(createdById) ? createdById : null } });
+    }
+
+    let legalEntity = await prisma.companyLegalEntity.findUnique({ where: { companyId_countryId: { companyId: company.id, countryId: countryFields.countryId } } });
+    if (!legalEntity) {
+      legalEntity = await prisma.companyLegalEntity.create({
+        data: {
+          companyId: company.id,
+          countryId: countryFields.countryId,
+          legalName: body.legalName ? String(body.legalName).trim() : trimmedCompanyName,
+          taxRegistrationNumber: body.taxRegistrationNumber || null,
+          addressLine1: body.addressLine1 || null,
+          addressLine2: body.addressLine2 || null,
+          city: body.city || null,
+          state: body.state || null,
+          postalCode: body.postalCode || null,
+          currencyCode: countryFields.currencyCode,
+        },
+      });
+    }
+
     const customer = await prisma.lead.create({
       data: {
         companyName: body.companyName,
@@ -63,6 +97,8 @@ export async function POST(request: NextRequest) {
         businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null,
         notes: body.notes || null,
         status: 'CONFIRMED',
+        companyId: company.id,
+        legalEntityId: legalEntity.id,
       },
     });
 
