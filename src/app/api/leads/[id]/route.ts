@@ -65,6 +65,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       data: {
         ...(body.companyName && { companyName: body.companyName }),
         ...(body.contactPerson && { contactPerson: body.contactPerson }),
+        ...(body.designation !== undefined && { designation: body.designation || null }),
         ...(body.mobile !== undefined && { mobile: body.mobile }),
         ...(body.email !== undefined && { email: body.email }),
         ...(body.leadSource && { leadSource: body.leadSource }),

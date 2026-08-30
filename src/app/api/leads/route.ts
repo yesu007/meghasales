@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
       data: {
         companyName: body.companyName,
         contactPerson: body.contactPerson,
+        designation: body.designation || null,
         mobile: body.mobile || null,
         email: body.email || null,
         country: countryFields.country,

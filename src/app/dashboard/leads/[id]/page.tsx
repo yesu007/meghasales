@@ -21,6 +21,7 @@ interface Lead {
   id: number;
   companyName: string;
   contactPerson: string;
+  designation: string | null;
   email: string | null;
   mobile: string | null;
   status: string;
@@ -134,7 +135,7 @@ export default function LeadDetailPage() {
           </Link>
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">{lead.companyName}</h1>
-            <p className="text-slate-500 mt-1 text-sm sm:text-base truncate">{lead.contactPerson}{lead.email ? ` — ${lead.email}` : ''}</p>
+            <p className="text-slate-500 mt-1 text-sm sm:text-base truncate">{lead.contactPerson}{lead.designation ? `, ${lead.designation}` : ''}{lead.email ? ` — ${lead.email}` : ''}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
@@ -210,6 +211,7 @@ export default function LeadDetailPage() {
         <Tab.Panels className="mt-4">
           <Tab.Panel>
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><p className="text-xs font-medium text-slate-500 uppercase">Designation</p><p className="text-sm text-slate-800 mt-1">{lead.designation || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Mobile</p><p className="text-sm text-slate-800 mt-1">{lead.mobile || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-sm text-slate-800 mt-1 capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
               {isConfirmed && (
