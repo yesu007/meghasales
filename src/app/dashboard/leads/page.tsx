@@ -39,6 +39,7 @@ interface Lead {
   designation: string | null;
   email: string | null;
   mobile: string | null;
+  whatsapp: string | null;
   status: string;
   leadSource: string;
   assignedBaId: number | null;
@@ -387,6 +388,7 @@ export default function LeadsPage() {
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('contactPerson')} className="flex items-center gap-1 font-semibold text-white">Contact <SortIcon col="contactPerson" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Designation</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Mobile</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">WhatsApp</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Source</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('status')} className="flex items-center gap-1 font-semibold text-white">Status <SortIcon col="status" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Assigned BA</th>
@@ -405,6 +407,7 @@ export default function LeadsPage() {
                       <td className="px-4 py-3 text-slate-600">{lead.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.designation || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.mobile || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{lead.whatsapp || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase()}</td>
                       <td className="px-4 py-3">
                         <select value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${STATUSES.find(s => s.value === lead.status)?.color || 'bg-slate-100'}`}>
