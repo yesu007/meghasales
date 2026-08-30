@@ -16,7 +16,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   try {
     const lead = await prisma.lead.findUnique({
       where: { id: parseInt(params.id) },
-      include: { assignedBa: { select: { firstName: true, lastName: true } } },
+      include: {
+        assignedBa: { select: { firstName: true, lastName: true } },
+        company: { select: { id: true, name: true } },
+      },
     });
     if (!lead) return NextResponse.json({ message: 'Lead not found' }, { status: 404 });
     return NextResponse.json(lead);
@@ -72,7 +75,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           taxType: countryFields.taxType,
         }),
         ...(body.businessVerticals !== undefined && { businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null }),
+        ...(body.companyId !== undefined && { companyId: body.companyId ? parseInt(body.companyId) : null }),
       },
+      include: { company: { select: { id: true, name: true } } },
     });
 
     // Log every status transition (not just ->Converted) so the activity

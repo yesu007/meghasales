@@ -381,7 +381,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                   {legalEntityOptions.map((e) => <option key={e.id} value={e.id}>{e.country.flagEmoji ? `${e.country.flagEmoji} ` : ''}{e.country.countryName} — {e.legalName}</option>)}
                 </select>
                 {billingCompanyId && legalEntityOptions.length === 0 && (
-                  <p className="text-xs text-slate-400 mt-1">This company has no legal entities yet — add one from <Link href="/dashboard/companies" className="text-amber-700 hover:underline">Companies</Link>.</p>
+                  <p className="text-xs text-slate-400 mt-1">This company has no legal entities yet — add one from the Company tab on a linked customer&apos;s detail page.</p>
                 )}
                 {legalEntityId && (() => {
                   const picked = legalEntityOptions.find((e) => String(e.id) === legalEntityId);

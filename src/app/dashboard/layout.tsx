@@ -23,7 +23,6 @@ import {
   ReceiptPercentIcon,
   ChartPieIcon,
   BuildingOffice2Icon,
-  BuildingLibraryIcon,
   IdentificationIcon,
   ChevronDownIcon,
   Bars3Icon,
@@ -75,7 +74,6 @@ function getNavItems(): NavSection[] {
       title: 'Sales',
       items: [
         { href: '/dashboard/verticals', label: 'Verticals', icon: BuildingOffice2Icon, permission: 'view_verticals' },
-        { href: '/dashboard/companies', label: 'Companies', icon: BuildingLibraryIcon, permission: 'view_companies' },
         { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon, permission: 'view_leads' },
         // Customers are Leads with status=Converted — no separate entity —
         // so this reuses the exact same view_leads/manage_leads permissions
