@@ -14,6 +14,9 @@ interface ExistingLead { id: number; companyName: string; contactPerson: string;
 interface Vertical { id: number; name: string; headName?: string | null }
 interface CurrencyOption { currencyCode: string; currencySymbol: string }
 interface ResourceEmployee { id: number; firstName: string; lastName: string; employeeCode: string; designation: string | null; department: string | null; dayRate: number | null }
+interface CompanyOption { id: number; name: string }
+interface LegalEntityOption { id: number; legalName: string; taxRegistrationNumber: string | null; isActive: boolean; country: { countryName: string; flagEmoji: string | null } }
+interface CompanyDetailForQuotation { id: number; legalEntities: LegalEntityOption[] }
 
 const employeeLabel = (e: ResourceEmployee) => `${e.firstName} ${e.lastName} — ${e.designation || 'Employee'} (${e.employeeCode})`;
 
@@ -45,6 +48,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [projectManagerName, setProjectManagerName] = useState('');
   const [packageName, setPackageName] = useState('');
   const [currencyCode, setCurrencyCode] = useState('INR');
+
+  // Which of the customer Company's per-country legal entities this
+  // quotation bills to — billingCompanyId is UI-only (picks which
+  // company's entities to list); only legalEntityId is persisted.
+  const [billingCompanyId, setBillingCompanyId] = useState('');
+  const [legalEntityId, setLegalEntityId] = useState('');
 
   const [resources, setResources] = useState<ResourceLine[]>([blankResource()]);
   const [outsourcingCost, setOutsourcingCost] = useState('0');
@@ -87,6 +96,17 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   });
   const employeeByLabel = useMemo(() => new Map(resourceEmployees.map((e) => [employeeLabel(e), e])), [resourceEmployees]);
 
+  const { data: companies = [] } = useQuery<CompanyOption[]>({
+    queryKey: ['companies-for-quotation'],
+    queryFn: async () => { const r = await fetch('/api/companies'); if (!r.ok) throw new Error('Failed to fetch companies'); return r.json(); },
+  });
+  const { data: billingCompanyDetail } = useQuery<CompanyDetailForQuotation>({
+    queryKey: ['company-detail-for-quotation', billingCompanyId],
+    queryFn: async () => { const r = await fetch(`/api/companies/${billingCompanyId}`); if (!r.ok) throw new Error('Failed to fetch company'); return r.json(); },
+    enabled: !!billingCompanyId,
+  });
+  const legalEntityOptions = (billingCompanyDetail?.legalEntities || []).filter((e) => e.isActive);
+
   useEffect(() => {
     if (!existing) return;
     setProjectName(existing.projectName || '');
@@ -100,6 +120,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setQuotationNumber(existing.quotationNumber);
     setClientName(existing.lead?.contactPerson || '');
     setCompanyName(existing.lead?.companyName || '');
+    setLegalEntityId(existing.legalEntityId ? String(existing.legalEntityId) : '');
+    setBillingCompanyId(existing.legalEntity?.companyId ? String(existing.legalEntity.companyId) : '');
 
     const snap = existing.pricingSnapshot || {};
     setResources(Array.isArray(snap.resources) && snap.resources.length > 0 ? snap.resources : [blankResource()]);
@@ -129,6 +151,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setClientEmail(lead?.email || '');
     setClientPhone(lead?.mobile || '');
   };
+
+  const selectBillingCompany = (id: string) => { setBillingCompanyId(id); setLegalEntityId(''); };
 
   const updateResource = (idx: number, field: keyof ResourceLine, value: string) => {
     setResources((prev) => prev.map((r, i) => {
@@ -189,6 +213,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
         costingMode: 'RESOURCE_BASED',
         projectName: projectName || null,
         verticalId: verticalId || null,
+        legalEntityId: legalEntityId || null,
         currencyCode,
         notes: notes || null,
         resources: validResources,
@@ -341,6 +366,27 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                   <option value="INR">INR</option>
                   {currencies.filter((c) => c.currencyCode !== 'INR').map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Bill To (Company)</label>
+                <select value={billingCompanyId} onChange={(e) => selectBillingCompany(e.target.value)} className={inputCls}>
+                  <option value="">Not linked to a Company</option>
+                  {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Legal Entity</label>
+                <select value={legalEntityId} onChange={(e) => setLegalEntityId(e.target.value)} disabled={!billingCompanyId} className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}>
+                  <option value="">{billingCompanyId ? 'Select entity' : 'Pick a Company first'}</option>
+                  {legalEntityOptions.map((e) => <option key={e.id} value={e.id}>{e.country.flagEmoji ? `${e.country.flagEmoji} ` : ''}{e.country.countryName} — {e.legalName}</option>)}
+                </select>
+                {billingCompanyId && legalEntityOptions.length === 0 && (
+                  <p className="text-xs text-slate-400 mt-1">This company has no legal entities yet — add one from <Link href="/dashboard/companies" className="text-amber-700 hover:underline">Companies</Link>.</p>
+                )}
+                {legalEntityId && (() => {
+                  const picked = legalEntityOptions.find((e) => String(e.id) === legalEntityId);
+                  return picked?.taxRegistrationNumber ? <p className="text-xs text-slate-400 mt-1">Tax Reg: {picked.taxRegistrationNumber}</p> : null;
+                })()}
               </div>
             </div>
           </div>

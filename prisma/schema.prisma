@@ -110,8 +110,71 @@ model User {
   createdExpenseBudgets  ExpenseBudget[]         @relation("ExpenseBudgetCreatedBy")
   revisedExpenseBudgets  ExpenseBudgetRevision[] @relation("ExpenseBudgetRevisedBy")
   headOfVerticals        Vertical[]              @relation("VerticalHead")
+  createdCompanies       Company[]               @relation("CompanyCreatedBy")
 
   @@map("users")
+}
+
+// ============================================================
+// CUSTOMER COMPANY MASTER
+// ============================================================
+
+// The customer-facing "company" master — e.g. "Tekfilo". Previously
+// companyName was just a free-text string on Lead with no shared identity
+// across deals/countries; this groups every Lead/Quotation belonging to the
+// same real-world company, and is the parent for its per-country legal
+// entities below.
+model Company {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  notes       String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdById Int?     @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  createdBy     User?                @relation("CompanyCreatedBy", fields: [createdById], references: [id])
+  legalEntities CompanyLegalEntity[]
+  leads         Lead[]
+
+  @@map("companies")
+}
+
+// One row per country a Company is legally registered in — e.g. Tekfilo
+// India, Tekfilo Hong Kong, Tekfilo China — each with its own registered
+// address, tax registration number, and documents (see EventDocument.
+// legalEntityId). A Lead/Quotation links to a specific entity to know which
+// jurisdiction's billing details (address, tax number) apply to that deal.
+model CompanyLegalEntity {
+  id                    Int      @id @default(autoincrement())
+  companyId             Int      @map("company_id")
+  countryId             Int      @map("country_id")
+  legalName             String   @map("legal_name")
+  registrationNumber    String?  @map("registration_number")
+  taxRegistrationNumber String?  @map("tax_registration_number")
+  addressLine1          String?  @map("address_line1")
+  addressLine2          String?  @map("address_line2")
+  city                  String?
+  state                 String?
+  postalCode            String?  @map("postal_code")
+  currencyCode          String?  @map("currency_code")
+  isActive              Boolean  @default(true) @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  country    Country         @relation(fields: [countryId], references: [id])
+  leads      Lead[]
+  quotations Quotation[]
+  invoices   Invoice[]
+  documents  EventDocument[]
+
+  // A company can be registered at most once per country — a second
+  // registration in the same jurisdiction would be a data-entry mistake,
+  // not a second legal entity.
+  @@unique([companyId, countryId])
+  @@index([companyId])
+  @@map("company_legal_entities")
 }
 
 // ============================================================
@@ -131,6 +194,13 @@ model Lead {
   currencyCode          String?  @map("currency_code")
   currencySymbol        String?  @map("currency_symbol")
   taxType               String?  @map("tax_type")
+  // Optional link to the Customer Company Master — which real-world company
+  // this deal belongs to, and (if set) which of that company's per-country
+  // legal entities it's specifically with. Both stay optional: existing
+  // Leads/Customers keep working exactly as before via their own
+  // companyName/country/state/city fields when neither is set.
+  companyId             Int?     @map("company_id")
+  legalEntityId         Int?     @map("legal_entity_id")
   jewelleryBusinessType String?  @map("jewellery_business_type")
   numberOfBranches      Int?     @map("number_of_branches")
   existingErp           String?  @map("existing_erp")
@@ -150,9 +220,11 @@ model Lead {
   nextFollowUpDate DateTime? @map("next_follow_up_date")
   followUpCount    Int       @default(0) @map("follow_up_count")
 
-  assignedBa      User?            @relation("AssignedBA", fields: [assignedBaId], references: [id])
-  createdBy       User?            @relation("CreatedBy", fields: [createdById], references: [id])
-  countryRef      Country?         @relation(fields: [countryId], references: [id])
+  assignedBa      User?               @relation("AssignedBA", fields: [assignedBaId], references: [id])
+  createdBy       User?               @relation("CreatedBy", fields: [createdById], references: [id])
+  countryRef      Country?            @relation(fields: [countryId], references: [id])
+  company         Company?            @relation(fields: [companyId], references: [id])
+  legalEntity     CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
   activities      LeadActivity[]
   followUps       LeadFollowUp[]
   demos           Demo[]
@@ -175,6 +247,8 @@ model Lead {
   @@index([assignedBaId])
   @@index([nextFollowUpDate])
   @@index([lastFollowUpDate])
+  @@index([companyId])
+  @@index([legalEntityId])
   @@map("leads")
 }
 
@@ -278,30 +352,36 @@ model Event {
 // eventId XOR discussionId is set — enforced at the route layer since no
 // existing model in this schema uses a DB CHECK constraint.
 model EventDocument {
-  id           Int      @id @default(autoincrement())
-  eventId      Int?     @map("event_id")
-  discussionId Int?     @map("discussion_id")
+  id            Int      @id @default(autoincrement())
+  eventId       Int?     @map("event_id")
+  discussionId  Int?     @map("discussion_id")
   // Lead-level document — no Event required. Exactly one of eventId/
-  // discussionId/leadId is expected to be set (enforced in application
-  // code, not a DB constraint, matching how eventId/discussionId already
-  // coexist here).
-  leadId       Int?     @map("lead_id")
-  fileName     String   @map("file_name") // kept in sync with latest version
-  description  String?
-  mimeType     String?  @map("mime_type")
-  uploadedById Int?     @map("uploaded_by")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  // discussionId/leadId/legalEntityId is expected to be set (enforced in
+  // application code, not a DB constraint, matching how eventId/
+  // discussionId already coexist here).
+  leadId        Int?     @map("lead_id")
+  // Company legal entity document — incorporation certificate, tax
+  // registration certificate, etc., scoped to one country entity rather
+  // than the Lead broadly (a company may have several).
+  legalEntityId Int?     @map("legal_entity_id")
+  fileName      String   @map("file_name") // kept in sync with latest version
+  description   String?
+  mimeType      String?  @map("mime_type")
+  uploadedById  Int?     @map("uploaded_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
-  event      Event?                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  discussion EventDiscussion?       @relation(fields: [discussionId], references: [id], onDelete: Cascade)
-  lead       Lead?                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  uploadedBy User?                  @relation("EventDocumentUploadedBy", fields: [uploadedById], references: [id])
-  versions   EventDocumentVersion[]
+  event       Event?                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  discussion  EventDiscussion?       @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  lead        Lead?                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  legalEntity CompanyLegalEntity?    @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  uploadedBy  User?                  @relation("EventDocumentUploadedBy", fields: [uploadedById], references: [id])
+  versions    EventDocumentVersion[]
 
   @@index([eventId])
   @@index([discussionId])
   @@index([leadId])
+  @@index([legalEntityId])
   @@map("event_documents")
 }
 
@@ -398,23 +478,31 @@ model Quotation {
   // admin/markup input config live in pricingSnapshot (matching this model's
   // existing convention of storing calculator input/output as Json rather
   // than a normalized child table — see softwareModules/addons above).
-  costingMode           String    @default("CATALOG") @map("costing_mode")
-  projectName           String?   @map("project_name")
-  verticalId            Int?      @map("vertical_id")
-  resourceCostTotal     Decimal?  @map("resource_cost_total") @db.Decimal(15, 2)
-  outsourcingCost       Decimal?  @map("outsourcing_cost") @db.Decimal(15, 2)
-  travelCost            Decimal?  @map("travel_cost") @db.Decimal(15, 2)
-  adminCost             Decimal?  @map("admin_cost") @db.Decimal(15, 2)
-  markupPercentage      Decimal?  @map("markup_percentage") @db.Decimal(5, 2)
-  markupAmount          Decimal?  @map("markup_amount") @db.Decimal(15, 2)
-  marginPercent         Decimal?  @map("margin_percent") @db.Decimal(5, 2)
-  calculatedTotalAmount Decimal?  @map("calculated_total_amount") @db.Decimal(15, 2)
-  totalAmountOverridden Boolean   @default(false) @map("total_amount_overridden")
+  costingMode           String   @default("CATALOG") @map("costing_mode")
+  projectName           String?  @map("project_name")
+  verticalId            Int?     @map("vertical_id")
+  // Which of the lead's Company's per-country legal entities this
+  // quotation bills to — its registered address/tax number print on the
+  // quotation PDF instead of the lead's own denormalized country/state/city.
+  // Optional: quotations for a lead with no Company (or no entity picked)
+  // keep working exactly as before.
+  legalEntityId         Int?     @map("legal_entity_id")
+  resourceCostTotal     Decimal? @map("resource_cost_total") @db.Decimal(15, 2)
+  outsourcingCost       Decimal? @map("outsourcing_cost") @db.Decimal(15, 2)
+  travelCost            Decimal? @map("travel_cost") @db.Decimal(15, 2)
+  adminCost             Decimal? @map("admin_cost") @db.Decimal(15, 2)
+  markupPercentage      Decimal? @map("markup_percentage") @db.Decimal(5, 2)
+  markupAmount          Decimal? @map("markup_amount") @db.Decimal(15, 2)
+  marginPercent         Decimal? @map("margin_percent") @db.Decimal(5, 2)
+  calculatedTotalAmount Decimal? @map("calculated_total_amount") @db.Decimal(15, 2)
+  totalAmountOverridden Boolean  @default(false) @map("total_amount_overridden")
 
-  lead     Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  vertical Vertical? @relation(fields: [verticalId], references: [id])
-  invoices Invoice[]
+  lead        Lead                @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  vertical    Vertical?           @relation(fields: [verticalId], references: [id])
+  legalEntity CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
+  invoices    Invoice[]
 
+  @@index([legalEntityId])
   @@map("quotations")
 }
 
@@ -584,8 +672,9 @@ model Country {
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
-  leads           Lead[]
-  companyProfiles CompanyProfile[]
+  leads                Lead[]
+  companyProfiles      CompanyProfile[]
+  companyLegalEntities CompanyLegalEntity[]
 
   @@map("countries")
 }
@@ -1207,6 +1296,11 @@ model Invoice {
   invoiceNumber      String    @unique @map("invoice_number")
   leadId             Int       @map("lead_id")
   quotationId        Int?      @map("quotation_id")
+  // Carried over from the source Quotation's legalEntityId (see
+  // invoiceFromQuotation.ts) so an invoice generated from a quotation billed
+  // to a specific country entity stays traceable to it, even if the
+  // quotation is later edited.
+  legalEntityId      Int?      @map("legal_entity_id")
   invoiceDate        DateTime  @default(now()) @map("invoice_date")
   dueDate            DateTime  @map("due_date")
   lineItems          Json      @map("line_items")
@@ -1229,11 +1323,12 @@ model Invoice {
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
-  lead           Lead              @relation(fields: [leadId], references: [id])
-  quotation      Quotation?        @relation(fields: [quotationId], references: [id])
-  accountManager User?             @relation("InvoiceAccountManager", fields: [accountManagerId], references: [id])
-  createdBy      User?             @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
-  updatedBy      User?             @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
+  lead           Lead                @relation(fields: [leadId], references: [id])
+  quotation      Quotation?          @relation(fields: [quotationId], references: [id])
+  legalEntity    CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
+  accountManager User?               @relation("InvoiceAccountManager", fields: [accountManagerId], references: [id])
+  createdBy      User?               @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User?               @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
   payments       Payment[]
   reminders      PaymentReminder[]
   creditNotes    CreditNote[]
@@ -1242,6 +1337,7 @@ model Invoice {
   @@index([leadId])
   @@index([dueDate])
   @@index([accountManagerId])
+  @@index([legalEntityId])
   @@map("invoices")
 }
 
@@ -1400,9 +1496,9 @@ model Expense {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  category    ExpenseCategory      @relation(fields: [categoryId], references: [id])
-  subCategory ExpenseSubCategory?  @relation(fields: [subCategoryId], references: [id])
-  recordedBy  User?                @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
+  category    ExpenseCategory     @relation(fields: [categoryId], references: [id])
+  subCategory ExpenseSubCategory? @relation(fields: [subCategoryId], references: [id])
+  recordedBy  User?               @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
 
   @@index([status])
   @@index([categoryId])

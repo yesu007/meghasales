@@ -69,6 +69,7 @@ function buildResourceBasedCosting(body: any) {
     totalAmountOverridden: costing.totalAmountOverridden,
     taxPercentage,
     taxAmount: costing.taxAmount,
+    legalEntityId: body.legalEntityId ? parseInt(body.legalEntityId) : null,
     validUntil: dayjs().add(validityDays, 'day').toDate(),
     pricingSnapshot: {
       resources,
@@ -135,6 +136,13 @@ export async function GET(request: NextRequest) {
         take: size,
         include: {
           lead: { select: { companyName: true, contactPerson: true } },
+          legalEntity: {
+            select: {
+              legalName: true, taxRegistrationNumber: true,
+              addressLine1: true, addressLine2: true, city: true, state: true, postalCode: true,
+              country: { select: { countryName: true } },
+            },
+          },
         },
       }),
       prisma.quotation.count({ where }),
@@ -160,6 +168,21 @@ export async function GET(request: NextRequest) {
       travelCost: q.travelCost ? Number(q.travelCost) : 0,
       adminCost: q.adminCost ? Number(q.adminCost) : 0,
       markupAmount: q.markupAmount ? Number(q.markupAmount) : 0,
+      // Both modes' PDF download reads these two directly off the row (not
+      // pricingSnapshot) — previously missing here entirely, so a resource-
+      // based quotation's discount silently never printed regardless of
+      // what was persisted on save.
+      discountPercentage: q.discountPercentage ? Number(q.discountPercentage) : 0,
+      discountAmount: q.discountAmount ? Number(q.discountAmount) : 0,
+      legalEntityId: q.legalEntityId,
+      legalEntity: q.legalEntity
+        ? {
+            legalName: q.legalEntity.legalName,
+            taxRegistrationNumber: q.legalEntity.taxRegistrationNumber,
+            countryName: q.legalEntity.country.countryName,
+            addressLines: [q.legalEntity.addressLine1, q.legalEntity.addressLine2, q.legalEntity.city, q.legalEntity.state, q.legalEntity.postalCode].filter(Boolean),
+          }
+        : null,
       createdAt: q.createdAt,
     }));
 
@@ -197,6 +220,10 @@ export async function POST(request: NextRequest) {
       if (body.verticalId) {
         const vertical = await prisma.vertical.findUnique({ where: { id: parseInt(body.verticalId) } });
         if (!vertical) return NextResponse.json({ message: 'Selected vertical not found' }, { status: 404 });
+      }
+      if (body.legalEntityId) {
+        const legalEntity = await prisma.companyLegalEntity.findUnique({ where: { id: parseInt(body.legalEntityId) } });
+        if (!legalEntity) return NextResponse.json({ message: 'Selected legal entity not found' }, { status: 404 });
       }
     }
 
