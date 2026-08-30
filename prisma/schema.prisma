@@ -187,6 +187,7 @@ model Lead {
   contactPerson         String   @map("contact_person")
   designation           String? // contact person's role/title
   mobile                String?
+  whatsapp              String? // WhatsApp contact number — separate from `mobile` since they often differ
   email                 String?
   country               String?
   state                 String?

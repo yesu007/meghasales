@@ -24,6 +24,7 @@ interface Lead {
   designation: string | null;
   email: string | null;
   mobile: string | null;
+  whatsapp: string | null;
   status: string;
   customerStatus: string;
   leadSource: string;
@@ -213,6 +214,7 @@ export default function LeadDetailPage() {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><p className="text-xs font-medium text-slate-500 uppercase">Designation</p><p className="text-sm text-slate-800 mt-1">{lead.designation || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Mobile</p><p className="text-sm text-slate-800 mt-1">{lead.mobile || '—'}</p></div>
+              <div><p className="text-xs font-medium text-slate-500 uppercase">WhatsApp</p><p className="text-sm text-slate-800 mt-1">{lead.whatsapp || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-sm text-slate-800 mt-1 capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
               {isConfirmed && (
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Status</p><p className="text-sm text-slate-800 mt-1">{CUSTOMER_STATUSES.find(s => s.value === lead.customerStatus)?.label || lead.customerStatus}</p></div>

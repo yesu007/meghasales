@@ -35,6 +35,7 @@ export interface LeadFormState {
   contactPerson: string;
   designation: string;
   mobile: string;
+  whatsapp: string;
   email: string;
   leadSource: string;
   businessVerticals: string;
@@ -49,7 +50,7 @@ export interface LeadFormState {
 }
 
 export const blankLeadForm: LeadFormState = {
-  companyName: '', contactPerson: '', designation: '', mobile: '', email: '', leadSource: '', businessVerticals: '',
+  companyName: '', contactPerson: '', designation: '', mobile: '', whatsapp: '', email: '', leadSource: '', businessVerticals: '',
   countryId: null, currencyCode: '', currencySymbol: '', taxType: '', taxPercentage: 0,
   state: '', city: '', notes: '',
 };
@@ -76,6 +77,7 @@ export async function fetchLeadForEdit(id: number): Promise<LeadFormState | null
     contactPerson: lead.contactPerson || '',
     designation: lead.designation || '',
     mobile: lead.mobile || '',
+    whatsapp: lead.whatsapp || '',
     email: lead.email || '',
     leadSource: lead.leadSource || '',
     businessVerticals,
@@ -169,10 +171,22 @@ export default function LeadFormDrawer({
                         <label className="block text-sm font-medium text-slate-700 mb-1">Designation</label>
                         <input value={form.designation} onChange={(e) => setForm(f => ({...f, designation: e.target.value}))} placeholder="e.g. Purchase Manager" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
+                      <div className="col-span-2 pt-1">
+                        <p className="text-xs font-semibold text-slate-500 uppercase">Contact Channel</p>
+                      </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Mobile *</label>
                         <input value={form.mobile} onChange={(e) => setForm(f => ({...f, mobile: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.mobile ? 'border-red-400' : 'border-slate-300'}`} />
                         {formErrors.mobile && <p className="text-xs text-red-600 mt-1">{formErrors.mobile}</p>}
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-sm font-medium text-slate-700">WhatsApp</label>
+                          {form.mobile && form.whatsapp !== form.mobile && (
+                            <button type="button" onClick={() => setForm(f => ({...f, whatsapp: f.mobile}))} className="text-xs text-amber-600 hover:text-amber-700">Same as Mobile</button>
+                          )}
+                        </div>
+                        <input value={form.whatsapp} onChange={(e) => setForm(f => ({...f, whatsapp: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>

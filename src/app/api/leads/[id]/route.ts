@@ -67,6 +67,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.contactPerson && { contactPerson: body.contactPerson }),
         ...(body.designation !== undefined && { designation: body.designation || null }),
         ...(body.mobile !== undefined && { mobile: body.mobile }),
+        ...(body.whatsapp !== undefined && { whatsapp: body.whatsapp }),
         ...(body.email !== undefined && { email: body.email }),
         ...(body.leadSource && { leadSource: body.leadSource }),
         ...(body.status && { status: body.status }),
