@@ -207,6 +207,14 @@ model Lead {
   leadSource            String   @map("lead_source")
   assignedBaId          Int?     @map("assigned_ba_id")
   status                String   @default("NEW")
+  // Lifecycle status once a Lead has become a Customer (status=CONFIRMED) —
+  // ACTIVE | INACTIVE | ON_HOLD (see src/lib/customerStatus.ts). Deliberately
+  // a separate field from `status` above: `status` is the lead pipeline
+  // stage (and CONFIRMED is what makes a Lead show up as a Customer at all),
+  // while this tracks whether an already-converted customer is currently
+  // doing business with us. Defaults to ACTIVE for every row, but is only
+  // surfaced/editable on the Customers page.
+  customerStatus        String   @default("ACTIVE") @map("customer_status")
   businessVerticals     String?  @map("business_verticals")
   notes                 String?
   createdById           Int?     @map("created_by")

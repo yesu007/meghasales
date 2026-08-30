@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
 import { leadStatusLabel } from '@/lib/leadStatus';
+import { CUSTOMER_STATUSES, customerStatusLabel } from '@/lib/customerStatus';
 import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     const statusChanged = !!body.status && body.status !== existing.status;
 
+    if (body.customerStatus !== undefined && !CUSTOMER_STATUSES.some((s) => s.value === body.customerStatus)) {
+      return NextResponse.json({ message: 'Invalid customer status' }, { status: 400 });
+    }
+    const customerStatusChanged = !!body.customerStatus && body.customerStatus !== existing.customerStatus;
+
     const session = await getServerSession(authOptions);
     const performedById = session?.user ? parseInt(session.user.id, 10) : null;
 
@@ -63,6 +69,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.email !== undefined && { email: body.email }),
         ...(body.leadSource && { leadSource: body.leadSource }),
         ...(body.status && { status: body.status }),
+        ...(body.customerStatus && { customerStatus: body.customerStatus }),
         ...(body.assignedBaId !== undefined && { assignedBaId: body.assignedBaId ? parseInt(body.assignedBaId) : null }),
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.city !== undefined && { city: body.city }),
@@ -93,6 +100,17 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           description: lead.status === 'CONFIRMED'
             ? `Lead confirmed: ${lead.companyName}`
             : `Status changed from ${leadStatusLabel(existing.status)} to ${leadStatusLabel(lead.status)}`,
+          performedById: Number.isFinite(performedById) ? performedById : null,
+        },
+      });
+    }
+
+    if (customerStatusChanged) {
+      await prisma.leadActivity.create({
+        data: {
+          leadId: id,
+          activityType: 'CUSTOMER_STATUS_CHANGED',
+          description: `Customer status changed from ${customerStatusLabel(existing.customerStatus)} to ${customerStatusLabel(lead.customerStatus)}`,
           performedById: Number.isFinite(performedById) ? performedById : null,
         },
       });

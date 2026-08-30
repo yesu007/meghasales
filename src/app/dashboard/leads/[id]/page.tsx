@@ -10,6 +10,7 @@ import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIc
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { LEAD_STATUSES, leadStatusColor } from '@/lib/leadStatus';
+import { CUSTOMER_STATUSES, customerStatusColor } from '@/lib/customerStatus';
 import EventsTab from '@/components/leads/EventsTab';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
 import LeadDocumentsTab from '@/components/leads/LeadDocumentsTab';
@@ -23,6 +24,7 @@ interface Lead {
   email: string | null;
   mobile: string | null;
   status: string;
+  customerStatus: string;
   leadSource: string;
   country: string | null;
   state: string | null;
@@ -84,6 +86,24 @@ export default function LeadDetailPage() {
     onError: () => toast.error('Failed to update status'),
   });
 
+  const customerStatusMutation = useMutation({
+    mutationFn: async (customerStatus: string) => {
+      const res = await fetch(`/api/leads/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerStatus }),
+      });
+      if (!res.ok) throw new Error('Failed to update customer status');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead', id] });
+      queryClient.invalidateQueries({ queryKey: ['lead-activities', Number(id)] });
+      toast.success('Customer status updated');
+    },
+    onError: () => toast.error('Failed to update customer status'),
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -117,14 +137,27 @@ export default function LeadDetailPage() {
             <p className="text-slate-500 mt-1 text-sm sm:text-base truncate">{lead.contactPerson}{lead.email ? ` — ${lead.email}` : ''}</p>
           </div>
         </div>
-        <select
-          value={lead.status}
-          disabled={statusMutation.isPending}
-          onChange={(e) => statusMutation.mutate(e.target.value)}
-          className={`self-start sm:self-auto px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
-        >
-          {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {isConfirmed && (
+            <select
+              value={lead.customerStatus}
+              disabled={customerStatusMutation.isPending}
+              onChange={(e) => customerStatusMutation.mutate(e.target.value)}
+              title="Customer status"
+              className={`px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${customerStatusColor(lead.customerStatus)}`}
+            >
+              {CUSTOMER_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          )}
+          <select
+            value={lead.status}
+            disabled={statusMutation.isPending}
+            onChange={(e) => statusMutation.mutate(e.target.value)}
+            className={`px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
+          >
+            {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </div>
       </div>
 
       <Tab.Group>
@@ -179,6 +212,9 @@ export default function LeadDetailPage() {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><p className="text-xs font-medium text-slate-500 uppercase">Mobile</p><p className="text-sm text-slate-800 mt-1">{lead.mobile || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-sm text-slate-800 mt-1 capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
+              {isConfirmed && (
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Status</p><p className="text-sm text-slate-800 mt-1">{CUSTOMER_STATUSES.find(s => s.value === lead.customerStatus)?.label || lead.customerStatus}</p></div>
+              )}
               <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : 'Unassigned'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{lead.jewelleryBusinessType || '—'}</p></div>

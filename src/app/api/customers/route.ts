@@ -49,6 +49,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
     }
 
+    // Duplicate guard — a customer is treated as "the same" as an existing
+    // one (any status='CONFIRMED' Lead) if it shares a company name within
+    // the same country, or shares an email, or shares a phone number. Any
+    // one of those matching is enough: a repeat company+country registration
+    // is a genuine dupe of the find-or-create above, and a shared email/phone
+    // usually means the same contact was re-entered under a different
+    // company name. Checked before the Company/LegalEntity find-or-create
+    // below so a rejected duplicate never creates orphan company rows.
+    const trimmedCompanyName = String(body.companyName).trim();
+    const trimmedEmail = body.email ? String(body.email).trim() : null;
+    const trimmedMobile = body.mobile ? String(body.mobile).trim() : null;
+
+    const duplicateConditions: any[] = [
+      { companyName: { equals: trimmedCompanyName, mode: 'insensitive' }, countryId: countryFields.countryId },
+    ];
+    if (trimmedEmail) duplicateConditions.push({ email: { equals: trimmedEmail, mode: 'insensitive' } });
+    if (trimmedMobile) duplicateConditions.push({ mobile: trimmedMobile });
+
+    const duplicate = await prisma.lead.findFirst({
+      where: { status: 'CONFIRMED', OR: duplicateConditions },
+      select: { id: true, companyName: true, email: true, mobile: true, countryId: true },
+    });
+
+    if (duplicate) {
+      let message = 'A matching customer already exists';
+      if (duplicate.companyName.trim().toLowerCase() === trimmedCompanyName.toLowerCase() && duplicate.countryId === countryFields.countryId) {
+        message = `A customer named "${duplicate.companyName}" already exists in this country`;
+      } else if (trimmedEmail && duplicate.email && duplicate.email.toLowerCase() === trimmedEmail.toLowerCase()) {
+        message = `A customer with email "${trimmedEmail}" already exists (${duplicate.companyName})`;
+      } else if (trimmedMobile && duplicate.mobile === trimmedMobile) {
+        message = `A customer with phone "${trimmedMobile}" already exists (${duplicate.companyName})`;
+      }
+      return NextResponse.json({ message, duplicateCustomerId: duplicate.id }, { status: 409 });
+    }
+
     // Find-or-create the Customer Company Master by exact (case-insensitive)
     // name match, then find-or-create its legal entity for the selected
     // country. This is what makes "one company, several country
@@ -58,7 +93,6 @@ export async function POST(request: NextRequest) {
     // rather than a disconnected duplicate. Address/tax fields are
     // optional; documents can't attach until the entity exists, so those
     // are added afterward from the customer's own Company tab.
-    const trimmedCompanyName = String(body.companyName).trim();
     let company = await prisma.company.findFirst({ where: { name: { equals: trimmedCompanyName, mode: 'insensitive' } } });
     if (!company) {
       const createdById = session?.user ? parseInt((session.user as any).id, 10) : null;

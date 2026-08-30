@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     const size = parseInt(searchParams.get('size') || '10');
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
+    const customerStatus = searchParams.get('customerStatus') || '';
     const leadSource = searchParams.get('leadSource') || '';
     const businessVertical = searchParams.get('businessVertical') || '';
     const city = searchParams.get('city') || '';
@@ -66,6 +67,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (status) AND.push({ status: status.toUpperCase() });
+    if (customerStatus) AND.push({ customerStatus: customerStatus.toUpperCase() });
     if (leadSource) {
       AND.push({ leadSource: leadSource.toUpperCase() });
     } else {
@@ -112,6 +114,7 @@ export async function GET(request: NextRequest) {
       email: lead.email,
       mobile: lead.mobile,
       status: lead.status,
+      customerStatus: lead.customerStatus,
       leadSource: lead.leadSource,
       assignedBaId: lead.assignedBaId,
       assignedBaName: lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : null,
