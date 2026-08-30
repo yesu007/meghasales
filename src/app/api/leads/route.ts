@@ -111,6 +111,7 @@ export async function GET(request: NextRequest) {
       id: lead.id,
       companyName: lead.companyName,
       contactPerson: lead.contactPerson,
+      designation: lead.designation,
       email: lead.email,
       mobile: lead.mobile,
       status: lead.status,
