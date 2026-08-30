@@ -445,16 +445,14 @@ export default function DemosPage() {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">
-                        {isOutcomeApplicable(demo.status, !!demo.nextAction) ? (
-                          <select
-                            value={demo.nextAction || ''}
-                            onChange={(e) => updateNextAction(demo.id, e.target.value)}
-                            className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
-                          >
-                            <option value="">Select</option>
-                            {NEXT_ACTIONS.map(n => <option key={n.value} value={n.value}>{n.label}</option>)}
-                          </select>
-                        ) : '—'}
+                        <select
+                          value={demo.nextAction || ''}
+                          onChange={(e) => updateNextAction(demo.id, e.target.value)}
+                          className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="">Select</option>
+                          {NEXT_ACTIONS.map(n => <option key={n.value} value={n.value}>{n.label}</option>)}
+                        </select>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
