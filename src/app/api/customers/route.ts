@@ -33,6 +33,9 @@ export async function POST(request: NextRequest) {
     if (!body.leadSource) {
       return NextResponse.json({ message: 'Source is required' }, { status: 400 });
     }
+    if (!body.businessVerticals) {
+      return NextResponse.json({ message: 'Business vertical is required' }, { status: 400 });
+    }
     if (!body.countryId) {
       return NextResponse.json({ message: 'Country is required' }, { status: 400 });
     }

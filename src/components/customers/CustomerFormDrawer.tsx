@@ -78,6 +78,7 @@ export function validateCustomerForm(data: CustomerFormState): Record<string, st
   if (!data.contactPerson) errs.contactPerson = 'Contact person is required';
   if (!data.mobile) errs.mobile = 'Mobile is required';
   if (!data.leadSource) errs.leadSource = 'Source is required';
+  if (!data.businessVerticals) errs.businessVerticals = 'Business vertical is required';
   if (!data.countryId) errs.countryId = 'Country is required';
   return errs;
 }
@@ -163,11 +164,12 @@ export default function CustomerFormDrawer({
                         {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
-                        <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical *</label>
+                        <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.businessVerticals ? 'border-red-400' : 'border-slate-300'}`}>
                           <option value="">Select</option>
                           {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                         </select>
+                        {formErrors.businessVerticals && <p className="text-xs text-red-600 mt-1">{formErrors.businessVerticals}</p>}
                       </div>
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Country *</label>
