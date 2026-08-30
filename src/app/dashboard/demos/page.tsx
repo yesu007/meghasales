@@ -57,6 +57,8 @@ interface Demo {
   contactPerson: string;
   mobile: string | null;
   demoType: string;
+  packageId: number | null;
+  packageName: string | null;
   scheduledDate: string | null;
   actualDate: string | null;
   status: string;
@@ -82,10 +84,21 @@ interface UserOption {
   fullName: string;
 }
 
+interface PackageOption {
+  id: number;
+  name: string;
+}
+
 async function fetchDemos(params: Record<string, string>) {
   const query = new URLSearchParams(params).toString();
   const res = await fetch(`/api/demos?${query}`);
   if (!res.ok) throw new Error('Failed to fetch demos');
+  return res.json();
+}
+
+async function fetchPackages(): Promise<PackageOption[]> {
+  const res = await fetch('/api/packages');
+  if (!res.ok) throw new Error('Failed to fetch packages');
   return res.json();
 }
 
@@ -113,6 +126,7 @@ export default function DemosPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [packageFilter, setPackageFilter] = useState('');
   const [sortBy, setSortBy] = useState('scheduledDate');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
@@ -129,6 +143,7 @@ export default function DemosPage() {
   if (search) params.search = search;
   if (statusFilter) params.status = statusFilter;
   if (typeFilter) params.demoType = typeFilter;
+  if (packageFilter) params.packageId = packageFilter;
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['demos', params],
@@ -148,9 +163,19 @@ export default function DemosPage() {
     queryFn: fetchUsers,
   });
 
+  // Fetch packages for the Package dropdown
+  const { data: packages = [], isError: isPackagesError } = useQuery<PackageOption[]>({
+    queryKey: ['packages'],
+    queryFn: fetchPackages,
+  });
+
   useEffect(() => {
     if (isError) toast.error('Failed to load demos');
   }, [isError]);
+
+  useEffect(() => {
+    if (isPackagesError) toast.error('Failed to load packages');
+  }, [isPackagesError]);
 
   useEffect(() => {
     if (isLeadsError) toast.error('Failed to load leads');
@@ -161,7 +186,7 @@ export default function DemosPage() {
   }, [isUsersError]);
 
   // Create/edit demo form
-  const blankForm = { leadId: '', demoType: '', scheduledDate: '', assignedToId: '', attendees: '', modulesDemonstrated: '' };
+  const blankForm = { leadId: '', demoType: '', packageId: '', scheduledDate: '', assignedToId: '', attendees: '', modulesDemonstrated: '' };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -196,6 +221,7 @@ export default function DemosPage() {
     setForm({
       leadId: String(demo.leadId),
       demoType: demo.demoType,
+      packageId: demo.packageId ? String(demo.packageId) : '',
       scheduledDate: demo.scheduledDate ? dayjs(demo.scheduledDate).format('YYYY-MM-DDTHH:mm') : '',
       assignedToId: demo.assignedToId ? String(demo.assignedToId) : '',
       attendees: demo.attendees || '',
@@ -243,13 +269,13 @@ export default function DemosPage() {
   };
 
   const clearFilters = () => {
-    setSearchInput(''); setSearch(''); setStatusFilter(''); setTypeFilter(''); setPage(0);
+    setSearchInput(''); setSearch(''); setStatusFilter(''); setTypeFilter(''); setPackageFilter(''); setPage(0);
   };
 
   const demos: Demo[] = data?.content || [];
   const totalElements = data?.totalElements || 0;
   const totalPages = data?.totalPages || 0;
-  const activeFilters = [statusFilter, typeFilter].filter(Boolean).length;
+  const activeFilters = [statusFilter, typeFilter, packageFilter].filter(Boolean).length;
 
   const SortIcon = ({ col }: { col: string }) => {
     if (sortBy !== col) return <ArrowsUpDownIcon className="h-3 w-3 text-slate-300" />;
@@ -312,6 +338,14 @@ export default function DemosPage() {
             <option value="">All Types</option>
             {DEMO_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
+          <select
+            value={packageFilter}
+            onChange={(e) => { setPackageFilter(e.target.value); setPage(0); }}
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+          >
+            <option value="">All Packages</option>
+            {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
           <button
             onClick={() => setFiltersOpen(!filtersOpen)}
             className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium ${activeFilters > 0 ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600'}`}
@@ -334,6 +368,12 @@ export default function DemosPage() {
               <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
                 Type: {DEMO_TYPES.find(t => t.value === typeFilter)?.label}
                 <button onClick={() => setTypeFilter('')}><XMarkIcon className="h-3 w-3" /></button>
+              </span>
+            )}
+            {packageFilter && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-purple-50 text-purple-700 border border-purple-200">
+                Package: {packages.find(p => String(p.id) === packageFilter)?.name}
+                <button onClick={() => setPackageFilter('')}><XMarkIcon className="h-3 w-3" /></button>
               </span>
             )}
           </div>
@@ -366,6 +406,7 @@ export default function DemosPage() {
                     </th>
                     <th className="px-4 py-3 text-left font-semibold text-white">Contact</th>
                     <th className="px-4 py-3 text-left font-semibold text-white">Type</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Package</th>
                     <th className="px-4 py-3 text-left">
                       <button onClick={() => handleSort('scheduledDate')} className="flex items-center gap-1 font-semibold text-white">
                         Scheduled <SortIcon col="scheduledDate" />
@@ -392,6 +433,7 @@ export default function DemosPage() {
                           {DEMO_TYPES.find(t => t.value === demo.demoType)?.label || demo.demoType}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{demo.packageName || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">
                         {isReschedulable(demo.status) ? (
                           <input
@@ -578,6 +620,17 @@ export default function DemosPage() {
                             />
                             {formErrors.scheduledDate && <p className="text-xs text-red-600 mt-1">{formErrors.scheduledDate}</p>}
                           </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Package</label>
+                          <select
+                            value={form.packageId}
+                            onChange={(e) => setForm(f => ({ ...f, packageId: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                          >
+                            <option value="">Select package</option>
+                            {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>

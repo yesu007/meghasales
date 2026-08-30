@@ -15,6 +15,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       include: {
         lead: { select: { companyName: true, contactPerson: true, mobile: true, email: true } },
         assignedTo: { select: { firstName: true, lastName: true } },
+        package: { select: { name: true } },
       },
     });
     if (!demo) return NextResponse.json({ message: 'Demo not found' }, { status: 404 });
@@ -39,6 +40,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       where: { id },
       data: {
         ...(body.demoType && { demoType: body.demoType }),
+        ...(body.packageId !== undefined && { packageId: body.packageId ? parseInt(body.packageId) : null }),
         ...(body.status && { status: body.status }),
         ...(body.scheduledDate !== undefined && { scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : null }),
         ...(body.actualDate !== undefined && { actualDate: body.actualDate ? new Date(body.actualDate) : null }),

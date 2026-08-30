@@ -300,6 +300,7 @@ model Demo {
   id                    Int       @id @default(autoincrement())
   leadId                Int       @map("lead_id")
   demoType              String    @map("demo_type")
+  packageId             Int?      @map("package_id")
   assignedToId          Int?      @map("assigned_to")
   scheduledDate         DateTime? @map("scheduled_date")
   actualDate            DateTime? @map("actual_date")
@@ -316,8 +317,9 @@ model Demo {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  lead       Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  assignedTo User? @relation(fields: [assignedToId], references: [id])
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedTo User?    @relation(fields: [assignedToId], references: [id])
+  package    Package? @relation(fields: [packageId], references: [id])
 
   @@map("demos")
 }
@@ -1548,6 +1550,25 @@ model Vertical {
   quotations Quotation[]
 
   @@map("verticals")
+}
+
+// The package/offering being demoed — Trading, Jewellery Manufacturing,
+// Trading + Accounts, Retail, Custom Project (seeded; admin-managed like
+// Vertical above). Kept as its own master rather than a plain string on Demo
+// so it can be renamed/deactivated in one place without touching every demo
+// row, same rationale as Vertical.
+model Package {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  code      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  demos Demo[]
+
+  @@map("packages")
 }
 
 model ExpenseBudget {

@@ -37,8 +37,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const packageId = searchParams.get('packageId') || '';
+
     if (status) AND.push({ status: status.toUpperCase() });
     if (demoType) AND.push({ demoType: demoType.toUpperCase() });
+    if (packageId) AND.push({ packageId: parseInt(packageId) });
 
     if (AND.length > 0) where.AND = AND;
 
@@ -56,6 +59,7 @@ export async function GET(request: NextRequest) {
         include: {
           lead: { select: { companyName: true, contactPerson: true, mobile: true } },
           assignedTo: { select: { firstName: true, lastName: true } },
+          package: { select: { name: true } },
         },
       }),
       prisma.demo.count({ where }),
@@ -68,6 +72,8 @@ export async function GET(request: NextRequest) {
       contactPerson: demo.lead.contactPerson,
       mobile: demo.lead.mobile,
       demoType: demo.demoType,
+      packageId: demo.packageId,
+      packageName: demo.package?.name || null,
       scheduledDate: demo.scheduledDate,
       actualDate: demo.actualDate,
       status: demo.status,
@@ -111,6 +117,7 @@ export async function POST(request: NextRequest) {
       data: {
         leadId: parseInt(body.leadId),
         demoType: body.demoType,
+        packageId: body.packageId ? parseInt(body.packageId) : null,
         assignedToId: body.assignedToId ? parseInt(body.assignedToId) : null,
         scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : null,
         attendees: body.attendees || null,
