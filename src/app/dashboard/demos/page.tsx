@@ -47,10 +47,6 @@ const NEXT_ACTIONS = [
   { value: 'FOLLOW_UP', label: 'Follow Up Later' },
 ];
 
-// Interest level and next action only apply once a demo has actually taken place
-const isOutcomeApplicable = (status: string, hasExistingValue: boolean) =>
-  ['IN_PROGRESS', 'COMPLETED'].includes(status) || hasExistingValue;
-
 // Rescheduling only makes sense for demos that haven't already concluded
 const isReschedulable = (status: string) => ['SCHEDULED', 'RESCHEDULED'].includes(status);
 
@@ -428,21 +424,19 @@ export default function DemosPage() {
                         </select>
                       </td>
                       <td className="px-4 py-3 hidden xl:table-cell">
-                        {isOutcomeApplicable(demo.status, !!demo.customerInterestLevel) ? (
-                          <select
-                            value={demo.customerInterestLevel || ''}
-                            onChange={(e) => updateInterest(demo.id, e.target.value)}
-                            className={`px-2 py-1 rounded text-xs font-medium border-0 ${
-                              demo.customerInterestLevel === 'HIGH' ? 'bg-green-100 text-green-700' :
-                              demo.customerInterestLevel === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
-                              demo.customerInterestLevel === 'LOW' ? 'bg-red-100 text-red-700' :
-                              'bg-slate-100 text-slate-700'
-                            }`}
-                          >
-                            <option value="">Select</option>
-                            {INTEREST_LEVELS.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
-                          </select>
-                        ) : '—'}
+                        <select
+                          value={demo.customerInterestLevel || ''}
+                          onChange={(e) => updateInterest(demo.id, e.target.value)}
+                          className={`px-2 py-1 rounded text-xs font-medium border-0 ${
+                            demo.customerInterestLevel === 'HIGH' ? 'bg-green-100 text-green-700' :
+                            demo.customerInterestLevel === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
+                            demo.customerInterestLevel === 'LOW' ? 'bg-red-100 text-red-700' :
+                            'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          <option value="">Select</option>
+                          {INTEREST_LEVELS.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
+                        </select>
                       </td>
                       <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">
                         <select
