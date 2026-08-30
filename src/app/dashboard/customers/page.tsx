@@ -21,7 +21,6 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { LEAD_STATUSES } from '@/lib/leadStatus';
 import { CUSTOMER_STATUSES } from '@/lib/customerStatus';
 import LeadFormDrawer, { SOURCES, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 import CustomerFormDrawer, { blankCustomerForm, type CustomerFormState } from '@/components/customers/CustomerFormDrawer';
@@ -35,8 +34,12 @@ import CustomerFormDrawer, { blankCustomerForm, type CustomerFormState } from '@
 // and nothing can ever go stale (a Lead moved off CONFIRMED simply stops
 // appearing here on next fetch, a Lead moved onto CONFIRMED starts
 // appearing — both for free, since this is a live query, not a snapshot).
+// The lead pipeline status itself isn't shown/editable here (every row is
+// always CONFIRMED by definition) — the "Status" column on this page is
+// customerStatus (Active/Inactive/On Hold), a separate field tracked only
+// for converted customers. Un-converting a customer back to an earlier lead
+// stage is done from the Lead detail page, not from this list.
 const CUSTOMER_STATUS = 'CONFIRMED';
-const STATUSES = LEAD_STATUSES;
 
 interface Lead {
   id: number;
@@ -210,17 +213,6 @@ export default function CustomersPage() {
     toast.success('Customer deleted');
   };
 
-  // Reuses the exact same status-change endpoint the Leads page uses —
-  // moving a customer off Converted here is exactly how it disappears from
-  // this list (see the module note above): no separate "un-convert" action
-  // needed, this dropdown already does it.
-  const updateStatus = async (id: number, status: string) => {
-    const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
-    if (!res.ok) { toast.error('Failed to update status'); return; }
-    queryClient.invalidateQueries({ queryKey: ['customers'] });
-    toast.success('Status updated');
-  };
-
   const updateCustomerStatus = async (id: number, customerStatus: string) => {
     const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerStatus }) });
     if (!res.ok) { toast.error('Failed to update customer status'); return; }
@@ -302,7 +294,7 @@ export default function CustomersPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Customer Status</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
               <select value={customerStatusFilter} onChange={(e) => { setCustomerStatusFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
                 <option value="">All</option>
                 {CUSTOMER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -314,7 +306,7 @@ export default function CustomersPage() {
           <div className="flex flex-wrap gap-2">
             {sourceFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">Source: {sourceFilter.replace(/_/g,' ')} <button onClick={() => setSourceFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
             {verticalFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-purple-50 text-purple-700 border border-purple-200">Vertical: {verticalFilter.replace(/_/g,' ')} <button onClick={() => setVerticalFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
-            {customerStatusFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">Customer Status: {CUSTOMER_STATUSES.find(s => s.value === customerStatusFilter)?.label} <button onClick={() => setCustomerStatusFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
+            {customerStatusFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">Status: {CUSTOMER_STATUSES.find(s => s.value === customerStatusFilter)?.label} <button onClick={() => setCustomerStatusFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
           </div>
         )}
       </div>
@@ -335,8 +327,7 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('contactPerson')} className="flex items-center gap-1 font-semibold text-white">Contact <SortIcon col="contactPerson" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Mobile</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Source</th>
-                    <th className="px-4 py-3 text-left"><button onClick={() => handleSort('status')} className="flex items-center gap-1 font-semibold text-white">Status <SortIcon col="status" /></button></th>
-                    <th className="px-4 py-3 text-left font-semibold text-white">Customer Status</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Owner</th>
                     <th className="px-4 py-3 text-left hidden md:table-cell"><button onClick={() => handleSort('createdAt')} className="flex items-center gap-1 font-semibold text-white">Created <SortIcon col="createdAt" /></button></th>
                     <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
@@ -351,11 +342,6 @@ export default function CustomersPage() {
                       <td className="px-4 py-3 text-slate-600">{customer.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{customer.mobile || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell capitalize">{(customer.leadSource || '').replace(/_/g, ' ').toLowerCase()}</td>
-                      <td className="px-4 py-3">
-                        <select value={customer.status} onChange={(e) => updateStatus(customer.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${STATUSES.find(s => s.value === customer.status)?.color || 'bg-slate-100'}`}>
-                          {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                        </select>
-                      </td>
                       <td className="px-4 py-3">
                         <select value={customer.customerStatus} onChange={(e) => updateCustomerStatus(customer.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${CUSTOMER_STATUSES.find(s => s.value === customer.customerStatus)?.color || 'bg-slate-100'}`}>
                           {CUSTOMER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
