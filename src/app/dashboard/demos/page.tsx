@@ -19,6 +19,7 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { TIMEZONES, DEFAULT_TIMEZONE, timezoneShortLabel } from '@/lib/timezones';
 
 const DEMO_TYPES = [
   { value: 'ONLINE', label: 'Online' },
@@ -60,6 +61,7 @@ interface Demo {
   packageId: number | null;
   packageName: string | null;
   scheduledDate: string | null;
+  timezone: string | null;
   actualDate: string | null;
   status: string;
   assignedToId: number | null;
@@ -186,7 +188,7 @@ export default function DemosPage() {
   }, [isUsersError]);
 
   // Create/edit demo form
-  const blankForm = { leadId: '', demoType: '', packageId: '', scheduledDate: '', assignedToId: '', attendees: '', modulesDemonstrated: '' };
+  const blankForm = { leadId: '', demoType: '', packageId: '', scheduledDate: '', timezone: DEFAULT_TIMEZONE, assignedToId: '', attendees: '', modulesDemonstrated: '' };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -223,6 +225,7 @@ export default function DemosPage() {
       demoType: demo.demoType,
       packageId: demo.packageId ? String(demo.packageId) : '',
       scheduledDate: demo.scheduledDate ? dayjs(demo.scheduledDate).format('YYYY-MM-DDTHH:mm') : '',
+      timezone: demo.timezone || DEFAULT_TIMEZONE,
       assignedToId: demo.assignedToId ? String(demo.assignedToId) : '',
       attendees: demo.attendees || '',
       modulesDemonstrated: demo.modulesDemonstrated || '',
@@ -445,6 +448,11 @@ export default function DemosPage() {
                         ) : (
                           demo.scheduledDate ? dayjs(demo.scheduledDate).format('DD MMM YYYY, h:mm A') : '—'
                         )}
+                        {demo.scheduledDate && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 align-middle">
+                            {timezoneShortLabel(demo.timezone) || 'IST'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <select
@@ -620,6 +628,16 @@ export default function DemosPage() {
                             />
                             {formErrors.scheduledDate && <p className="text-xs text-red-600 mt-1">{formErrors.scheduledDate}</p>}
                           </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Timezone</label>
+                          <select
+                            value={form.timezone}
+                            onChange={(e) => setForm(f => ({ ...f, timezone: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                          >
+                            {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Package</label>

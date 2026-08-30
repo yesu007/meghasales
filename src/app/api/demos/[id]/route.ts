@@ -43,6 +43,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.packageId !== undefined && { packageId: body.packageId ? parseInt(body.packageId) : null }),
         ...(body.status && { status: body.status }),
         ...(body.scheduledDate !== undefined && { scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : null }),
+        ...(body.timezone !== undefined && { timezone: body.timezone || null }),
         ...(body.actualDate !== undefined && { actualDate: body.actualDate ? new Date(body.actualDate) : null }),
         ...(body.assignedToId !== undefined && { assignedToId: body.assignedToId ? parseInt(body.assignedToId) : null }),
         ...(body.attendees !== undefined && { attendees: body.attendees }),

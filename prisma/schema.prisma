@@ -303,6 +303,7 @@ model Demo {
   packageId             Int?      @map("package_id")
   assignedToId          Int?      @map("assigned_to")
   scheduledDate         DateTime? @map("scheduled_date")
+  timezone              String?   @default("Asia/Kolkata") @map("timezone")
   actualDate            DateTime? @map("actual_date")
   status                String    @default("SCHEDULED")
   attendees             String?
