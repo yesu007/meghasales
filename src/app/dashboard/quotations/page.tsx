@@ -44,6 +44,7 @@ interface PricingResponse { currencyCode: string; currencySymbol: string; exchan
 interface ServiceOverrides { implementationCost?: number; trainingCost?: number; annualMaintenanceCost?: number; }
 interface CustomModule { id: string; name: string; description: string; cost: number; quantity: number; }
 interface CurrencyOption { currencyCode: string; currencySymbol: string; }
+interface CompanyProfileTerms { termsAndConditions: string | null; paymentTerms: string | null; warrantyTerms: string | null }
 
 function fmt(amount: number, symbol: string, currencyCode: string): string {
   return formatCurrency(amount, currencyCode, { symbol });
@@ -85,12 +86,13 @@ export default function QuotationsPage() {
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [additionalTerms, setAdditionalTerms] = useState('');
 
   const resetCreateState = () => {
     setEditingId(null); setEditingQuotationNumber('');
     setSelectedModules([]); setModuleOverrides({}); setServiceOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone('');
     setClientCountry('IN'); setClientState(''); setDiscountPercentage(0); setTaxInclusive(false); setSelectedAddons([]); setPricing(null);
-    setClientMode('existing'); setSelectedLeadId(''); setFormErrors({});
+    setClientMode('existing'); setSelectedLeadId(''); setFormErrors({}); setAdditionalTerms('');
   };
 
   // Fetch quotations from database
@@ -130,6 +132,13 @@ export default function QuotationsPage() {
     queryKey: ['currencies'],
     queryFn: async () => { const r = await fetch('/api/currencies?activeOnly=true'); if (!r.ok) throw new Error('Failed to fetch currencies'); return r.json(); },
   });
+  const { data: companyProfile } = useQuery<CompanyProfileTerms | null>({
+    queryKey: ['company-profile-terms'],
+    queryFn: async () => { const r = await fetch('/api/quotation-config?type=company-profile'); if (!r.ok) throw new Error('Failed to fetch company profile'); return r.json(); },
+  });
+  const standardTermsText = companyProfile
+    ? [companyProfile.termsAndConditions, companyProfile.paymentTerms, companyProfile.warrantyTerms].filter(Boolean).join('\n\n')
+    : '';
   const symbolForCurrency = (code: string) => currencyList.find(c => c.currencyCode === code)?.currencySymbol || code;
 
   useEffect(() => {
@@ -241,6 +250,7 @@ export default function QuotationsPage() {
         taxBreakdown: pricing.taxBreakdown,
         addons: selectedAddons,
         pricingSnapshot: pricing,
+        additionalTerms: additionalTerms || null,
       };
       // On create: existing-client mode links to the picked lead via leadId;
       // new-client mode sends company/contact fields so the API creates a
@@ -299,6 +309,7 @@ export default function QuotationsPage() {
     setDiscountPercentage(Number(q.discountPercentage) || 0);
     setTaxInclusive(!!q.taxInclusive);
     setSelectedAddons(Array.isArray(q.addons) ? q.addons : []);
+    setAdditionalTerms(q.additionalTerms || '');
     setEditingId(q.id);
     setEditingQuotationNumber(q.quotationNumber);
     setView('create');
@@ -387,6 +398,8 @@ export default function QuotationsPage() {
       currencySymbol: symbol,
       currencyCode: pricing.currencyCode,
       fileName: `Quotation_${companyName || 'Client'}_${dayjs().format('YYYYMMDD')}.pdf`,
+      standardTerms: standardTermsText,
+      additionalTerms,
     });
   };
 
@@ -439,6 +452,8 @@ export default function QuotationsPage() {
       currencySymbol: symbol,
       currencyCode: q.currencyCode || 'INR',
       fileName: `${q.quotationNumber}_${q.companyName}.pdf`,
+      standardTerms: standardTermsText,
+      additionalTerms: q.additionalTerms || '',
     });
   };
 
@@ -480,6 +495,8 @@ export default function QuotationsPage() {
       currencySymbol: symbol,
       currencyCode: q.currencyCode || 'INR',
       fileName: `${q.quotationNumber}_${q.companyName}.pdf`,
+      standardTerms: standardTermsText,
+      additionalTerms: q.additionalTerms || '',
     });
   };
 
@@ -711,6 +728,25 @@ export default function QuotationsPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Terms & Conditions */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h2 className="text-lg font-semibold text-slate-800 mb-4">Terms &amp; Conditions</h2>
+            {standardTermsText && (
+              <div className="mb-4">
+                <p className="text-xs font-medium text-slate-500 mb-1">Standard Template (from Settings — applies to every quotation)</p>
+                <div className="text-xs text-slate-600 whitespace-pre-wrap bg-slate-50 border border-slate-200 rounded-lg p-3 max-h-40 overflow-y-auto">{standardTermsText}</div>
+              </div>
+            )}
+            <label className="block text-sm font-medium text-slate-700 mb-1">Additional Clauses (specific to this quotation)</label>
+            <textarea
+              value={additionalTerms}
+              onChange={e => setAdditionalTerms(e.target.value)}
+              rows={4}
+              placeholder="Any extra terms or clauses that apply only to this quotation"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+            />
           </div>
         </div>
 

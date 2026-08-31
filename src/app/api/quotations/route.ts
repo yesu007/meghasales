@@ -174,6 +174,7 @@ export async function GET(request: NextRequest) {
       // what was persisted on save.
       discountPercentage: q.discountPercentage ? Number(q.discountPercentage) : 0,
       discountAmount: q.discountAmount ? Number(q.discountAmount) : 0,
+      additionalTerms: q.additionalTerms,
       legalEntityId: q.legalEntityId,
       legalEntity: q.legalEntity
         ? {
@@ -286,6 +287,7 @@ export async function POST(request: NextRequest) {
       currencyCode,
       exchangeRate: body.exchangeRate || 1,
       notes: body.notes || null,
+      additionalTerms: body.additionalTerms || null,
       status: 'DRAFT',
     };
     if (resourceBasedFields) {

@@ -568,6 +568,9 @@ model Quotation {
   addons                Json?
   pricingSnapshot       Json?     @map("pricing_snapshot")
   notes                 String?
+  // Quotation-specific clauses shown on the PDF alongside the standard
+  // company-wide T&C template (CompanyProfile.termsAndConditions).
+  additionalTerms       String?   @map("additional_terms")
   createdById           Int?      @map("created_by")
   approvedById          Int?      @map("approved_by")
   customerApprovedAt    DateTime? @map("customer_approved_at")

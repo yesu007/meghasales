@@ -17,6 +17,7 @@ interface ResourceEmployee { id: number; firstName: string; lastName: string; em
 interface CompanyOption { id: number; name: string }
 interface LegalEntityOption { id: number; legalName: string; taxRegistrationNumber: string | null; isActive: boolean; country: { countryName: string; flagEmoji: string | null } }
 interface CompanyDetailForQuotation { id: number; legalEntities: LegalEntityOption[] }
+interface CompanyProfileTerms { termsAndConditions: string | null; paymentTerms: string | null; warrantyTerms: string | null }
 
 const employeeLabel = (e: ResourceEmployee) => `${e.firstName} ${e.lastName} — ${e.designation || 'Employee'} (${e.employeeCode})`;
 
@@ -68,6 +69,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [validityDays, setValidityDays] = useState('30');
   const [overrideAmount, setOverrideAmount] = useState('');
   const [notes, setNotes] = useState('');
+  const [additionalTerms, setAdditionalTerms] = useState('');
 
   const [status, setStatus] = useState('DRAFT');
   const [quotationNumber, setQuotationNumber] = useState('');
@@ -88,6 +90,10 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const { data: currencies = [] } = useQuery<CurrencyOption[]>({
     queryKey: ['currencies'],
     queryFn: async () => { const r = await fetch('/api/currencies?activeOnly=true'); if (!r.ok) throw new Error('Failed to fetch currencies'); return r.json(); },
+  });
+  const { data: companyProfile } = useQuery<CompanyProfileTerms | null>({
+    queryKey: ['company-profile-terms'],
+    queryFn: async () => { const r = await fetch('/api/quotation-config?type=company-profile'); if (!r.ok) throw new Error('Failed to fetch company profile'); return r.json(); },
   });
   const currencySymbol = currencies.find((c) => c.currencyCode === currencyCode)?.currencySymbol || currencyCode;
   const { data: resourceEmployees = [] } = useQuery<ResourceEmployee[]>({
@@ -116,6 +122,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setTravelCost(String(Number(existing.travelCost) || 0));
     setTaxPercentage(String(Number(existing.taxPercentage) || 0));
     setNotes(existing.notes || '');
+    setAdditionalTerms(existing.additionalTerms || '');
     setStatus(existing.status);
     setQuotationNumber(existing.quotationNumber);
     setClientName(existing.lead?.contactPerson || '');
@@ -216,6 +223,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
         legalEntityId: legalEntityId || null,
         currencyCode,
         notes: notes || null,
+        additionalTerms: additionalTerms || null,
         resources: validResources,
         adminMode,
         adminValue: Number(adminValue) || 0,
@@ -478,6 +486,27 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
               <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
             </div>
+          </div>
+
+          {/* Terms & Conditions */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Terms &amp; Conditions</h2>
+            {(companyProfile?.termsAndConditions || companyProfile?.paymentTerms || companyProfile?.warrantyTerms) && (
+              <div className="mb-3">
+                <p className="text-xs font-medium text-slate-500 mb-1">Standard Template (from Settings — applies to every quotation)</p>
+                <div className="text-xs text-slate-600 whitespace-pre-wrap bg-slate-50 border border-slate-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                  {[companyProfile.termsAndConditions, companyProfile.paymentTerms, companyProfile.warrantyTerms].filter(Boolean).join('\n\n')}
+                </div>
+              </div>
+            )}
+            <label className="block text-sm font-medium text-slate-700 mb-1">Additional Clauses (specific to this quotation)</label>
+            <textarea
+              value={additionalTerms}
+              onChange={(e) => setAdditionalTerms(e.target.value)}
+              rows={4}
+              placeholder="Any extra terms or clauses that apply only to this quotation"
+              className={inputCls}
+            />
           </div>
         </div>
 

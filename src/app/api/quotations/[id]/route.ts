@@ -104,6 +104,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           ...(body.addons !== undefined && { addons: body.addons }),
           ...(body.pricingSnapshot !== undefined && { pricingSnapshot: body.pricingSnapshot }),
           ...(body.notes !== undefined && { notes: body.notes }),
+          ...(body.additionalTerms !== undefined && { additionalTerms: body.additionalTerms }),
           ...(body.validUntil !== undefined && { validUntil: body.validUntil ? new Date(body.validUntil) : null }),
           // Resource-based (Quotation Calculator) fields — see POST above for
           // where these are computed. This PUT stays a generic spread updater
