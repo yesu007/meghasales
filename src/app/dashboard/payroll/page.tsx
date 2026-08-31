@@ -16,10 +16,38 @@ interface EmployeeRow {
   hasLogin: boolean;
   department: string | null;
   designation: string | null;
+  role: string | null;
   employmentType: string;
   status: string;
+  manager: { id: number; firstName: string; lastName: string } | null;
+  vertical: { id: number; name: string } | null;
   currentStructureName: string | null;
   currentCtcAnnual: string | null;
+}
+
+interface ManagerOption {
+  id: number;
+  firstName: string;
+  lastName: string;
+  employeeCode: string;
+}
+
+interface VerticalOption {
+  id: number;
+  name: string;
+}
+
+async function fetchManagerOptions(): Promise<ManagerOption[]> {
+  const res = await fetch('/api/payroll/employees?size=200&status=ACTIVE');
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.content;
+}
+
+async function fetchVerticals(): Promise<VerticalOption[]> {
+  const res = await fetch('/api/verticals');
+  if (!res.ok) return [];
+  return res.json();
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -53,7 +81,7 @@ function getPageNumbers(current: number, total: number): (number | 'ellipsis')[]
 }
 
 const blankForm = {
-  firstName: '', lastName: '', email: '', department: '', designation: '', dateOfJoining: '',
+  firstName: '', lastName: '', email: '', department: '', designation: '', role: '', managerId: '', verticalId: '', dateOfJoining: '',
   employmentType: 'FULL_TIME', bankAccountNumber: '', bankIfsc: '', bankAccountHolder: '', bankName: '',
 };
 
@@ -76,6 +104,18 @@ export default function PayrollEmployeesPage() {
     queryKey: ['payroll-employees', search, page, size],
     queryFn: () => fetchEmployees(search, page, size),
     placeholderData: (prev: any) => prev,
+  });
+
+  const { data: managerOptions = [] } = useQuery({
+    queryKey: ['payroll-employees-manager-options'],
+    queryFn: fetchManagerOptions,
+    enabled: drawerOpen,
+  });
+
+  const { data: verticalOptions = [] } = useQuery({
+    queryKey: ['verticals'],
+    queryFn: fetchVerticals,
+    enabled: drawerOpen,
   });
 
   const createMutation = useMutation({
@@ -301,6 +341,26 @@ export default function PayrollEmployeesPage() {
                           <label className="block text-sm font-medium text-slate-700 mb-1">Designation</label>
                           <input value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                         </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+                          <input value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
+                          <select value={form.verticalId} onChange={(e) => setForm((f) => ({ ...f, verticalId: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                            <option value="">—</option>
+                            {verticalOptions.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Manager</label>
+                        <select value={form.managerId} onChange={(e) => setForm((f) => ({ ...f, managerId: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                          <option value="">—</option>
+                          {managerOptions.map((m) => <option key={m.id} value={m.id}>{m.firstName} {m.lastName} ({m.employeeCode})</option>)}
+                        </select>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>

@@ -1002,6 +1002,9 @@ model Employee {
   email             String    @map("email")
   department        String?
   designation       String?
+  role              String?
+  managerId         Int?      @map("manager_id")
+  verticalId        Int?      @map("vertical_id")
   dateOfJoining     DateTime? @map("date_of_joining")
   dateOfLeaving     DateTime? @map("date_of_leaving")
   employmentType    String    @default("FULL_TIME") @map("employment_type") // FULL_TIME | PART_TIME | CONTRACT | INTERN
@@ -1021,6 +1024,9 @@ model Employee {
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
   user              User?                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manager           Employee?                   @relation("EmployeeManager", fields: [managerId], references: [id])
+  directReports     Employee[]                  @relation("EmployeeManager")
+  vertical          Vertical?                   @relation(fields: [verticalId], references: [id])
   salaryAssignments SalaryStructureAssignment[]
   payslips          Payslip[]
   leaveRequests     LeaveRequest[]
@@ -1683,6 +1689,7 @@ model Vertical {
   head       User?           @relation("VerticalHead", fields: [headId], references: [id])
   budgets    ExpenseBudget[]
   quotations Quotation[]
+  employees  Employee[]
 
   @@map("verticals")
 }
