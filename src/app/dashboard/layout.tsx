@@ -74,12 +74,22 @@ function getNavItems(): NavSection[] {
       ],
     },
     {
-      title: 'Sales',
+      // Admin-configurable lookup tables other modules draw their picklists
+      // from — grouped here as their own section (instead of scattered
+      // inline among the modules that consume them) since they're setup/
+      // reference data an admin configures once, not day-to-day workflow
+      // items like Leads/Quotations below.
+      title: 'Masters',
       items: [
         { href: '/dashboard/verticals', label: 'Verticals', icon: BuildingOffice2Icon, permission: 'view_verticals' },
         { href: '/dashboard/packages', label: 'Packages', icon: CubeIcon, permission: 'view_packages' },
         { href: '/dashboard/lead-sources', label: 'Lead Sources', icon: MegaphoneIcon, permission: 'view_lead_sources' },
         { href: '/dashboard/lead-statuses', label: 'Lead Statuses', icon: FlagIcon, permission: 'view_lead_status_options' },
+      ],
+    },
+    {
+      title: 'Sales',
+      items: [
         { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon, permission: 'view_leads' },
         // Customers are Leads with status=Converted — no separate entity —
         // so this reuses the exact same view_leads/manage_leads permissions
