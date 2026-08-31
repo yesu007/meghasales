@@ -35,6 +35,11 @@ export async function GET(request: NextRequest) {
     const slaStatus = searchParams.get('slaStatus');
     const format = searchParams.get('format');
 
+    if (format === 'csv') {
+      const exportDenied = await requirePermission('export_meeting_reports');
+      if (exportDenied) return exportDenied;
+    }
+
     if (meetingType && !(MEETING_TYPES as readonly string[]).includes(meetingType)) {
       return NextResponse.json({ message: `meetingType must be one of ${MEETING_TYPES.join(', ')}` }, { status: 400 });
     }

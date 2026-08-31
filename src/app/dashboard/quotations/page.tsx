@@ -23,6 +23,7 @@ import { generateInvoicePDF } from '@/lib/generateInvoicePDF';
 import { formatCurrency } from '@/lib/currency';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import dayjs from 'dayjs';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const QUOTATION_STATUSES = [
   { value: 'DRAFT', label: 'Draft', color: 'bg-slate-100 text-slate-700' },
@@ -66,6 +67,8 @@ function catalogPriceInPricingCurrency(inrAmount: number, pricing: PricingRespon
 }
 
 export default function QuotationsPage() {
+  const { has } = usePermissions();
+  const canExport = has('export_quotations');
   const queryClient = useQueryClient();
   const router = useRouter();
   const [view, setView] = useState<'list' | 'create'>('list');
@@ -571,7 +574,9 @@ export default function QuotationsPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <button onClick={() => setHistoryFor({ id: q.id, quotationNumber: q.quotationNumber, version: q.version || 1 })} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Version History"><ClockIcon className="h-4 w-4" /></button>
-                      <button onClick={() => downloadQuotationPDF(q)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download PDF"><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                      {canExport && (
+                        <button onClick={() => downloadQuotationPDF(q)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download PDF"><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                      )}
                       {q.status === 'APPROVED' && (
                         <button onClick={() => generateInvoice(q)} className="p-1.5 rounded text-slate-400 hover:text-green-600 hover:bg-green-50" title="Generate Invoice"><DocumentPlusIcon className="h-4 w-4" /></button>
                       )}
@@ -856,7 +861,9 @@ export default function QuotationsPage() {
                 <div className="flex justify-between items-center pt-1"><span className="text-lg font-bold text-slate-800">Grand Total</span><span className="text-xl font-bold text-amber-700">{fmt(pricing.grandTotal + customModulesTotal, pricing.currencySymbol, pricing.currencyCode)}</span></div>
                 <div className="flex gap-2 mt-4">
                   <button onClick={saveQuotation} className="flex-1 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700">{editingId ? 'Save Changes' : 'Save Quotation'}</button>
-                  <button onClick={downloadPDF} className="p-2 border border-slate-300 rounded-lg hover:bg-slate-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                  {canExport && (
+                    <button onClick={downloadPDF} className="p-2 border border-slate-300 rounded-lg hover:bg-slate-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                  )}
                 </div>
               </div>
             ) : (

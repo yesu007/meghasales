@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { usePermissions } from '@/hooks/usePermissions';
 
 type ReportType = 'salary-register' | 'department-cost' | 'ytd-earnings' | 'pf-contribution' | 'esi-contribution' | 'pt-summary';
 
@@ -38,6 +39,8 @@ function formatCell(value: any, type?: string): string {
 }
 
 export default function PayrollReportsPage() {
+  const { has } = usePermissions();
+  const canExport = has('export_payroll');
   const [type, setType] = useState<ReportType>('salary-register');
   const [runId, setRunId] = useState('');
   const [year, setYear] = useState(String(new Date().getFullYear()));
@@ -116,7 +119,7 @@ export default function PayrollReportsPage() {
             {loading ? 'Loading...' : 'View Report'}
           </button>
 
-          {report && (
+          {report && canExport && (
             <a href={`/api/payroll/reports/export?${buildQuery()}`} className="flex items-center gap-1.5 px-3 py-2 min-h-[40px] text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50">
               <ArrowDownTrayIcon className="h-4 w-4" /> Export CSV
             </a>

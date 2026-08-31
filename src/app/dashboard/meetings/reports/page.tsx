@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownTrayIcon, DocumentChartBarIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   MEETING_TYPES,
   ACTION_ITEM_PRIORITIES,
@@ -141,6 +142,8 @@ async function fetchImplementations(): Promise<ImplementationOption[]> {
 }
 
 export default function MeetingReportsPage() {
+  const { has } = usePermissions();
+  const canExport = has('export_meeting_reports');
   const [filters, setFilters] = useState<ReportFilters>(EMPTY_FILTERS);
   const params = buildParams(filters);
 
@@ -170,12 +173,14 @@ export default function MeetingReportsPage() {
           <h1 className="text-2xl font-bold text-slate-800">Meeting Action Item Reports</h1>
           <p className="text-slate-500 mt-1">Filter action items by date, owner, department, customer, project, and status</p>
         </div>
-        <button
-          onClick={exportCsv}
-          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-        >
-          <ArrowDownTrayIcon className="h-4 w-4" /> Export CSV
-        </button>
+        {canExport && (
+          <button
+            onClick={exportCsv}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4" /> Export CSV
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">

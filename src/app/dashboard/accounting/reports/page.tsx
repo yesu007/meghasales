@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { ArrowDownTrayIcon, PrinterIcon, DocumentChartBarIcon } from '@heroicons/react/24/outline';
 import { generateReportPDF } from '@/lib/generateReportPDF';
+import { usePermissions } from '@/hooks/usePermissions';
 import { formatCurrency } from '@/lib/currency';
 
 const REPORT_TYPES = [
@@ -39,6 +40,8 @@ function fmtCell(value: any, type: string | undefined, currencyCode: string): st
 }
 
 export default function AccountingReportsPage() {
+  const { has } = usePermissions();
+  const canExport = has('export_accounting');
   const [type, setType] = useState('outstanding');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -85,12 +88,16 @@ export default function AccountingReportsPage() {
           <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
             <PrinterIcon className="h-4 w-4" /> Print
           </button>
-          <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
-            <ArrowDownTrayIcon className="h-4 w-4" /> CSV
-          </button>
-          <button onClick={exportPdf} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-            <ArrowDownTrayIcon className="h-4 w-4" /> PDF
-          </button>
+          {canExport && (
+            <>
+              <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
+                <ArrowDownTrayIcon className="h-4 w-4" /> CSV
+              </button>
+              <button onClick={exportPdf} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+                <ArrowDownTrayIcon className="h-4 w-4" /> PDF
+              </button>
+            </>
+          )}
         </div>
       </div>
 

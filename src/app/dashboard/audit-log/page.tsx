@@ -15,6 +15,7 @@ import {
   ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const ENTITY_TYPES = [
   { value: 'LEAD', label: 'Lead' },
@@ -65,6 +66,8 @@ async function fetchUsers(): Promise<UserOption[]> {
 }
 
 export default function AuditLogPage() {
+  const { has } = usePermissions();
+  const canExport = has('export_audit_logs');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [entityTypeFilter, setEntityTypeFilter] = useState('');
@@ -147,9 +150,11 @@ export default function AuditLogPage() {
           <h1 className="text-2xl font-bold text-slate-800">Audit Report</h1>
           <p className="text-slate-500 mt-1">Track every create, update, and delete across the system</p>
         </div>
-        <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-          <ArrowDownTrayIcon className="h-4 w-4" /> Export CSV
-        </button>
+        {canExport && (
+          <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+            <ArrowDownTrayIcon className="h-4 w-4" /> Export CSV
+          </button>
+        )}
       </div>
 
       {/* Stat Tiles */}
