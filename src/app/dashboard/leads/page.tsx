@@ -22,7 +22,7 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { LEAD_STATUSES } from '@/lib/leadStatus';
-import LeadFormDrawer, { SOURCES, VERTICALS, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
+import LeadFormDrawer, { SOURCES, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 
 const VIEW_TABS = [
   { value: '', label: 'All Leads' },
@@ -36,8 +36,10 @@ interface Lead {
   id: number;
   companyName: string;
   contactPerson: string;
+  designation: string | null;
   email: string | null;
   mobile: string | null;
+  whatsapp: string | null;
   status: string;
   leadSource: string;
   assignedBaId: number | null;
@@ -182,6 +184,11 @@ export default function LeadsPage() {
   useEffect(() => {
     if (isCurrenciesError) toast.error('Failed to load currencies');
   }, [isCurrenciesError]);
+
+  const { data: verticalOptions = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ['verticals'],
+    queryFn: async () => { const res = await fetch('/api/verticals'); if (!res.ok) throw new Error('Failed to fetch verticals'); return res.json(); },
+  });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -351,7 +358,7 @@ export default function LeadsPage() {
               <label className="block text-xs font-medium text-slate-600 mb-1">Business Vertical</label>
               <select value={verticalFilter} onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
                 <option value="">All</option>
-                {VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+                {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
               </select>
             </div>
           </div>
@@ -379,7 +386,9 @@ export default function LeadsPage() {
                   <tr>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('companyName')} className="flex items-center gap-1 font-semibold text-white">Company <SortIcon col="companyName" /></button></th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('contactPerson')} className="flex items-center gap-1 font-semibold text-white">Contact <SortIcon col="contactPerson" /></button></th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Designation</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Mobile</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">WhatsApp</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Source</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('status')} className="flex items-center gap-1 font-semibold text-white">Status <SortIcon col="status" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Assigned BA</th>
@@ -396,7 +405,9 @@ export default function LeadsPage() {
                         <Link href={`/dashboard/leads/${lead.id}`} className="hover:text-amber-600 hover:underline">{lead.companyName}</Link>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{lead.contactPerson}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.designation || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.mobile || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{lead.whatsapp || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase()}</td>
                       <td className="px-4 py-3">
                         <select value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${STATUSES.find(s => s.value === lead.status)?.color || 'bg-slate-100'}`}>

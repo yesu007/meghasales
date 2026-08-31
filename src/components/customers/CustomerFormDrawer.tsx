@@ -2,9 +2,17 @@
 
 import { Fragment, Dispatch, SetStateAction } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
+import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+
+interface VerticalOption { id: number; name: string }
+async function fetchVerticalOptions(): Promise<VerticalOption[]> {
+  const res = await fetch('/api/verticals');
+  if (!res.ok) throw new Error('Failed to fetch verticals');
+  return res.json();
+}
 
 // Customer-owned create form. Mirrors the UI/UX of
 // src/components/leads/LeadFormDrawer.tsx (same layout, field set and
@@ -26,17 +34,10 @@ export const CUSTOMER_SOURCES = [
   { value: 'SALES_EXECUTIVE', label: 'Sales Executive' },
 ];
 
-export const CUSTOMER_VERTICALS = [
-  { value: 'TRADING', label: 'Trading' },
-  { value: 'JEWELLERY', label: 'Jewellery' },
-  { value: 'MANUFACTURING', label: 'Manufacturing' },
-  { value: 'TRADING_MANUFACTURING', label: 'Trading + Manufacturing' },
-  { value: 'TRADING_JEWELLERY_MANUFACTURING', label: 'Trading + Jewellery + Manufacturing' },
-];
-
 export interface CustomerFormState {
   companyName: string;
   contactPerson: string;
+  designation: string;
   mobile: string;
   email: string;
   leadSource: string;
@@ -48,12 +49,22 @@ export interface CustomerFormState {
   state: string;
   city: string;
   notes: string;
+  // Legal Entity for the selected country, under the Customer Company
+  // Master (find-or-created by companyName — see /api/customers). A second
+  // customer for the same company with a different country selected adds a
+  // second entity under the same company, rather than a disconnected one.
+  legalName: string;
+  taxRegistrationNumber: string;
+  addressLine1: string;
+  addressLine2: string;
+  postalCode: string;
 }
 
 export const blankCustomerForm: CustomerFormState = {
-  companyName: '', contactPerson: '', mobile: '', email: '', leadSource: '', businessVerticals: '',
+  companyName: '', contactPerson: '', designation: '', mobile: '', email: '', leadSource: '', businessVerticals: '',
   countryId: null, currencyCode: '', currencySymbol: '', taxType: '',
   state: '', city: '', notes: '',
+  legalName: '', taxRegistrationNumber: '', addressLine1: '', addressLine2: '', postalCode: '',
 };
 
 export interface CustomerCurrencyOption {
@@ -68,6 +79,7 @@ export function validateCustomerForm(data: CustomerFormState): Record<string, st
   if (!data.contactPerson) errs.contactPerson = 'Contact person is required';
   if (!data.mobile) errs.mobile = 'Mobile is required';
   if (!data.leadSource) errs.leadSource = 'Source is required';
+  if (!data.businessVerticals) errs.businessVerticals = 'Business vertical is required';
   if (!data.countryId) errs.countryId = 'Country is required';
   return errs;
 }
@@ -88,6 +100,8 @@ export interface CustomerFormDrawerProps {
 export default function CustomerFormDrawer({
   open, onClose, form, setForm, formErrors, setFormErrors, onSave, isSaving, isAdmin, currencies,
 }: CustomerFormDrawerProps) {
+  const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
+
   const handleCountryChange = (country: Country) => {
     setForm((f) => ({
       ...f,
@@ -134,6 +148,10 @@ export default function CustomerFormDrawer({
                         {formErrors.contactPerson && <p className="text-xs text-red-600 mt-1">{formErrors.contactPerson}</p>}
                       </div>
                       <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Designation</label>
+                        <input value={form.designation} onChange={(e) => setForm(f => ({...f, designation: e.target.value}))} placeholder="e.g. Purchase Manager" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Mobile *</label>
                         <input value={form.mobile} onChange={(e) => setForm(f => ({...f, mobile: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.mobile ? 'border-red-400' : 'border-slate-300'}`} />
                         {formErrors.mobile && <p className="text-xs text-red-600 mt-1">{formErrors.mobile}</p>}
@@ -151,11 +169,12 @@ export default function CustomerFormDrawer({
                         {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
-                        <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical *</label>
+                        <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.businessVerticals ? 'border-red-400' : 'border-slate-300'}`}>
                           <option value="">Select</option>
-                          {CUSTOMER_VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+                          {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                         </select>
+                        {formErrors.businessVerticals && <p className="text-xs text-red-600 mt-1">{formErrors.businessVerticals}</p>}
                       </div>
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Country *</label>
@@ -191,6 +210,38 @@ export default function CustomerFormDrawer({
                         <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
                         <input value={form.city} onChange={(e) => setForm(f => ({...f, city: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
+
+                      <div className="col-span-2 pt-3 mt-1 border-t border-slate-100">
+                        <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Legal Entity — {form.countryId ? 'this country' : 'select a country above'}</p>
+                        <p className="text-xs text-slate-400 mb-3">
+                          One company can have several legal entities, one per country it&apos;s registered in — a second customer for the same
+                          company name with a different country adds another entity, instead of a duplicate company.
+                        </p>
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Registered Legal Name</label>
+                        <input value={form.legalName} onChange={(e) => setForm(f => ({...f, legalName: e.target.value}))} placeholder={form.companyName || 'Defaults to Company Name'} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Tax Registration Number</label>
+                        <input value={form.taxRegistrationNumber} onChange={(e) => setForm(f => ({...f, taxRegistrationNumber: e.target.value}))} placeholder="GST / VAT / Tax ID" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Address Line 1</label>
+                        <input value={form.addressLine1} onChange={(e) => setForm(f => ({...f, addressLine1: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Address Line 2</label>
+                        <input value={form.addressLine2} onChange={(e) => setForm(f => ({...f, addressLine2: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Postal Code</label>
+                        <input value={form.postalCode} onChange={(e) => setForm(f => ({...f, postalCode: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div className="col-span-2 -mt-1">
+                        <p className="text-xs text-slate-400">Documents (incorporation certificate, tax certificate, etc.) can be uploaded from the customer&apos;s Company tab after saving.</p>
+                      </div>
+
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
                         <textarea rows={3} value={form.notes} onChange={(e) => setForm(f => ({...f, notes: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />

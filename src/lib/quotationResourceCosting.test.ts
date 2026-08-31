@@ -94,6 +94,61 @@ describe('computeResourceCosting', () => {
     expect(result.marginPercent).toBeCloseTo(((70000 - 50000) / 70000) * 100, 5);
   });
 
+  it('applies a percentage discount to the subtotal before tax', () => {
+    const result = computeResourceCosting({
+      resources: [{ role: 'Developer', qty: 1, durationDays: 10, dayRate: 5000 }],
+      adminMode: 'PCT',
+      adminValue: 0,
+      outsourcingCost: 0,
+      travelCost: 0,
+      markupMode: 'PCT',
+      markupValue: 25,
+      discountMode: 'PCT',
+      discountValue: 10,
+      taxPercentage: 18,
+    });
+    // subtotal = 50000 * 1.25 = 62500; discount = 10% = 6250; taxable = 56250
+    expect(result.subtotal).toBe(62500);
+    expect(result.discountAmount).toBe(6250);
+    expect(result.preTax).toBe(56250);
+    expect(result.taxAmount).toBeCloseTo(10125, 5);
+    expect(result.calculatedTotalAmount).toBeCloseTo(66375, 5);
+  });
+
+  it('applies a fixed discount amount instead of a percentage when discountMode is FIXED', () => {
+    const result = computeResourceCosting({
+      resources: [{ role: 'Developer', qty: 1, durationDays: 10, dayRate: 5000 }],
+      adminMode: 'PCT',
+      adminValue: 0,
+      outsourcingCost: 0,
+      travelCost: 0,
+      markupMode: 'PCT',
+      markupValue: 0,
+      discountMode: 'FIXED',
+      discountValue: 2000,
+      taxPercentage: 0,
+    });
+    expect(result.subtotal).toBe(50000);
+    expect(result.discountAmount).toBe(2000);
+    expect(result.preTax).toBe(48000);
+    expect(result.totalAmount).toBe(48000);
+  });
+
+  it('defaults to zero discount when discountMode/discountValue are omitted', () => {
+    const result = computeResourceCosting({
+      resources: [{ role: 'Developer', qty: 1, durationDays: 10, dayRate: 5000 }],
+      adminMode: 'PCT',
+      adminValue: 0,
+      outsourcingCost: 0,
+      travelCost: 0,
+      markupMode: 'PCT',
+      markupValue: 0,
+      taxPercentage: 0,
+    });
+    expect(result.discountAmount).toBe(0);
+    expect(result.preTax).toBe(result.subtotal);
+  });
+
   it('does not divide by zero when the total amount is zero', () => {
     const result = computeResourceCosting({
       resources: [],

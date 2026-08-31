@@ -2,9 +2,17 @@
 
 import { Fragment, Dispatch, SetStateAction } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
+import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+
+interface VerticalOption { id: number; name: string }
+async function fetchVerticalOptions(): Promise<VerticalOption[]> {
+  const res = await fetch('/api/verticals');
+  if (!res.ok) throw new Error('Failed to fetch verticals');
+  return res.json();
+}
 
 // Extracted from src/app/dashboard/leads/page.tsx so the Customers page
 // (converted leads) can offer the same "Edit" capability without
@@ -22,18 +30,12 @@ export const SOURCES = [
   { value: 'SALES_EXECUTIVE', label: 'Sales Executive' },
 ];
 
-export const VERTICALS = [
-  { value: 'TRADING', label: 'Trading' },
-  { value: 'JEWELLERY', label: 'Jewellery' },
-  { value: 'MANUFACTURING', label: 'Manufacturing' },
-  { value: 'TRADING_MANUFACTURING', label: 'Trading + Manufacturing' },
-  { value: 'TRADING_JEWELLERY_MANUFACTURING', label: 'Trading + Jewellery + Manufacturing' },
-];
-
 export interface LeadFormState {
   companyName: string;
   contactPerson: string;
+  designation: string;
   mobile: string;
+  whatsapp: string;
   email: string;
   leadSource: string;
   businessVerticals: string;
@@ -48,7 +50,7 @@ export interface LeadFormState {
 }
 
 export const blankLeadForm: LeadFormState = {
-  companyName: '', contactPerson: '', mobile: '', email: '', leadSource: '', businessVerticals: '',
+  companyName: '', contactPerson: '', designation: '', mobile: '', whatsapp: '', email: '', leadSource: '', businessVerticals: '',
   countryId: null, currencyCode: '', currencySymbol: '', taxType: '', taxPercentage: 0,
   state: '', city: '', notes: '',
 };
@@ -73,7 +75,9 @@ export async function fetchLeadForEdit(id: number): Promise<LeadFormState | null
   return {
     companyName: lead.companyName || '',
     contactPerson: lead.contactPerson || '',
+    designation: lead.designation || '',
     mobile: lead.mobile || '',
+    whatsapp: lead.whatsapp || '',
     email: lead.email || '',
     leadSource: lead.leadSource || '',
     businessVerticals,
@@ -94,6 +98,7 @@ function validateLeadForm(data: LeadFormState): Record<string, string> {
   if (!data.contactPerson) errs.contactPerson = 'Contact person is required';
   if (!data.mobile) errs.mobile = 'Mobile is required';
   if (!data.leadSource) errs.leadSource = 'Lead source is required';
+  if (!data.businessVerticals) errs.businessVerticals = 'Business vertical is required';
   if (!data.countryId) errs.countryId = 'Country is required';
   return errs;
 }
@@ -115,6 +120,8 @@ export interface LeadFormDrawerProps {
 export default function LeadFormDrawer({
   open, onClose, editingId, form, setForm, formErrors, setFormErrors, onSave, isSaving, isAdmin, currencies,
 }: LeadFormDrawerProps) {
+  const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
+
   const handleCountryChange = (country: Country) => {
     setForm((f) => ({
       ...f,
@@ -162,9 +169,25 @@ export default function LeadFormDrawer({
                         {formErrors.contactPerson && <p className="text-xs text-red-600 mt-1">{formErrors.contactPerson}</p>}
                       </div>
                       <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Designation</label>
+                        <input value={form.designation} onChange={(e) => setForm(f => ({...f, designation: e.target.value}))} placeholder="e.g. Purchase Manager" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div className="col-span-2 pt-1">
+                        <p className="text-xs font-semibold text-slate-500 uppercase">Contact Channel</p>
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Mobile *</label>
                         <input value={form.mobile} onChange={(e) => setForm(f => ({...f, mobile: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.mobile ? 'border-red-400' : 'border-slate-300'}`} />
                         {formErrors.mobile && <p className="text-xs text-red-600 mt-1">{formErrors.mobile}</p>}
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-sm font-medium text-slate-700">WhatsApp</label>
+                          {form.mobile && form.whatsapp !== form.mobile && (
+                            <button type="button" onClick={() => setForm(f => ({...f, whatsapp: f.mobile}))} className="text-xs text-amber-600 hover:text-amber-700">Same as Mobile</button>
+                          )}
+                        </div>
+                        <input value={form.whatsapp} onChange={(e) => setForm(f => ({...f, whatsapp: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
@@ -179,11 +202,12 @@ export default function LeadFormDrawer({
                         {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
-                        <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical *</label>
+                        <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.businessVerticals ? 'border-red-400' : 'border-slate-300'}`}>
                           <option value="">Select</option>
-                          {VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+                          {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                         </select>
+                        {formErrors.businessVerticals && <p className="text-xs text-red-600 mt-1">{formErrors.businessVerticals}</p>}
                       </div>
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Country *</label>
