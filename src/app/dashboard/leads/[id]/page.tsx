@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
-import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, PhoneIcon, BuildingLibraryIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, PhoneIcon, BuildingLibraryIcon, Squares2X2Icon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { LEAD_STATUSES, leadStatusColor } from '@/lib/leadStatus';
@@ -20,6 +20,7 @@ import CompanyTab from '@/components/leads/CompanyTab';
 interface Lead {
   id: number;
   companyName: string;
+  projectName: string | null;
   contactPerson: string;
   designation: string | null;
   email: string | null;
@@ -136,6 +137,7 @@ export default function LeadDetailPage() {
           </Link>
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">{lead.companyName}</h1>
+            {lead.projectName && <p className="text-sm text-slate-500 mt-0.5 truncate">Project: {lead.projectName}</p>}
             <p className="text-slate-500 mt-1 text-sm sm:text-base truncate">{lead.contactPerson}{lead.designation ? `, ${lead.designation}` : ''}{lead.email ? ` — ${lead.email}` : ''}</p>
           </div>
         </div>
@@ -162,102 +164,110 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      <Tab.Group>
-        <Tab.List className="flex overflow-x-auto border-b border-slate-200">
-          <Tab className={({ selected }) => classNames(
-            'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px',
-            selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
-          )}>
-            Overview
-          </Tab>
-          <Tab className={({ selected }) => classNames(
-            'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
-            selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
-          )}>
-            <PhoneIcon className="h-4 w-4" /> Follow-ups
-          </Tab>
-          <Tab
-            disabled={!isConfirmed}
-            className={({ selected }) => classNames(
-              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
-              !isConfirmed ? 'border-transparent text-slate-300 cursor-not-allowed' : selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
-            )}
-            title={!isConfirmed ? 'Events unlock once this lead is Confirmed' : undefined}
-          >
-            <CalendarDaysIcon className="h-4 w-4" /> Events
-          </Tab>
-          <Tab
-            disabled={!isConfirmed}
-            className={({ selected }) => classNames(
-              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
-              !isConfirmed ? 'border-transparent text-slate-300 cursor-not-allowed' : selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
-            )}
-            title={!isConfirmed ? 'Documents unlock once this lead is Confirmed' : undefined}
-          >
-            <FolderOpenIcon className="h-4 w-4" /> Documents
-          </Tab>
-          <Tab className={({ selected }) => classNames(
-            'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
-            selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
-          )}>
-            <BuildingLibraryIcon className="h-4 w-4" /> Company
-          </Tab>
-          <Tab className={({ selected }) => classNames(
-            'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
-            selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
-          )}>
-            <ClockIcon className="h-4 w-4" /> Activity
-          </Tab>
-        </Tab.List>
-        <Tab.Panels className="mt-4">
-          <Tab.Panel>
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><p className="text-xs font-medium text-slate-500 uppercase">Designation</p><p className="text-sm text-slate-800 mt-1">{lead.designation || '—'}</p></div>
-              <div><p className="text-xs font-medium text-slate-500 uppercase">Mobile</p><p className="text-sm text-slate-800 mt-1">{lead.mobile || '—'}</p></div>
-              <div><p className="text-xs font-medium text-slate-500 uppercase">WhatsApp</p><p className="text-sm text-slate-800 mt-1">{lead.whatsapp || '—'}</p></div>
-              <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-sm text-slate-800 mt-1 capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
-              {isConfirmed && (
-                <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Status</p><p className="text-sm text-slate-800 mt-1">{CUSTOMER_STATUSES.find(s => s.value === lead.customerStatus)?.label || lead.customerStatus}</p></div>
+      {/* Vertical tabs: same structure/styling/behavior as the Customer
+          detail page's vertical-tab layout (src/app/dashboard/customers/[id]/page.tsx) —
+          flex-col sidebar with a right-border active indicator, reused here
+          verbatim. No items-start override, so the sidebar's height (and
+          its border-r divider) tracks whichever is taller between itself
+          and the active Tab.Panel, same as Customer. */}
+      <Tab.Group vertical>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <Tab.List className="flex flex-row sm:flex-col overflow-x-auto sm:overflow-x-visible border-b sm:border-b-0 sm:border-r border-slate-200 sm:w-48 sm:flex-shrink-0">
+            <Tab className={({ selected }) => classNames(
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+              selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}>
+              <Squares2X2Icon className="h-4 w-4" /> Overview
+            </Tab>
+            <Tab className={({ selected }) => classNames(
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+              selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}>
+              <PhoneIcon className="h-4 w-4" /> Follow-ups
+            </Tab>
+            <Tab
+              disabled={!isConfirmed}
+              className={({ selected }) => classNames(
+                'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+                !isConfirmed ? 'border-transparent text-slate-300 cursor-not-allowed' : selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
               )}
-              <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : 'Unassigned'}</p></div>
-              <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'}</p></div>
-              <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{lead.jewelleryBusinessType || '—'}</p></div>
-              <div><p className="text-xs font-medium text-slate-500 uppercase">Created</p><p className="text-sm text-slate-800 mt-1">{dayjs(lead.createdAt).format('DD MMM YYYY')}</p></div>
-              {lead.notes && (
-                <div className="sm:col-span-2"><p className="text-xs font-medium text-slate-500 uppercase">Notes</p><p className="text-sm text-slate-800 mt-1 whitespace-pre-wrap">{lead.notes}</p></div>
+              title={!isConfirmed ? 'Events unlock once this lead is Confirmed' : undefined}
+            >
+              <CalendarDaysIcon className="h-4 w-4" /> Events
+            </Tab>
+            <Tab
+              disabled={!isConfirmed}
+              className={({ selected }) => classNames(
+                'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+                !isConfirmed ? 'border-transparent text-slate-300 cursor-not-allowed' : selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
               )}
-            </div>
-          </Tab.Panel>
-          <Tab.Panel>
-            <FollowUpsTab leadId={lead.id} />
-          </Tab.Panel>
-          <Tab.Panel>
-            {isConfirmed && canView ? (
-              <EventsTab leadId={lead.id} canManage={canManage} canAddDiscussion={canAddDiscussion} />
-            ) : (
-              <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-                <CalendarDaysIcon className="h-12 w-12 mx-auto text-slate-300" />
-                <p className="mt-4 text-slate-600 font-medium">Events unlock once this lead is Confirmed</p>
+              title={!isConfirmed ? 'Documents unlock once this lead is Confirmed' : undefined}
+            >
+              <FolderOpenIcon className="h-4 w-4" /> Documents
+            </Tab>
+            <Tab className={({ selected }) => classNames(
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+              selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}>
+              <BuildingLibraryIcon className="h-4 w-4" /> Company
+            </Tab>
+            <Tab className={({ selected }) => classNames(
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+              selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}>
+              <ClockIcon className="h-4 w-4" /> Activity
+            </Tab>
+          </Tab.List>
+          <Tab.Panels className="flex-1 min-w-0">
+            <Tab.Panel>
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Designation</p><p className="text-sm text-slate-800 mt-1">{lead.designation || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Mobile</p><p className="text-sm text-slate-800 mt-1">{lead.mobile || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">WhatsApp</p><p className="text-sm text-slate-800 mt-1">{lead.whatsapp || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-sm text-slate-800 mt-1 capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
+                {isConfirmed && (
+                  <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Status</p><p className="text-sm text-slate-800 mt-1">{CUSTOMER_STATUSES.find(s => s.value === lead.customerStatus)?.label || lead.customerStatus}</p></div>
+                )}
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : 'Unassigned'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{lead.jewelleryBusinessType || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Created</p><p className="text-sm text-slate-800 mt-1">{dayjs(lead.createdAt).format('DD MMM YYYY')}</p></div>
+                {lead.notes && (
+                  <div className="sm:col-span-2"><p className="text-xs font-medium text-slate-500 uppercase">Notes</p><p className="text-sm text-slate-800 mt-1 whitespace-pre-wrap">{lead.notes}</p></div>
+                )}
               </div>
-            )}
-          </Tab.Panel>
-          <Tab.Panel>
-            {isConfirmed && canView ? (
-              <LeadDocumentsTab leadId={lead.id} canManage={canManage} />
-            ) : (
-              <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-                <FolderOpenIcon className="h-12 w-12 mx-auto text-slate-300" />
-                <p className="mt-4 text-slate-600 font-medium">Documents unlock once this lead is Confirmed</p>
-              </div>
-            )}
-          </Tab.Panel>
-          <Tab.Panel>
-            <CompanyTab leadId={lead.id} company={lead.company} />
-          </Tab.Panel>
-          <Tab.Panel>
-            <ActivityTimeline leadId={lead.id} />
-          </Tab.Panel>
-        </Tab.Panels>
+            </Tab.Panel>
+            <Tab.Panel>
+              <FollowUpsTab leadId={lead.id} />
+            </Tab.Panel>
+            <Tab.Panel>
+              {isConfirmed && canView ? (
+                <EventsTab leadId={lead.id} canManage={canManage} canAddDiscussion={canAddDiscussion} />
+              ) : (
+                <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+                  <CalendarDaysIcon className="h-12 w-12 mx-auto text-slate-300" />
+                  <p className="mt-4 text-slate-600 font-medium">Events unlock once this lead is Confirmed</p>
+                </div>
+              )}
+            </Tab.Panel>
+            <Tab.Panel>
+              {isConfirmed && canView ? (
+                <LeadDocumentsTab leadId={lead.id} canManage={canManage} />
+              ) : (
+                <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+                  <FolderOpenIcon className="h-12 w-12 mx-auto text-slate-300" />
+                  <p className="mt-4 text-slate-600 font-medium">Documents unlock once this lead is Confirmed</p>
+                </div>
+              )}
+            </Tab.Panel>
+            <Tab.Panel>
+              <CompanyTab leadId={lead.id} company={lead.company} />
+            </Tab.Panel>
+            <Tab.Panel>
+              <ActivityTimeline leadId={lead.id} />
+            </Tab.Panel>
+          </Tab.Panels>
+        </div>
       </Tab.Group>
     </div>
   );

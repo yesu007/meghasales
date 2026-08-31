@@ -120,6 +120,7 @@ export async function POST(request: NextRequest) {
     const customer = await prisma.lead.create({
       data: {
         companyName: body.companyName,
+        projectName: body.projectName || null,
         contactPerson: body.contactPerson,
         designation: body.designation || null,
         mobile: body.mobile || null,

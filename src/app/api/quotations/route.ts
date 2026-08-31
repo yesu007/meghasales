@@ -294,6 +294,7 @@ export async function POST(request: NextRequest) {
       Object.assign(data, {
         softwareModules: body.softwareModules || null,
         businessModule: body.businessModule || null,
+        projectName: body.projectName || null,
         implementationCost: body.implementationCost || null,
         trainingCost: body.trainingCost || null,
         annualMaintenance: body.annualMaintenance || null,
