@@ -6,7 +6,7 @@ import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
 import { isFollowUpOverdue } from '@/lib/leadFollowUp';
-import { requirePermission } from '@/lib/rbac';
+import { requirePermission, getOwnershipFilter } from '@/lib/rbac';
 import { dispatchDeadlineReminders } from '@/lib/deadlineReminders';
 
 export const dynamic = 'force-dynamic';
@@ -85,6 +85,13 @@ export async function GET(request: NextRequest) {
     if (createdTo) AND.push({ createdAt: { lte: new Date(createdTo) } });
     if (view === 'new') AND.push({ followUpCount: 0 });
     if (view === 'followed-up') AND.push({ followUpCount: { gt: 0 } });
+
+    // Ownership data-scope boundary — a Business Analyst / Sales rep sees
+    // only leads assigned to them (plus unassigned ones); see
+    // getOwnershipFilter's own comment for why other view_leads-holding
+    // roles (DEMO_TEAM) are deliberately left unrestricted.
+    const ownershipFilter = await getOwnershipFilter('assignedBaId', ['BUSINESS_ANALYST', 'SALES']);
+    if (ownershipFilter) AND.push(ownershipFilter);
 
     if (AND.length > 0) where.AND = AND;
 
