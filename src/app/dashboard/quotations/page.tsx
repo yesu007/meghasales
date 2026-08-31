@@ -14,6 +14,7 @@ import {
   PencilIcon,
   TrashIcon,
   DocumentPlusIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
@@ -26,8 +27,10 @@ import dayjs from 'dayjs';
 const QUOTATION_STATUSES = [
   { value: 'DRAFT', label: 'Draft', color: 'bg-slate-100 text-slate-700' },
   { value: 'SENT', label: 'Sent', color: 'bg-blue-100 text-blue-700' },
+  { value: 'NEGOTIATION', label: 'Negotiation', color: 'bg-amber-100 text-amber-700' },
   { value: 'APPROVED', label: 'Approved', color: 'bg-green-100 text-green-700' },
   { value: 'REJECTED', label: 'Rejected', color: 'bg-red-100 text-red-700' },
+  { value: 'EXPIRED', label: 'Expired', color: 'bg-orange-100 text-orange-700' },
 ];
 
 const MODULE_COLORS: Record<string, string> = {
@@ -45,6 +48,7 @@ interface ServiceOverrides { implementationCost?: number; trainingCost?: number;
 interface CustomModule { id: string; name: string; description: string; cost: number; quantity: number; }
 interface CurrencyOption { currencyCode: string; currencySymbol: string; }
 interface CompanyProfileTerms { termsAndConditions: string | null; paymentTerms: string | null; warrantyTerms: string | null }
+interface QuotationRevisionEntry { id: number; versionNumber: number; snapshot: any; revisedByName: string | null; createdAt: string }
 
 function fmt(amount: number, symbol: string, currencyCode: string): string {
   return formatCurrency(amount, currencyCode, { symbol });
@@ -139,6 +143,13 @@ export default function QuotationsPage() {
   const standardTermsText = companyProfile
     ? [companyProfile.termsAndConditions, companyProfile.paymentTerms, companyProfile.warrantyTerms].filter(Boolean).join('\n\n')
     : '';
+
+  const [historyFor, setHistoryFor] = useState<{ id: number; quotationNumber: string; version: number } | null>(null);
+  const { data: revisions = [], isLoading: revisionsLoading } = useQuery<QuotationRevisionEntry[]>({
+    queryKey: ['quotation-revisions', historyFor?.id],
+    queryFn: async () => { const r = await fetch(`/api/quotations/${historyFor!.id}/revisions`); if (!r.ok) throw new Error('Failed to load history'); return r.json(); },
+    enabled: !!historyFor,
+  });
   const symbolForCurrency = (code: string) => currencyList.find(c => c.currencyCode === code)?.currencySymbol || code;
 
   useEffect(() => {
@@ -532,7 +543,10 @@ export default function QuotationsPage() {
                 return (
                 <tr key={q.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                   <td className="px-4 py-3 font-medium text-slate-800">
-                    {q.quotationNumber}
+                    <div className="flex items-center gap-1.5">
+                      <span>{q.quotationNumber}</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500">v{q.version || 1}</span>
+                    </div>
                     {isResourceBased && <span className="block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-teal-100 text-teal-700 w-fit">Calculator</span>}
                   </td>
                   <td className="px-4 py-3"><p className="font-medium text-slate-800">{q.contactPerson}</p><p className="text-xs text-slate-500">{q.companyName}</p></td>
@@ -556,6 +570,7 @@ export default function QuotationsPage() {
                   <td className="px-4 py-3 text-slate-500">{dayjs(q.createdAt).format('DD MMM YYYY')}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
+                      <button onClick={() => setHistoryFor({ id: q.id, quotationNumber: q.quotationNumber, version: q.version || 1 })} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Version History"><ClockIcon className="h-4 w-4" /></button>
                       <button onClick={() => downloadQuotationPDF(q)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download PDF"><ArrowDownTrayIcon className="h-4 w-4" /></button>
                       {q.status === 'APPROVED' && (
                         <button onClick={() => generateInvoice(q)} className="p-1.5 rounded text-slate-400 hover:text-green-600 hover:bg-green-50" title="Generate Invoice"><DocumentPlusIcon className="h-4 w-4" /></button>
@@ -574,6 +589,48 @@ export default function QuotationsPage() {
           </table>
         )}
       </div>
+
+      {historyFor && (
+        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4" onClick={() => setHistoryFor(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800">Version History — {historyFor.quotationNumber}</h3>
+                <p className="text-xs text-slate-500">Current version: v{historyFor.version}</p>
+              </div>
+              <button onClick={() => setHistoryFor(null)} className="p-1.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100"><XMarkIcon className="h-5 w-5" /></button>
+            </div>
+            <div className="overflow-y-auto p-4">
+              {revisionsLoading ? (
+                <div className="text-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
+              ) : revisions.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-8">No prior revisions — this is the original version.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead><tr className="text-xs text-slate-400 uppercase tracking-wide border-b border-slate-200">
+                    <th className="text-left pb-2">Version</th>
+                    <th className="text-left pb-2">Date</th>
+                    <th className="text-left pb-2">Revised By</th>
+                    <th className="text-right pb-2">Total Amount</th>
+                    <th className="text-left pb-2">Status</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {revisions.map((r) => (
+                      <tr key={r.id}>
+                        <td className="py-2 font-medium text-slate-700">v{r.versionNumber}</td>
+                        <td className="py-2 text-slate-500">{dayjs(r.createdAt).format('DD MMM YYYY, HH:mm')}</td>
+                        <td className="py-2 text-slate-500">{r.revisedByName || '—'}</td>
+                        <td className="py-2 text-right font-medium text-slate-700">{fmt(Number(r.snapshot?.totalAmount || 0), symbolForCurrency(r.snapshot?.currencyCode || 'INR'), r.snapshot?.currencyCode || 'INR')}</td>
+                        <td className="py-2 text-slate-500">{QUOTATION_STATUSES.find(s => s.value === r.snapshot?.status)?.label || r.snapshot?.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 

@@ -606,9 +606,33 @@ model Quotation {
   vertical    Vertical?           @relation(fields: [verticalId], references: [id])
   legalEntity CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
   invoices    Invoice[]
+  revisions   QuotationRevision[]
 
   @@index([legalEntityId])
   @@map("quotations")
+}
+
+// Append-only history of a quotation's prior states. Unlike
+// SalaryAssignmentRevision/ExpenseBudgetRevision (which diff one or two
+// scalar fields), a quotation edit can touch dozens of columns at once, so
+// the previous row is kept as a full JSON snapshot rather than a per-field
+// before/after pair. The live Quotation row is always updated in place
+// (version incremented) — this table is purely retained history, not a
+// current/active record itself.
+model QuotationRevision {
+  id            Int      @id @default(autoincrement())
+  quotationId   Int      @map("quotation_id")
+  versionNumber Int      @map("version_number")
+  snapshot      Json
+  // Loose reference to User.id (not a relation), matching
+  // SalaryAssignmentRevision.revisedById's convention.
+  revisedById   Int?     @map("revised_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@index([quotationId])
+  @@map("quotation_revisions")
 }
 
 // ============================================================
