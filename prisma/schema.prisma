@@ -113,6 +113,12 @@ model User {
   headOfVerticals        Vertical[]              @relation("VerticalHead")
   createdCompanies       Company[]               @relation("CompanyCreatedBy")
 
+  // Customer Documents (KYC / NDA & Contract) — Customer-tab only, see
+  // CustomerKyc/CustomerKycDocument/CustomerContract below.
+  customerKycVerifications CustomerKyc[]         @relation("CustomerKycVerifiedBy")
+  uploadedCustomerKycDocs  CustomerKycDocument[]  @relation("CustomerKycDocumentUploadedBy")
+  uploadedCustomerContracts CustomerContract[]    @relation("CustomerContractUploadedBy")
+
   @@map("users")
 }
 
@@ -245,6 +251,11 @@ model Lead {
   creditNotes     CreditNote[]
   events          Event[]
   documents       EventDocument[]
+
+  // Customer Documents (KYC / NDA & Contract) — Customer-tab only, not
+  // read/written by any Lead-owned page or API.
+  customerKyc       CustomerKyc?
+  customerContracts CustomerContract[]
 
   // The leads list's default (unfiltered) view sorts by createdAt, the
   // dashboard stats widget counts by status/leadSource/nextFollowUpDate on
@@ -419,6 +430,83 @@ model EventDocumentVersion {
   @@map("event_document_versions")
 }
 
+// ============================================================
+// CUSTOMER DOCUMENTS (KYC / NDA & CONTRACT)
+// ============================================================
+// Customer-tab only — a Customer is a Lead with status=CONFIRMED (see the
+// module note in src/app/dashboard/customers/page.tsx), so these key off
+// leadId like every other Customer-tab addition. Deliberately separate
+// from EventDocument (the generic Lead Events "Documents" tab) rather than
+// reusing it, so this feature never touches Lead-owned document code.
+// "Replace" updates the file fields in place (no version-history child
+// table) — same accepted tradeoff as EventDocument's DELETE, which also
+// doesn't reclaim the underlying Blob object.
+
+model CustomerKyc {
+  id                 Int       @id @default(autoincrement())
+  leadId             Int       @unique @map("lead_id")
+  legalCompanyName   String?   @map("legal_company_name")
+  registrationTaxId  String?   @map("registration_tax_id")
+  billingAddress     String?   @map("billing_address")
+  authorizedContact  String?   @map("authorized_contact")
+  verificationStatus String    @default("PENDING") @map("verification_status") // PENDING | VERIFIED | REJECTED | EXPIRED
+  verifiedById       Int?      @map("verified_by_id")
+  verifiedAt         DateTime? @map("verified_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  lead       Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  verifiedBy User?                 @relation("CustomerKycVerifiedBy", fields: [verifiedById], references: [id])
+  documents  CustomerKycDocument[]
+
+  @@map("customer_kyc")
+}
+
+model CustomerKycDocument {
+  id           Int      @id @default(autoincrement())
+  kycId        Int      @map("kyc_id")
+  fileName     String   @map("file_name")
+  fileType     String?  @map("file_type") // extension, e.g. "pdf"
+  mimeType     String?  @map("mime_type")
+  fileUrl      String   @map("file_url") // Vercel Blob URL
+  fileSize     Int      @map("file_size") // bytes
+  uploadedById Int?     @map("uploaded_by_id")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+
+  kyc        CustomerKyc @relation(fields: [kycId], references: [id], onDelete: Cascade)
+  uploadedBy User?       @relation("CustomerKycDocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([kycId])
+  @@map("customer_kyc_documents")
+}
+
+model CustomerContract {
+  id               Int       @id @default(autoincrement())
+  leadId           Int       @map("lead_id")
+  contractType     String    @map("contract_type") // NDA | MSA | SOW | COMMERCIAL_AGREEMENT | OTHER
+  projectName      String?   @map("project_name")
+  implementationId Int?      @map("implementation_id")
+  contractDate     DateTime  @map("contract_date")
+  expiryDate       DateTime? @map("expiry_date")
+  status           String    @default("DRAFT") @map("status") // DRAFT | SENT | SIGNED | EXPIRED | TERMINATED
+  fileName         String?   @map("file_name")
+  fileType         String?   @map("file_type")
+  mimeType         String?   @map("mime_type")
+  fileUrl          String?   @map("file_url")
+  fileSize         Int?      @map("file_size")
+  uploadedById     Int?      @map("uploaded_by_id")
+  uploadedAt       DateTime? @map("uploaded_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  lead           Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  implementation Implementation? @relation(fields: [implementationId], references: [id])
+  uploadedBy     User?           @relation("CustomerContractUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([leadId])
+  @@map("customer_contracts")
+}
+
 model EventDiscussion {
   id               Int       @id @default(autoincrement())
   eventId          Int       @map("event_id")
@@ -540,6 +628,10 @@ model Implementation {
 
   lead           Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
   projectManager User? @relation("ProjectManager", fields: [projectManagerId], references: [id])
+
+  // Customer Documents: an NDA/Contract can optionally reference the
+  // Implementation it's tied to (its "Project Name").
+  customerContracts CustomerContract[]
 
   @@map("implementations")
 }

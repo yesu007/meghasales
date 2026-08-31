@@ -5,7 +5,9 @@ import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
-// Create-only, same convention as /api/expenses/categories — no [id] route.
+// Create-only here. Update/delete for a single sub-category live in
+// ./[id]/route.ts (added for the Expense Sub Categories table's Edit/Delete
+// actions).
 export async function POST(request: NextRequest) {
   const denied = await requirePermission('manage_expenses');
   if (denied) return denied;
