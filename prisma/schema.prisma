@@ -817,44 +817,52 @@ model Country {
 // ============================================================
 
 model CompanyProfile {
-  id                    Int      @id @default(autoincrement())
-  companyName           String   @map("company_name")
-  tagline               String?
-  logoUrl               String?  @map("logo_url")
-  addressLine1          String?  @map("address_line1")
-  addressLine2          String?  @map("address_line2")
-  city                  String?
-  state                 String?
-  country               String?
-  postalCode            String?  @map("postal_code")
-  phone                 String?
-  email                 String?
-  website               String?
-  gstNumber             String?  @map("gst_number")
-  panNumber             String?  @map("pan_number")
-  bankName              String?  @map("bank_name")
-  bankAccountNumber     String?  @map("bank_account_number")
-  bankIfsc              String?  @map("bank_ifsc")
-  authorizedSignatory   String?  @map("authorized_signatory")
-  signatoryDesignation  String?  @map("signatory_designation")
-  primaryColor          String?  @default("#1E3A5F") @map("primary_color")
-  secondaryColor        String?  @default("#D4AF37") @map("secondary_color")
-  termsAndConditions    String?  @map("terms_and_conditions")
-  paymentTerms          String?  @map("payment_terms")
-  warrantyTerms         String?  @map("warranty_terms")
-  assumptions           String?
-  exclusions            String?
-  confidentialityNotice String?  @map("confidentiality_notice")
-  supplierStateCode     String?  @default("TN") @map("supplier_state_code")
-  defaultCountryId      Int?     @map("default_country_id")
-  isActive              Boolean  @default(true) @map("is_active")
+  id                        Int      @id @default(autoincrement())
+  companyName               String   @map("company_name")
+  tagline                   String?
+  logoUrl                   String?  @map("logo_url")
+  addressLine1              String?  @map("address_line1")
+  addressLine2              String?  @map("address_line2")
+  city                      String?
+  state                     String?
+  country                   String?
+  postalCode                String?  @map("postal_code")
+  phone                     String?
+  email                     String?
+  website                   String?
+  gstNumber                 String?  @map("gst_number")
+  panNumber                 String?  @map("pan_number")
+  bankName                  String?  @map("bank_name")
+  bankAccountNumber         String?  @map("bank_account_number")
+  bankIfsc                  String?  @map("bank_ifsc")
+  authorizedSignatory       String?  @map("authorized_signatory")
+  signatoryDesignation      String?  @map("signatory_designation")
+  primaryColor              String?  @default("#1E3A5F") @map("primary_color")
+  secondaryColor            String?  @default("#D4AF37") @map("secondary_color")
+  termsAndConditions        String?  @map("terms_and_conditions")
+  paymentTerms              String?  @map("payment_terms")
+  warrantyTerms             String?  @map("warranty_terms")
+  assumptions               String?
+  exclusions                String?
+  confidentialityNotice     String?  @map("confidentiality_notice")
+  supplierStateCode         String?  @default("TN") @map("supplier_state_code")
+  // Default Admin/Overhead allocation the Quotation Calculator pre-fills a
+  // new quotation with (mirrors that calculator's own PCT/FIXED toggle —
+  // see ResourceLine costing in src/lib/quotationResourceCosting.ts). Only
+  // a starting default: still freely editable per quotation, and an
+  // existing quotation keeps whatever it was saved with regardless of a
+  // later change here.
+  defaultAdminOverheadMode  String   @default("PCT") @map("default_admin_overhead_mode")
+  defaultAdminOverheadValue Decimal  @default(10) @map("default_admin_overhead_value") @db.Decimal(10, 2)
+  defaultCountryId          Int?     @map("default_country_id")
+  isActive                  Boolean  @default(true) @map("is_active")
   // Payroll statutory identifiers — the business's own GST/PAN/bank details
   // already exist above; these four are specifically what Payroll's
   // compliance reports (PF/ESI/PT/TDS) need and nothing else in the app uses.
-  tanNumber             String?  @map("tan_number")
-  pfEstablishmentCode   String?  @map("pf_establishment_code")
-  esiEstablishmentCode  String?  @map("esi_establishment_code")
-  ptRegistrationNumber  String?  @map("pt_registration_number")
+  tanNumber                 String?  @map("tan_number")
+  pfEstablishmentCode       String?  @map("pf_establishment_code")
+  esiEstablishmentCode      String?  @map("esi_establishment_code")
+  ptRegistrationNumber      String?  @map("pt_registration_number")
   // Payroll Phase 4 — the actual rates/thresholds the run engine applies
   // (see SalaryComponent.statutoryType). Nullable ceiling/threshold means
   // "no cap" — a company that pays PF on full actual basic rather than
@@ -863,19 +871,19 @@ model CompanyProfile {
   // which would incorrectly reduce net pay) purely so compliance reports
   // can show the employer's contribution alongside what was actually
   // deducted from the employee.
-  pfWageCeiling         Decimal? @default(15000) @map("pf_wage_ceiling") @db.Decimal(12, 2)
-  pfEmployerRate        Decimal? @default(12) @map("pf_employer_rate") @db.Decimal(5, 2)
-  esiGrossThreshold     Decimal? @default(21000) @map("esi_gross_threshold") @db.Decimal(12, 2)
-  esiEmployerRate       Decimal? @default(3.25) @map("esi_employer_rate") @db.Decimal(5, 2)
+  pfWageCeiling             Decimal? @default(15000) @map("pf_wage_ceiling") @db.Decimal(12, 2)
+  pfEmployerRate            Decimal? @default(12) @map("pf_employer_rate") @db.Decimal(5, 2)
+  esiGrossThreshold         Decimal? @default(21000) @map("esi_gross_threshold") @db.Decimal(12, 2)
+  esiEmployerRate           Decimal? @default(3.25) @map("esi_employer_rate") @db.Decimal(5, 2)
   // Time & Attendance — which Saturdays are a weekly off, not every-Saturday
   // (the common alternate-Saturday policy at Indian companies). Sunday is
   // always off regardless of this setting; only Saturday's treatment
   // varies. NONE | ALL | FIRST_THIRD | SECOND_FOURTH — see
   // isWeeklyOff() in timesheetEngine.ts for how each is interpreted.
   // Defaults to SECOND_FOURTH, the most common convention.
-  weeklyOffSaturdays    String   @default("SECOND_FOURTH") @map("weekly_off_saturdays")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  weeklyOffSaturdays        String   @default("SECOND_FOURTH") @map("weekly_off_saturdays")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
 
   defaultCountry Country? @relation(fields: [defaultCountryId], references: [id])
 

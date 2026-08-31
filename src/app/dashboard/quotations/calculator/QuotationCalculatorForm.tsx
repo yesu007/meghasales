@@ -18,7 +18,7 @@ interface ResourceEmployee { id: number; firstName: string; lastName: string; em
 interface CompanyOption { id: number; name: string }
 interface LegalEntityOption { id: number; legalName: string; taxRegistrationNumber: string | null; isActive: boolean; country: { countryName: string; flagEmoji: string | null } }
 interface CompanyDetailForQuotation { id: number; legalEntities: LegalEntityOption[] }
-interface CompanyProfileTerms { termsAndConditions: string | null; paymentTerms: string | null; warrantyTerms: string | null }
+interface CompanyProfileTerms { termsAndConditions: string | null; paymentTerms: string | null; warrantyTerms: string | null; defaultAdminOverheadMode: string | null; defaultAdminOverheadValue: number | string | null }
 
 const employeeLabel = (e: ResourceEmployee) => `${e.firstName} ${e.lastName} — ${e.designation || 'Employee'} (${e.employeeCode})`;
 
@@ -146,6 +146,15 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setValidityDays(String(Number(snap.validityDays) || 30));
     setOverrideAmount(existing.totalAmountOverridden ? String(Number(existing.totalAmount)) : '');
   }, [existing]);
+
+  // Pre-fill Admin/Overhead from the company-wide default — only for a
+  // brand-new quotation. An existing one already had its own value restored
+  // by the effect above, which must win regardless of fetch timing.
+  useEffect(() => {
+    if (!companyProfile || quotationId) return;
+    setAdminMode(companyProfile.defaultAdminOverheadMode === 'FIXED' ? 'FIXED' : 'PCT');
+    setAdminValue(String(Number(companyProfile.defaultAdminOverheadValue) || 0));
+  }, [companyProfile, quotationId]);
 
   const selectVertical = (id: string) => {
     setVerticalId(id);
