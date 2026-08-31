@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+import { useLeadSources } from '@/hooks/useLeadSources';
 
 interface VerticalOption { id: number; name: string }
 async function fetchVerticalOptions(): Promise<VerticalOption[]> {
@@ -23,16 +24,6 @@ async function fetchVerticalOptions(): Promise<VerticalOption[]> {
 // still ends up as a Lead row with status = CONFIRMED (see the module
 // note in src/app/dashboard/customers/page.tsx) — but that's the
 // storage detail of the /api/customers endpoint, not this form.
-
-export const CUSTOMER_SOURCES = [
-  { value: 'WEBSITE', label: 'Website' },
-  { value: 'WHATSAPP', label: 'WhatsApp' },
-  { value: 'REFERRAL', label: 'Referral' },
-  { value: 'EMAIL', label: 'Email' },
-  { value: 'TRADE_SHOW', label: 'Trade Show' },
-  { value: 'COLD_CALL', label: 'Cold Call' },
-  { value: 'SALES_EXECUTIVE', label: 'Sales Executive' },
-];
 
 export interface CustomerFormState {
   companyName: string;
@@ -101,6 +92,7 @@ export default function CustomerFormDrawer({
   open, onClose, form, setForm, formErrors, setFormErrors, onSave, isSaving, isAdmin, currencies,
 }: CustomerFormDrawerProps) {
   const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
+  const sources = useLeadSources();
 
   const handleCountryChange = (country: Country) => {
     setForm((f) => ({
@@ -164,7 +156,7 @@ export default function CustomerFormDrawer({
                         <label className="block text-sm font-medium text-slate-700 mb-1">Source *</label>
                         <select value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
                           <option value="">Select</option>
-                          {CUSTOMER_SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                          {sources.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
                         </select>
                         {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                       </div>

@@ -4,7 +4,6 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
-import { leadStatusLabel } from '@/lib/leadStatus';
 import { CUSTOMER_STATUSES, customerStatusLabel } from '@/lib/customerStatus';
 import { requirePermission } from '@/lib/rbac';
 
@@ -76,6 +75,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.city !== undefined && { city: body.city }),
         ...(body.state !== undefined && { state: body.state }),
+        ...(body.nextFollowUpDate !== undefined && { nextFollowUpDate: body.nextFollowUpDate ? new Date(body.nextFollowUpDate) : null }),
         ...(countryFields && {
           country: countryFields.country,
           countryId: countryFields.countryId,
@@ -95,13 +95,19 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     // specifically since it has its own icon/meaning; every other
     // transition gets a generic 'STATUS_CHANGED' entry.
     if (statusChanged) {
+      let statusChangeDescription = `Lead confirmed: ${lead.companyName}`;
+      if (lead.status !== 'CONFIRMED') {
+        const [fromOption, toOption] = await Promise.all([
+          prisma.leadStatusOption.findUnique({ where: { code: existing.status } }),
+          prisma.leadStatusOption.findUnique({ where: { code: lead.status } }),
+        ]);
+        statusChangeDescription = `Status changed from ${fromOption?.label || existing.status} to ${toOption?.label || lead.status}`;
+      }
       await prisma.leadActivity.create({
         data: {
           leadId: id,
           activityType: lead.status === 'CONFIRMED' ? 'LEAD_CONFIRMED' : 'STATUS_CHANGED',
-          description: lead.status === 'CONFIRMED'
-            ? `Lead confirmed: ${lead.companyName}`
-            : `Status changed from ${leadStatusLabel(existing.status)} to ${leadStatusLabel(lead.status)}`,
+          description: statusChangeDescription,
           performedById: Number.isFinite(performedById) ? performedById : null,
         },
       });

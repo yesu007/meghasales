@@ -115,8 +115,8 @@ model User {
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, see
   // CustomerKyc/CustomerKycDocument/CustomerContract below.
-  customerKycVerifications CustomerKyc[]         @relation("CustomerKycVerifiedBy")
-  uploadedCustomerKycDocs  CustomerKycDocument[]  @relation("CustomerKycDocumentUploadedBy")
+  customerKycVerifications  CustomerKyc[]         @relation("CustomerKycVerifiedBy")
+  uploadedCustomerKycDocs   CustomerKycDocument[] @relation("CustomerKycDocumentUploadedBy")
   uploadedCustomerContracts CustomerContract[]    @relation("CustomerContractUploadedBy")
 
   @@map("users")
@@ -1690,6 +1690,46 @@ model Package {
   demos Demo[]
 
   @@map("packages")
+}
+
+// Lead Source master — open picklist, same rationale/shape as Package above.
+// `code` is what Lead.leadSource actually stores (kept as a plain string on
+// Lead rather than an FK, same convention as Lead.businessVerticals/Vertical
+// — see that field's comment): the seed rows below use codes that exactly
+// match the values already sitting in existing Lead rows (WEBSITE, WHATSAPP,
+// REFERRAL, EMAIL, TRADE_SHOW, COLD_CALL, SALES_EXECUTIVE), so nothing on
+// Lead itself needed to change.
+model LeadSource {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  code      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("lead_sources")
+}
+
+// Lead Status master — deliberately NOT a Vertical/Package-style open
+// picklist. `code` is one of the 6 fixed pipeline stages (NEW, CONTACTED,
+// FOLLOW_UP_SCHEDULED, QUALIFIED, CONFIRMED, DISQUALIFIED) that
+// src/lib/leadStatus.ts's STATUS_RANK/isTerminalLeadStatus and several
+// routes (Customers = status=CONFIRMED, Events/Documents tab unlock, the
+// Un-convert flow) branch on by exact value — renaming or deleting one of
+// those codes would silently break that logic. This table only makes the
+// *display* (label/color/sortOrder) of those 6 fixed stages admin-editable;
+// there's intentionally no create/delete here, only seeded rows + PATCH.
+model LeadStatusOption {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  label     String
+  color     String
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("lead_status_options")
 }
 
 model ExpenseBudget {
