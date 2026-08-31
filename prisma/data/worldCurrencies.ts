@@ -1,7 +1,7 @@
-// The other 138 ISO 4217 currencies used by the rest-of-world
+// The other 136 ISO 4217 currencies used by the rest-of-world
 // countries in worldCountries.ts, with a manually-estimated INR exchange
 // rate (same "admin can refine later via Currency Master" convention as
-// the 7 hand-curated currencies in prisma/seed.ts — these are approximate
+// the 9 hand-curated currencies in prisma/seed.ts — these are approximate
 // reference rates, not a live feed, and will drift over time). Currency
 // name/symbol here match the values already used in worldCountries.ts.
 export interface WorldCurrency {
@@ -37,7 +37,6 @@ export const worldCurrencies: WorldCurrency[] = [
   { currencyCode: 'CDF', currencyName: 'Congolese Franc', currencySymbol: 'FC', exchangeRateToInr: 0.0298 },
   { currencyCode: 'CHF', currencyName: 'Swiss Franc', currencySymbol: 'CHF', exchangeRateToInr: 94.9 },
   { currencyCode: 'CLP', currencyName: 'Chilean Peso', currencySymbol: '$', exchangeRateToInr: 0.0879 },
-  { currencyCode: 'CNY', currencyName: 'Chinese Yuan', currencySymbol: '¥', exchangeRateToInr: 11.6 },
   { currencyCode: 'COP', currencyName: 'Colombian Peso', currencySymbol: '$', exchangeRateToInr: 0.0204 },
   { currencyCode: 'CRC', currencyName: 'Costa Rican Colón', currencySymbol: '₡', exchangeRateToInr: 0.1606 },
   { currencyCode: 'CUP', currencyName: 'Cuban Peso', currencySymbol: '$', exchangeRateToInr: 0.6958 },
@@ -58,7 +57,6 @@ export const worldCurrencies: WorldCurrency[] = [
   { currencyCode: 'GNF', currencyName: 'Guinean Franc', currencySymbol: 'FG', exchangeRateToInr: 0.009709 },
   { currencyCode: 'GTQ', currencyName: 'Guatemalan Quetzal', currencySymbol: 'Q', exchangeRateToInr: 10.84 },
   { currencyCode: 'GYD', currencyName: 'Guyanese Dollar', currencySymbol: '$', exchangeRateToInr: 0.3995 },
-  { currencyCode: 'HKD', currencyName: 'Hong Kong Dollar', currencySymbol: '$', exchangeRateToInr: 10.71 },
   { currencyCode: 'HNL', currencyName: 'Honduran Lempira', currencySymbol: 'L', exchangeRateToInr: 3.381 },
   { currencyCode: 'HTG', currencyName: 'Haitian Gourde', currencySymbol: 'G', exchangeRateToInr: 0.6326 },
   { currencyCode: 'HUF', currencyName: 'Hungarian Forint', currencySymbol: 'Ft', exchangeRateToInr: 0.2319 },

@@ -14,6 +14,8 @@ const LOCALE_BY_CURRENCY: Record<string, string> = {
   THB: 'th-TH',
   SGD: 'en-SG',
   SAR: 'en-SA',
+  CNY: 'zh-CN',
+  HKD: 'en-HK',
 };
 
 export function localeForCurrency(currencyCode: string): string {
@@ -33,6 +35,8 @@ const SYMBOL_BY_CURRENCY: Record<string, string> = {
   THB: '฿',
   SGD: 'SGD',
   SAR: 'SAR',
+  CNY: '¥',
+  HKD: '$',
 };
 
 export function symbolForCurrency(currencyCode: string): string {
