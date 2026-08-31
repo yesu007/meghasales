@@ -50,6 +50,8 @@ interface Customer {
   country: string | null;
   state: string | null;
   city: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
   jewelleryBusinessType: string | null;
   numberOfBranches: number | null;
   existingErp: string | null;
@@ -245,7 +247,7 @@ export default function CustomerDetailPage() {
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Mobile</p><p className="text-sm text-slate-800 mt-1">{customer.mobile || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-sm text-slate-800 mt-1 capitalize">{(customer.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{customer.assignedBa ? `${customer.assignedBa.firstName} ${customer.assignedBa.lastName}` : 'Unassigned'}</p></div>
-                <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[customer.city, customer.state, customer.country].filter(Boolean).join(', ') || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[customer.addressLine1, customer.addressLine2, customer.city, customer.state, customer.country].filter(Boolean).join(', ') || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{customer.jewelleryBusinessType || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Since</p><p className="text-sm text-slate-800 mt-1">{dayjs(customer.createdAt).format('DD MMM YYYY')}</p></div>
                 {customer.notes && (

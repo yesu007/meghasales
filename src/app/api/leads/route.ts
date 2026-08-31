@@ -189,6 +189,8 @@ export async function POST(request: NextRequest) {
         taxType: countryFields.taxType,
         state: body.state || null,
         city: body.city || null,
+        addressLine1: body.addressLine1 || null,
+        addressLine2: body.addressLine2 || null,
         leadSource: body.leadSource,
         businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null,
         notes: body.notes || null,

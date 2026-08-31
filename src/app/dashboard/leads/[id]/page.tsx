@@ -31,6 +31,8 @@ interface Lead {
   country: string | null;
   state: string | null;
   city: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
   jewelleryBusinessType: string | null;
   numberOfBranches: number | null;
   existingErp: string | null;
@@ -221,7 +223,7 @@ export default function LeadDetailPage() {
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Status</p><p className="text-sm text-slate-800 mt-1">{CUSTOMER_STATUSES.find(s => s.value === lead.customerStatus)?.label || lead.customerStatus}</p></div>
               )}
               <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : 'Unassigned'}</p></div>
-              <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'}</p></div>
+              <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[lead.addressLine1, lead.addressLine2, lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{lead.jewelleryBusinessType || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Created</p><p className="text-sm text-slate-800 mt-1">{dayjs(lead.createdAt).format('DD MMM YYYY')}</p></div>
               {lead.notes && (

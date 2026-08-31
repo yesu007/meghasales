@@ -39,6 +39,10 @@ export interface CustomerFormState {
   taxType: string;
   state: string;
   city: string;
+  // Contact-level address on the Lead/Customer itself — distinct from the
+  // Legal Entity's own address below (a per-country legal registration).
+  addressLine1: string;
+  addressLine2: string;
   notes: string;
   // Legal Entity for the selected country, under the Customer Company
   // Master (find-or-created by companyName — see /api/customers). A second
@@ -46,16 +50,16 @@ export interface CustomerFormState {
   // second entity under the same company, rather than a disconnected one.
   legalName: string;
   taxRegistrationNumber: string;
-  addressLine1: string;
-  addressLine2: string;
+  legalAddressLine1: string;
+  legalAddressLine2: string;
   postalCode: string;
 }
 
 export const blankCustomerForm: CustomerFormState = {
   companyName: '', contactPerson: '', designation: '', mobile: '', email: '', leadSource: '', businessVerticals: '',
   countryId: null, currencyCode: '', currencySymbol: '', taxType: '',
-  state: '', city: '', notes: '',
-  legalName: '', taxRegistrationNumber: '', addressLine1: '', addressLine2: '', postalCode: '',
+  state: '', city: '', addressLine1: '', addressLine2: '', notes: '',
+  legalName: '', taxRegistrationNumber: '', legalAddressLine1: '', legalAddressLine2: '', postalCode: '',
 };
 
 export interface CustomerCurrencyOption {
@@ -202,6 +206,14 @@ export default function CustomerFormDrawer({
                         <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
                         <input value={form.city} onChange={(e) => setForm(f => ({...f, city: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Address Line 1</label>
+                        <input value={form.addressLine1} onChange={(e) => setForm(f => ({...f, addressLine1: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Address Line 2</label>
+                        <input value={form.addressLine2} onChange={(e) => setForm(f => ({...f, addressLine2: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
 
                       <div className="col-span-2 pt-3 mt-1 border-t border-slate-100">
                         <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Legal Entity — {form.countryId ? 'this country' : 'select a country above'}</p>
@@ -220,11 +232,11 @@ export default function CustomerFormDrawer({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Address Line 1</label>
-                        <input value={form.addressLine1} onChange={(e) => setForm(f => ({...f, addressLine1: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                        <input value={form.legalAddressLine1} onChange={(e) => setForm(f => ({...f, legalAddressLine1: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Address Line 2</label>
-                        <input value={form.addressLine2} onChange={(e) => setForm(f => ({...f, addressLine2: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                        <input value={form.legalAddressLine2} onChange={(e) => setForm(f => ({...f, legalAddressLine2: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Postal Code</label>

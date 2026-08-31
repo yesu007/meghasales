@@ -75,6 +75,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.city !== undefined && { city: body.city }),
         ...(body.state !== undefined && { state: body.state }),
+        ...(body.addressLine1 !== undefined && { addressLine1: body.addressLine1 }),
+        ...(body.addressLine2 !== undefined && { addressLine2: body.addressLine2 }),
         ...(body.nextFollowUpDate !== undefined && { nextFollowUpDate: body.nextFollowUpDate ? new Date(body.nextFollowUpDate) : null }),
         ...(countryFields && {
           country: countryFields.country,

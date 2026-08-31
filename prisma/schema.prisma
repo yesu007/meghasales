@@ -199,6 +199,12 @@ model Lead {
   country               String?
   state                 String?
   city                  String?
+  // Contact-level address — distinct from CompanyLegalEntity's own
+  // address/tax fields (see companyId/legalEntityId below): this is a plain
+  // optional detail on the Lead/Customer itself, not tied to any specific
+  // country's legal entity registration.
+  addressLine1          String?  @map("address_line1")
+  addressLine2          String?  @map("address_line2")
   countryId             Int?     @map("country_id")
   currencyCode          String?  @map("currency_code")
   currencySymbol        String?  @map("currency_symbol")
