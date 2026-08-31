@@ -86,6 +86,18 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.quotation.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
 
+    // Overriding the system-calculated total is a distinct, more sensitive
+    // action than ordinary quoting — gated on its own permission rather than
+    // manage_quotations so an authoring role (e.g. SALES) can edit a
+    // quotation without also being able to unilaterally override pricing.
+    // Re-checked on every save that carries an override (not just the one
+    // that first sets it) since the calculator resubmits it unchanged
+    // whenever an already-overridden quotation is edited.
+    if (body.totalAmountOverridden === true) {
+      const overrideDenied = await requirePermission('authorize_quotation_override');
+      if (overrideDenied) return overrideDenied;
+    }
+
     // A pure status transition (Draft -> Sent -> Approved) isn't a new
     // "version" of the quotation's commercial content — only edits that
     // touch anything besides status bump the counter and get an entry in

@@ -217,6 +217,14 @@ export async function POST(request: NextRequest) {
     // auto-created Lead with no quotation to show for it.
     let resourceBasedFields: ReturnType<typeof buildResourceBasedCosting> | null = null;
     if (body.costingMode === 'RESOURCE_BASED') {
+      // Overriding the system-calculated total is a distinct, more sensitive
+      // action than ordinary quoting — gated on its own permission rather
+      // than manage_quotations so an authoring role (e.g. SALES) can create
+      // quotations without also being able to unilaterally override pricing.
+      if (Number(body.overrideAmount) > 0) {
+        const overrideDenied = await requirePermission('authorize_quotation_override');
+        if (overrideDenied) return overrideDenied;
+      }
       resourceBasedFields = buildResourceBasedCosting(body);
       if (body.verticalId) {
         const vertical = await prisma.vertical.findUnique({ where: { id: parseInt(body.verticalId) } });

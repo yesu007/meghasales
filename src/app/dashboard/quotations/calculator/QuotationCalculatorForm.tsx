@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/quotationResourceCosting';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface ExistingLead { id: number; companyName: string; contactPerson: string; email: string | null; mobile: string | null }
 interface Vertical { id: number; name: string; headName?: string | null }
@@ -36,6 +37,8 @@ function ModeToggle({ mode, onChange, pctLabel, fixedLabel }: { mode: CostMode; 
 export default function QuotationCalculatorForm({ quotationId }: { quotationId?: number }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canAuthorizeOverride = has('authorize_quotation_override');
 
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
   const [selectedLeadId, setSelectedLeadId] = useState('');
@@ -577,9 +580,13 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4">
               <div className="flex items-center justify-between gap-2">
                 <label className="text-xs font-medium text-slate-600">Final amount (override)</label>
-                <input type="number" min="0" value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} placeholder={fmt(costing.calculatedTotalAmount)} className="w-32 px-2 py-1.5 border border-slate-300 rounded text-sm text-right text-slate-800" />
+                <input type="number" min="0" value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} disabled={!canAuthorizeOverride} placeholder={fmt(costing.calculatedTotalAmount)} className="w-32 px-2 py-1.5 border border-slate-300 rounded text-sm text-right text-slate-800 disabled:bg-slate-100 disabled:text-slate-400" />
               </div>
-              <p className="text-xs text-slate-400 mt-1.5">Leave blank to publish the system-calculated amount.</p>
+              <p className="text-xs text-slate-400 mt-1.5">
+                {canAuthorizeOverride
+                  ? 'Leave blank to publish the system-calculated amount.'
+                  : 'Requires authorization to override the calculated amount — ask a manager.'}
+              </p>
             </div>
 
             <button onClick={handleSave} disabled={saveMutation.isPending} className="w-full px-4 py-2.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
