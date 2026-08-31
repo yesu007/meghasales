@@ -26,8 +26,10 @@ import dayjs from 'dayjs';
 const QUOTATION_STATUSES = [
   { value: 'DRAFT', label: 'Draft', color: 'bg-slate-100 text-slate-700' },
   { value: 'SENT', label: 'Sent', color: 'bg-blue-100 text-blue-700' },
+  { value: 'NEGOTIATION', label: 'Negotiation', color: 'bg-amber-100 text-amber-700' },
   { value: 'APPROVED', label: 'Approved', color: 'bg-green-100 text-green-700' },
   { value: 'REJECTED', label: 'Rejected', color: 'bg-red-100 text-red-700' },
+  { value: 'EXPIRED', label: 'Expired', color: 'bg-orange-100 text-orange-700' },
 ];
 
 const MODULE_COLORS: Record<string, string> = {

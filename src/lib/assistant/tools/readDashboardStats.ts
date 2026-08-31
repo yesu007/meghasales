@@ -13,7 +13,7 @@ export const readDashboardStats = createAssistantTool({
       // the same reason it's excluded from the default lead listing there.
       prisma.lead.groupBy({ by: ['status'], where: { leadSource: { not: 'QUOTATION' } }, _count: true }),
       prisma.demo.count({ where: { status: 'SCHEDULED', scheduledDate: { gte: new Date() } } }),
-      prisma.quotation.count({ where: { status: { in: ['DRAFT', 'SENT'] } } }),
+      prisma.quotation.count({ where: { status: { in: ['DRAFT', 'SENT', 'NEGOTIATION'] } } }),
     ]);
 
     return {
