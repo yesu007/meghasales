@@ -14,6 +14,9 @@ interface ExistingLead { id: number; companyName: string; contactPerson: string;
 interface Vertical { id: number; name: string; headName?: string | null }
 interface CurrencyOption { currencyCode: string; currencySymbol: string }
 interface ResourceEmployee { id: number; firstName: string; lastName: string; employeeCode: string; designation: string | null; department: string | null; dayRate: number | null }
+interface CompanyOption { id: number; name: string }
+interface LegalEntityOption { id: number; legalName: string; taxRegistrationNumber: string | null; isActive: boolean; country: { countryName: string; flagEmoji: string | null } }
+interface CompanyDetailForQuotation { id: number; legalEntities: LegalEntityOption[] }
 
 const employeeLabel = (e: ResourceEmployee) => `${e.firstName} ${e.lastName} — ${e.designation || 'Employee'} (${e.employeeCode})`;
 
@@ -46,6 +49,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [packageName, setPackageName] = useState('');
   const [currencyCode, setCurrencyCode] = useState('INR');
 
+  // Which of the customer Company's per-country legal entities this
+  // quotation bills to — billingCompanyId is UI-only (picks which
+  // company's entities to list); only legalEntityId is persisted.
+  const [billingCompanyId, setBillingCompanyId] = useState('');
+  const [legalEntityId, setLegalEntityId] = useState('');
+
   const [resources, setResources] = useState<ResourceLine[]>([blankResource()]);
   const [outsourcingCost, setOutsourcingCost] = useState('0');
   const [travelCost, setTravelCost] = useState('0');
@@ -53,6 +62,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [adminValue, setAdminValue] = useState('10');
   const [markupMode, setMarkupMode] = useState<CostMode>('PCT');
   const [markupValue, setMarkupValue] = useState('25');
+  const [discountMode, setDiscountMode] = useState<CostMode>('PCT');
+  const [discountValue, setDiscountValue] = useState('0');
   const [taxPercentage, setTaxPercentage] = useState('18');
   const [validityDays, setValidityDays] = useState('30');
   const [overrideAmount, setOverrideAmount] = useState('');
@@ -85,6 +96,17 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   });
   const employeeByLabel = useMemo(() => new Map(resourceEmployees.map((e) => [employeeLabel(e), e])), [resourceEmployees]);
 
+  const { data: companies = [] } = useQuery<CompanyOption[]>({
+    queryKey: ['companies-for-quotation'],
+    queryFn: async () => { const r = await fetch('/api/companies'); if (!r.ok) throw new Error('Failed to fetch companies'); return r.json(); },
+  });
+  const { data: billingCompanyDetail } = useQuery<CompanyDetailForQuotation>({
+    queryKey: ['company-detail-for-quotation', billingCompanyId],
+    queryFn: async () => { const r = await fetch(`/api/companies/${billingCompanyId}`); if (!r.ok) throw new Error('Failed to fetch company'); return r.json(); },
+    enabled: !!billingCompanyId,
+  });
+  const legalEntityOptions = (billingCompanyDetail?.legalEntities || []).filter((e) => e.isActive);
+
   useEffect(() => {
     if (!existing) return;
     setProjectName(existing.projectName || '');
@@ -98,6 +120,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setQuotationNumber(existing.quotationNumber);
     setClientName(existing.lead?.contactPerson || '');
     setCompanyName(existing.lead?.companyName || '');
+    setLegalEntityId(existing.legalEntityId ? String(existing.legalEntityId) : '');
+    setBillingCompanyId(existing.legalEntity?.companyId ? String(existing.legalEntity.companyId) : '');
 
     const snap = existing.pricingSnapshot || {};
     setResources(Array.isArray(snap.resources) && snap.resources.length > 0 ? snap.resources : [blankResource()]);
@@ -105,6 +129,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setAdminValue(String(Number(snap.adminValue) || 0));
     setMarkupMode(snap.markupMode === 'FIXED' ? 'FIXED' : 'PCT');
     setMarkupValue(String(Number(snap.markupValue) || 0));
+    setDiscountMode(snap.discountMode === 'FIXED' ? 'FIXED' : 'PCT');
+    setDiscountValue(String(Number(snap.discountValue) || 0));
     setProjectManagerName(snap.projectManagerName || '');
     setPackageName(snap.packageName || '');
     setValidityDays(String(Number(snap.validityDays) || 30));
@@ -125,6 +151,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setClientEmail(lead?.email || '');
     setClientPhone(lead?.mobile || '');
   };
+
+  const selectBillingCompany = (id: string) => { setBillingCompanyId(id); setLegalEntityId(''); };
 
   const updateResource = (idx: number, field: keyof ResourceLine, value: string) => {
     setResources((prev) => prev.map((r, i) => {
@@ -163,9 +191,11 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     travelCost: Number(travelCost) || 0,
     markupMode,
     markupValue: Number(markupValue) || 0,
+    discountMode,
+    discountValue: Number(discountValue) || 0,
     taxPercentage: Number(taxPercentage) || 0,
     overrideAmount: Number(overrideAmount) || 0,
-  }), [validResources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, taxPercentage, overrideAmount]);
+  }), [validResources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, discountMode, discountValue, taxPercentage, overrideAmount]);
 
   const fmt = (n: number) => formatCurrency(n, currencyCode, { symbol: currencySymbol });
 
@@ -183,6 +213,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
         costingMode: 'RESOURCE_BASED',
         projectName: projectName || null,
         verticalId: verticalId || null,
+        legalEntityId: legalEntityId || null,
         currencyCode,
         notes: notes || null,
         resources: validResources,
@@ -192,6 +223,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
         travelCost: Number(travelCost) || 0,
         markupMode,
         markupValue: Number(markupValue) || 0,
+        discountMode,
+        discountValue: Number(discountValue) || 0,
         taxPercentage: Number(taxPercentage) || 0,
         validityDays: Number(validityDays) || 30,
         overrideAmount: Number(overrideAmount) || 0,
@@ -210,6 +243,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
           adminCost: costing.adminCost,
           markupPercentage: markupMode === 'PCT' ? Number(markupValue) || 0 : null,
           markupAmount: costing.markupAmount,
+          discountPercentage: discountMode === 'PCT' ? Number(discountValue) || 0 : null,
+          discountAmount: costing.discountAmount,
           marginPercent: costing.marginPercent,
           calculatedTotalAmount: costing.calculatedTotalAmount,
           totalAmount: costing.totalAmount,
@@ -222,6 +257,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             adminValue: Number(adminValue) || 0,
             markupMode,
             markupValue: Number(markupValue) || 0,
+            discountMode,
+            discountValue: Number(discountValue) || 0,
             projectManagerName: projectManagerName || null,
             packageName: packageName || null,
             validityDays: Number(validityDays) || 30,
@@ -330,6 +367,27 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                   {currencies.filter((c) => c.currencyCode !== 'INR').map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
                 </select>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Bill To (Company)</label>
+                <select value={billingCompanyId} onChange={(e) => selectBillingCompany(e.target.value)} className={inputCls}>
+                  <option value="">Not linked to a Company</option>
+                  {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Legal Entity</label>
+                <select value={legalEntityId} onChange={(e) => setLegalEntityId(e.target.value)} disabled={!billingCompanyId} className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}>
+                  <option value="">{billingCompanyId ? 'Select entity' : 'Pick a Company first'}</option>
+                  {legalEntityOptions.map((e) => <option key={e.id} value={e.id}>{e.country.flagEmoji ? `${e.country.flagEmoji} ` : ''}{e.country.countryName} — {e.legalName}</option>)}
+                </select>
+                {billingCompanyId && legalEntityOptions.length === 0 && (
+                  <p className="text-xs text-slate-400 mt-1">This company has no legal entities yet — add one from the Company tab on a linked customer&apos;s detail page.</p>
+                )}
+                {legalEntityId && (() => {
+                  const picked = legalEntityOptions.find((e) => String(e.id) === legalEntityId);
+                  return picked?.taxRegistrationNumber ? <p className="text-xs text-slate-400 mt-1">Tax Reg: {picked.taxRegistrationNumber}</p> : null;
+                })()}
+              </div>
             </div>
           </div>
 
@@ -406,6 +464,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <ModeToggle mode={markupMode} onChange={setMarkupMode} pctLabel="% of base cost" fixedLabel="Fixed amount" />
               <input type="number" min="0" value={markupValue} onChange={(e) => setMarkupValue(e.target.value)} className={inputCls} />
             </div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Discount</label>
+            <div className="grid grid-cols-2 gap-3 mb-1">
+              <ModeToggle mode={discountMode} onChange={setDiscountMode} pctLabel="% of subtotal" fixedLabel="Fixed amount" />
+              <input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className={inputCls} />
+            </div>
+            <p className="text-xs text-slate-400 mb-3">Applied to the subtotal (cost + markup) before tax.</p>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Tax % (where applicable)</label><input type="number" min="0" value={taxPercentage} onChange={(e) => setTaxPercentage(e.target.value)} className={inputCls} /></div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Quotation Validity (days)</label><input type="number" min="1" value={validityDays} onChange={(e) => setValidityDays(e.target.value)} className={inputCls} /></div>
@@ -443,8 +507,36 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Travel / other</span><span className="font-mono font-medium text-slate-700">{fmt(Number(travelCost) || 0)}</span></div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Admin / overhead</span><span className="font-mono font-medium text-slate-700">{fmt(costing.adminCost)}{adminMode === 'PCT' && ` (${adminValue}%)`}</span></div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100 font-semibold"><span className="text-slate-800">Base project cost</span><span className="font-mono text-slate-800">{fmt(costing.baseCost)}</span></div>
-              <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Markup</span><span className="font-mono font-medium text-slate-700">{fmt(costing.markupAmount)}{markupMode === 'PCT' && ` (${markupValue}%)`}</span></div>
-              <div className="flex justify-between py-1"><span className="text-slate-500">Tax</span><span className="font-mono font-medium text-slate-700">{fmt(costing.taxAmount)} ({taxPercentage}%)</span></div>
+              <div className="flex items-center justify-between py-1 border-b border-dashed border-slate-100">
+                <span className="text-slate-500">Markup</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-medium text-slate-700">{fmt(costing.markupAmount)}</span>
+                  <input type="number" min="0" value={markupValue} onChange={(e) => setMarkupValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
+                  <select value={markupMode} onChange={(e) => setMarkupMode(e.target.value as CostMode)} className="px-1 py-0.5 border border-slate-300 rounded text-xs text-slate-700">
+                    <option value="PCT">%</option>
+                    <option value="FIXED">₹</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-dashed border-slate-100">
+                <span className="text-slate-500">Discount</span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`font-mono font-medium ${costing.discountAmount > 0 ? 'text-red-600' : 'text-slate-700'}`}>{costing.discountAmount > 0 ? '-' : ''}{fmt(costing.discountAmount)}</span>
+                  <input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
+                  <select value={discountMode} onChange={(e) => setDiscountMode(e.target.value as CostMode)} className="px-1 py-0.5 border border-slate-300 rounded text-xs text-slate-700">
+                    <option value="PCT">%</option>
+                    <option value="FIXED">₹</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-slate-500">Tax</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-medium text-slate-700">{fmt(costing.taxAmount)}</span>
+                  <input type="number" min="0" value={taxPercentage} onChange={(e) => setTaxPercentage(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
+                  <span className="text-xs text-slate-400">%</span>
+                </div>
+              </div>
             </div>
 
             <div className="text-center my-4">

@@ -154,6 +154,7 @@ export async function POST(request: NextRequest) {
     let totalAmount = body.totalAmount;
     let currencyCode = body.currencyCode || 'INR';
     let exchangeRate = body.exchangeRate || 1;
+    let legalEntityId: number | null = null;
 
     if (body.quotationId) {
       const quotationId = parseInt(body.quotationId);
@@ -182,6 +183,7 @@ export async function POST(request: NextRequest) {
       totalAmount = derived.totalAmount;
       currencyCode = derived.currencyCode;
       exchangeRate = derived.exchangeRate;
+      legalEntityId = quotation.legalEntityId;
     }
 
     if (!lineItems || !Array.isArray(lineItems) || lineItems.length === 0) {
@@ -198,6 +200,7 @@ export async function POST(request: NextRequest) {
         invoiceNumber,
         leadId: parseInt(body.leadId),
         quotationId: body.quotationId ? parseInt(body.quotationId) : null,
+        legalEntityId,
         invoiceDate: body.invoiceDate ? new Date(body.invoiceDate) : new Date(),
         dueDate: new Date(body.dueDate),
         lineItems,

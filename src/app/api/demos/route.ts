@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
+import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,8 +38,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const packageId = searchParams.get('packageId') || '';
+
     if (status) AND.push({ status: status.toUpperCase() });
     if (demoType) AND.push({ demoType: demoType.toUpperCase() });
+    if (packageId) AND.push({ packageId: parseInt(packageId) });
 
     if (AND.length > 0) where.AND = AND;
 
@@ -56,6 +60,7 @@ export async function GET(request: NextRequest) {
         include: {
           lead: { select: { companyName: true, contactPerson: true, mobile: true } },
           assignedTo: { select: { firstName: true, lastName: true } },
+          package: { select: { name: true } },
         },
       }),
       prisma.demo.count({ where }),
@@ -68,7 +73,10 @@ export async function GET(request: NextRequest) {
       contactPerson: demo.lead.contactPerson,
       mobile: demo.lead.mobile,
       demoType: demo.demoType,
+      packageId: demo.packageId,
+      packageName: demo.package?.name || null,
       scheduledDate: demo.scheduledDate,
+      timezone: demo.timezone,
       actualDate: demo.actualDate,
       status: demo.status,
       assignedToId: demo.assignedToId,
@@ -111,8 +119,10 @@ export async function POST(request: NextRequest) {
       data: {
         leadId: parseInt(body.leadId),
         demoType: body.demoType,
+        packageId: body.packageId ? parseInt(body.packageId) : null,
         assignedToId: body.assignedToId ? parseInt(body.assignedToId) : null,
         scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : null,
+        timezone: body.timezone || DEFAULT_TIMEZONE,
         attendees: body.attendees || null,
         modulesDemonstrated: body.modulesDemonstrated || null,
         status: 'SCHEDULED',

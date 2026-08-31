@@ -33,6 +33,8 @@ function buildResourceBasedCosting(body: any) {
   const travelCost = Number(body.travelCost) || 0;
   const markupMode: CostMode = body.markupMode === 'FIXED' ? 'FIXED' : 'PCT';
   const markupValue = Number(body.markupValue) || 0;
+  const discountMode: CostMode = body.discountMode === 'FIXED' ? 'FIXED' : 'PCT';
+  const discountValue = Number(body.discountValue) || 0;
   const taxPercentage = Number(body.taxPercentage) || 0;
   const overrideAmount = Number(body.overrideAmount) || 0;
   const validityDays = Number(body.validityDays) || 30;
@@ -41,12 +43,13 @@ function buildResourceBasedCosting(body: any) {
   if (outsourcingCost < 0) throw new Error('Outsourcing cost cannot be negative');
   if (travelCost < 0) throw new Error('Travel cost cannot be negative');
   if (markupValue < 0) throw new Error('Markup value cannot be negative');
+  if (discountValue < 0) throw new Error('Discount value cannot be negative');
   if (taxPercentage < 0) throw new Error('Tax percentage cannot be negative');
   if (overrideAmount < 0) throw new Error('Override amount cannot be negative');
   if (validityDays < 1) throw new Error('Quotation validity must be at least 1 day');
 
   const costing = computeResourceCosting({
-    resources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, taxPercentage, overrideAmount,
+    resources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, discountMode, discountValue, taxPercentage, overrideAmount,
   });
 
   return {
@@ -58,12 +61,15 @@ function buildResourceBasedCosting(body: any) {
     adminCost: costing.adminCost,
     markupPercentage: markupMode === 'PCT' ? markupValue : null,
     markupAmount: costing.markupAmount,
+    discountPercentage: discountMode === 'PCT' ? discountValue : null,
+    discountAmount: costing.discountAmount,
     marginPercent: costing.marginPercent,
     calculatedTotalAmount: costing.calculatedTotalAmount,
     totalAmount: costing.totalAmount,
     totalAmountOverridden: costing.totalAmountOverridden,
     taxPercentage,
     taxAmount: costing.taxAmount,
+    legalEntityId: body.legalEntityId ? parseInt(body.legalEntityId) : null,
     validUntil: dayjs().add(validityDays, 'day').toDate(),
     pricingSnapshot: {
       resources,
@@ -71,6 +77,8 @@ function buildResourceBasedCosting(body: any) {
       adminValue,
       markupMode,
       markupValue,
+      discountMode,
+      discountValue,
       projectManagerName: body.projectManagerName ? String(body.projectManagerName).trim() : null,
       packageName: body.packageName ? String(body.packageName).trim() : null,
       validityDays,
@@ -128,6 +136,13 @@ export async function GET(request: NextRequest) {
         take: size,
         include: {
           lead: { select: { companyName: true, contactPerson: true } },
+          legalEntity: {
+            select: {
+              legalName: true, taxRegistrationNumber: true,
+              addressLine1: true, addressLine2: true, city: true, state: true, postalCode: true,
+              country: { select: { countryName: true } },
+            },
+          },
         },
       }),
       prisma.quotation.count({ where }),
@@ -153,6 +168,21 @@ export async function GET(request: NextRequest) {
       travelCost: q.travelCost ? Number(q.travelCost) : 0,
       adminCost: q.adminCost ? Number(q.adminCost) : 0,
       markupAmount: q.markupAmount ? Number(q.markupAmount) : 0,
+      // Both modes' PDF download reads these two directly off the row (not
+      // pricingSnapshot) — previously missing here entirely, so a resource-
+      // based quotation's discount silently never printed regardless of
+      // what was persisted on save.
+      discountPercentage: q.discountPercentage ? Number(q.discountPercentage) : 0,
+      discountAmount: q.discountAmount ? Number(q.discountAmount) : 0,
+      legalEntityId: q.legalEntityId,
+      legalEntity: q.legalEntity
+        ? {
+            legalName: q.legalEntity.legalName,
+            taxRegistrationNumber: q.legalEntity.taxRegistrationNumber,
+            countryName: q.legalEntity.country.countryName,
+            addressLines: [q.legalEntity.addressLine1, q.legalEntity.addressLine2, q.legalEntity.city, q.legalEntity.state, q.legalEntity.postalCode].filter(Boolean),
+          }
+        : null,
       createdAt: q.createdAt,
     }));
 
@@ -190,6 +220,10 @@ export async function POST(request: NextRequest) {
       if (body.verticalId) {
         const vertical = await prisma.vertical.findUnique({ where: { id: parseInt(body.verticalId) } });
         if (!vertical) return NextResponse.json({ message: 'Selected vertical not found' }, { status: 404 });
+      }
+      if (body.legalEntityId) {
+        const legalEntity = await prisma.companyLegalEntity.findUnique({ where: { id: parseInt(body.legalEntityId) } });
+        if (!legalEntity) return NextResponse.json({ message: 'Selected legal entity not found' }, { status: 404 });
       }
     }
 

@@ -28,6 +28,7 @@ async function generateInvoiceForQuotation(tx: Prisma.TransactionClient, quotati
       invoiceNumber,
       leadId: quotation.leadId,
       quotationId: quotation.id,
+      legalEntityId: quotation.legalEntityId,
       invoiceDate: new Date(),
       dueDate: dayjs().add(30, 'day').toDate(),
       lineItems: derived.lineItems,
@@ -55,6 +56,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       where: { id: parseInt(params.id) },
       include: {
         lead: { select: { companyName: true, contactPerson: true, email: true, mobile: true } },
+        legalEntity: { select: { companyId: true } },
       },
     });
     if (!quotation) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
@@ -110,6 +112,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           ...(body.costingMode !== undefined && { costingMode: body.costingMode }),
           ...(body.projectName !== undefined && { projectName: body.projectName }),
           ...(body.verticalId !== undefined && { verticalId: body.verticalId ? parseInt(body.verticalId) : null }),
+          ...(body.legalEntityId !== undefined && { legalEntityId: body.legalEntityId ? parseInt(body.legalEntityId) : null }),
           ...(body.resourceCostTotal !== undefined && { resourceCostTotal: body.resourceCostTotal }),
           ...(body.outsourcingCost !== undefined && { outsourcingCost: body.outsourcingCost }),
           ...(body.travelCost !== undefined && { travelCost: body.travelCost }),

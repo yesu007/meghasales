@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
 import { leadStatusLabel } from '@/lib/leadStatus';
+import { CUSTOMER_STATUSES, customerStatusLabel } from '@/lib/customerStatus';
 import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   try {
     const lead = await prisma.lead.findUnique({
       where: { id: parseInt(params.id) },
-      include: { assignedBa: { select: { firstName: true, lastName: true } } },
+      include: {
+        assignedBa: { select: { firstName: true, lastName: true } },
+        company: { select: { id: true, name: true } },
+      },
     });
     if (!lead) return NextResponse.json({ message: 'Lead not found' }, { status: 404 });
     return NextResponse.json(lead);
@@ -38,6 +42,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     const statusChanged = !!body.status && body.status !== existing.status;
 
+    if (body.customerStatus !== undefined && !CUSTOMER_STATUSES.some((s) => s.value === body.customerStatus)) {
+      return NextResponse.json({ message: 'Invalid customer status' }, { status: 400 });
+    }
+    const customerStatusChanged = !!body.customerStatus && body.customerStatus !== existing.customerStatus;
+
     const session = await getServerSession(authOptions);
     const performedById = session?.user ? parseInt(session.user.id, 10) : null;
 
@@ -56,10 +65,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       data: {
         ...(body.companyName && { companyName: body.companyName }),
         ...(body.contactPerson && { contactPerson: body.contactPerson }),
+        ...(body.designation !== undefined && { designation: body.designation || null }),
         ...(body.mobile !== undefined && { mobile: body.mobile }),
+        ...(body.whatsapp !== undefined && { whatsapp: body.whatsapp }),
         ...(body.email !== undefined && { email: body.email }),
         ...(body.leadSource && { leadSource: body.leadSource }),
         ...(body.status && { status: body.status }),
+        ...(body.customerStatus && { customerStatus: body.customerStatus }),
         ...(body.assignedBaId !== undefined && { assignedBaId: body.assignedBaId ? parseInt(body.assignedBaId) : null }),
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.city !== undefined && { city: body.city }),
@@ -72,7 +84,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           taxType: countryFields.taxType,
         }),
         ...(body.businessVerticals !== undefined && { businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null }),
+        ...(body.companyId !== undefined && { companyId: body.companyId ? parseInt(body.companyId) : null }),
       },
+      include: { company: { select: { id: true, name: true } } },
     });
 
     // Log every status transition (not just ->Converted) so the activity
@@ -88,6 +102,17 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           description: lead.status === 'CONFIRMED'
             ? `Lead confirmed: ${lead.companyName}`
             : `Status changed from ${leadStatusLabel(existing.status)} to ${leadStatusLabel(lead.status)}`,
+          performedById: Number.isFinite(performedById) ? performedById : null,
+        },
+      });
+    }
+
+    if (customerStatusChanged) {
+      await prisma.leadActivity.create({
+        data: {
+          leadId: id,
+          activityType: 'CUSTOMER_STATUS_CHANGED',
+          description: `Customer status changed from ${customerStatusLabel(existing.customerStatus)} to ${customerStatusLabel(lead.customerStatus)}`,
           performedById: Number.isFinite(performedById) ? performedById : null,
         },
       });

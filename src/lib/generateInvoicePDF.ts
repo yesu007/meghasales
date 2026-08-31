@@ -31,6 +31,12 @@ interface InvoiceData {
   subtotal: number;
   discountPercentage: number;
   discountAmount: number;
+  // Set when the quotation/invoice is billed to a specific Company legal
+  // entity (see CompanyLegalEntity) — its registered address and tax
+  // registration number print under the usual phone/email lines instead of
+  // being silently omitted.
+  billingAddressLines?: string[];
+  taxRegistrationNumber?: string;
   taxInclusive?: boolean;
   taxBreakdown: { taxName: string; rate: number; amount: number }[];
   grandTotal: number;
@@ -111,6 +117,12 @@ export function generateInvoicePDF(data: InvoiceData) {
   doc.text(data.companyName, marginX, clientY);
   if (data.clientPhone) { clientY += 5; doc.text(data.clientPhone, marginX, clientY); }
   if (data.clientEmail) { clientY += 5; doc.text(data.clientEmail, marginX, clientY); }
+  if (data.billingAddressLines && data.billingAddressLines.length > 0) {
+    doc.setTextColor(...SLATE_500);
+    for (const line of data.billingAddressLines) { clientY += 5; doc.text(line, marginX, clientY); }
+    doc.setTextColor(...SLATE_700);
+  }
+  if (data.taxRegistrationNumber) { clientY += 5; doc.text(`Tax Reg: ${data.taxRegistrationNumber}`, marginX, clientY); }
 
   // Meta card (right)
   const cardW = 62;

@@ -6,22 +6,27 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
-import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, PhoneIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, PhoneIcon, BuildingLibraryIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { LEAD_STATUSES, leadStatusColor } from '@/lib/leadStatus';
+import { CUSTOMER_STATUSES, customerStatusColor } from '@/lib/customerStatus';
 import EventsTab from '@/components/leads/EventsTab';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
 import LeadDocumentsTab from '@/components/leads/LeadDocumentsTab';
 import FollowUpsTab from '@/components/leads/FollowUpsTab';
+import CompanyTab from '@/components/leads/CompanyTab';
 
 interface Lead {
   id: number;
   companyName: string;
   contactPerson: string;
+  designation: string | null;
   email: string | null;
   mobile: string | null;
+  whatsapp: string | null;
   status: string;
+  customerStatus: string;
   leadSource: string;
   country: string | null;
   state: string | null;
@@ -32,6 +37,7 @@ interface Lead {
   notes: string | null;
   createdAt: string;
   assignedBa: { firstName: string; lastName: string } | null;
+  company: { id: number; name: string } | null;
 }
 
 async function fetchLead(id: string): Promise<Lead> {
@@ -82,6 +88,24 @@ export default function LeadDetailPage() {
     onError: () => toast.error('Failed to update status'),
   });
 
+  const customerStatusMutation = useMutation({
+    mutationFn: async (customerStatus: string) => {
+      const res = await fetch(`/api/leads/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerStatus }),
+      });
+      if (!res.ok) throw new Error('Failed to update customer status');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead', id] });
+      queryClient.invalidateQueries({ queryKey: ['lead-activities', Number(id)] });
+      toast.success('Customer status updated');
+    },
+    onError: () => toast.error('Failed to update customer status'),
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -112,17 +136,30 @@ export default function LeadDetailPage() {
           </Link>
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">{lead.companyName}</h1>
-            <p className="text-slate-500 mt-1 text-sm sm:text-base truncate">{lead.contactPerson}{lead.email ? ` — ${lead.email}` : ''}</p>
+            <p className="text-slate-500 mt-1 text-sm sm:text-base truncate">{lead.contactPerson}{lead.designation ? `, ${lead.designation}` : ''}{lead.email ? ` — ${lead.email}` : ''}</p>
           </div>
         </div>
-        <select
-          value={lead.status}
-          disabled={statusMutation.isPending}
-          onChange={(e) => statusMutation.mutate(e.target.value)}
-          className={`self-start sm:self-auto px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
-        >
-          {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {isConfirmed && (
+            <select
+              value={lead.customerStatus}
+              disabled={customerStatusMutation.isPending}
+              onChange={(e) => customerStatusMutation.mutate(e.target.value)}
+              title="Customer status"
+              className={`px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${customerStatusColor(lead.customerStatus)}`}
+            >
+              {CUSTOMER_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          )}
+          <select
+            value={lead.status}
+            disabled={statusMutation.isPending}
+            onChange={(e) => statusMutation.mutate(e.target.value)}
+            className={`px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
+          >
+            {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </div>
       </div>
 
       <Tab.Group>
@@ -163,14 +200,25 @@ export default function LeadDetailPage() {
             'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
             selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
           )}>
+            <BuildingLibraryIcon className="h-4 w-4" /> Company
+          </Tab>
+          <Tab className={({ selected }) => classNames(
+            'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-1.5',
+            selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+          )}>
             <ClockIcon className="h-4 w-4" /> Activity
           </Tab>
         </Tab.List>
         <Tab.Panels className="mt-4">
           <Tab.Panel>
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><p className="text-xs font-medium text-slate-500 uppercase">Designation</p><p className="text-sm text-slate-800 mt-1">{lead.designation || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Mobile</p><p className="text-sm text-slate-800 mt-1">{lead.mobile || '—'}</p></div>
+              <div><p className="text-xs font-medium text-slate-500 uppercase">WhatsApp</p><p className="text-sm text-slate-800 mt-1">{lead.whatsapp || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-sm text-slate-800 mt-1 capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
+              {isConfirmed && (
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Status</p><p className="text-sm text-slate-800 mt-1">{CUSTOMER_STATUSES.find(s => s.value === lead.customerStatus)?.label || lead.customerStatus}</p></div>
+              )}
               <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : 'Unassigned'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{lead.jewelleryBusinessType || '—'}</p></div>
@@ -202,6 +250,9 @@ export default function LeadDetailPage() {
                 <p className="mt-4 text-slate-600 font-medium">Documents unlock once this lead is Confirmed</p>
               </div>
             )}
+          </Tab.Panel>
+          <Tab.Panel>
+            <CompanyTab leadId={lead.id} company={lead.company} />
           </Tab.Panel>
           <Tab.Panel>
             <ActivityTimeline leadId={lead.id} />

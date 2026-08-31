@@ -24,6 +24,7 @@ const ACTIVITY_ICONS: Record<string, typeof ClockIcon> = {
   CREATED: PlusCircleIcon,
   LEAD_CONFIRMED: CheckCircleIcon,
   STATUS_CHANGED: ArrowPathIcon,
+  CUSTOMER_STATUS_CHANGED: ArrowPathIcon,
   FOLLOWUP_LOGGED: PhoneIcon,
   DEMO_SCHEDULED: CalendarDaysIcon,
   DEMO_STATUS_CHANGED: PlayCircleIcon,

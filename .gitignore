@@ -45,9 +45,12 @@ next-env.d.ts
 !README.txt
 
 # Database dumps — full data (PII, password hashes, financial records),
-# never belongs in git history
+# never belongs in git history. Scoped to exclude prisma/migrations/ — a
+# bare `*.sql` also matched every migration.sql there, silently blocking
+# `git add` on new migrations unless force-added with -f.
 *.sql
 dbdump.sql
+!prisma/migrations/**/*.sql
 
 # Claude Code local settings — can contain plaintext secrets (DB URLs, etc.)
 .claude/

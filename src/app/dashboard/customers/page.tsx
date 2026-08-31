@@ -21,8 +21,8 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { LEAD_STATUSES } from '@/lib/leadStatus';
-import LeadFormDrawer, { SOURCES, VERTICALS, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
+import { CUSTOMER_STATUSES } from '@/lib/customerStatus';
+import LeadFormDrawer, { SOURCES, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 import CustomerFormDrawer, { blankCustomerForm, type CustomerFormState } from '@/components/customers/CustomerFormDrawer';
 
 // Customers are Leads with status = CONFIRMED (labeled "Converted" — see
@@ -34,8 +34,12 @@ import CustomerFormDrawer, { blankCustomerForm, type CustomerFormState } from '@
 // and nothing can ever go stale (a Lead moved off CONFIRMED simply stops
 // appearing here on next fetch, a Lead moved onto CONFIRMED starts
 // appearing — both for free, since this is a live query, not a snapshot).
+// The lead pipeline status itself isn't shown/editable here (every row is
+// always CONFIRMED by definition) — the "Status" column on this page is
+// customerStatus (Active/Inactive/On Hold), a separate field tracked only
+// for converted customers. Un-converting a customer back to an earlier lead
+// stage is done from the Lead detail page, not from this list.
 const CUSTOMER_STATUS = 'CONFIRMED';
-const STATUSES = LEAD_STATUSES;
 
 interface Lead {
   id: number;
@@ -44,6 +48,7 @@ interface Lead {
   email: string | null;
   mobile: string | null;
   status: string;
+  customerStatus: string;
   leadSource: string;
   assignedBaId: number | null;
   assignedBaName: string | null;
@@ -88,6 +93,7 @@ export default function CustomersPage() {
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [verticalFilter, setVerticalFilter] = useState('');
+  const [customerStatusFilter, setCustomerStatusFilter] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
@@ -102,6 +108,7 @@ export default function CustomersPage() {
   if (search) params.search = search;
   if (sourceFilter) params.leadSource = sourceFilter;
   if (verticalFilter) params.businessVertical = verticalFilter;
+  if (customerStatusFilter) params.customerStatus = customerStatusFilter;
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['customers', params],
@@ -139,6 +146,11 @@ export default function CustomersPage() {
   useEffect(() => {
     if (isCurrenciesError) toast.error('Failed to load currencies');
   }, [isCurrenciesError]);
+
+  const { data: verticalOptions = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ['verticals'],
+    queryFn: async () => { const res = await fetch('/api/verticals'); if (!res.ok) throw new Error('Failed to fetch verticals'); return res.json(); },
+  });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -201,15 +213,11 @@ export default function CustomersPage() {
     toast.success('Customer deleted');
   };
 
-  // Reuses the exact same status-change endpoint the Leads page uses —
-  // moving a customer off Converted here is exactly how it disappears from
-  // this list (see the module note above): no separate "un-convert" action
-  // needed, this dropdown already does it.
-  const updateStatus = async (id: number, status: string) => {
-    const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
-    if (!res.ok) { toast.error('Failed to update status'); return; }
+  const updateCustomerStatus = async (id: number, customerStatus: string) => {
+    const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerStatus }) });
+    if (!res.ok) { toast.error('Failed to update customer status'); return; }
     queryClient.invalidateQueries({ queryKey: ['customers'] });
-    toast.success('Status updated');
+    toast.success('Customer status updated');
   };
 
   const assignBa = async (id: number, assignedBaId: string) => {
@@ -225,12 +233,12 @@ export default function CustomersPage() {
     setPage(0);
   };
 
-  const clearFilters = () => { setSearchInput(''); setSearch(''); setSourceFilter(''); setVerticalFilter(''); setPage(0); };
+  const clearFilters = () => { setSearchInput(''); setSearch(''); setSourceFilter(''); setVerticalFilter(''); setCustomerStatusFilter(''); setPage(0); };
 
   const customers: Lead[] = data?.content || [];
   const totalElements = data?.totalElements || 0;
   const totalPages = data?.totalPages || 0;
-  const activeFilters = [sourceFilter, verticalFilter].filter(Boolean).length;
+  const activeFilters = [sourceFilter, verticalFilter, customerStatusFilter].filter(Boolean).length;
 
   const SortIcon = ({ col }: { col: string }) => {
     if (sortBy !== col) return <ArrowsUpDownIcon className="h-3 w-3 text-slate-400" />;
@@ -282,7 +290,14 @@ export default function CustomersPage() {
               <label className="block text-xs font-medium text-slate-600 mb-1">Business Vertical</label>
               <select value={verticalFilter} onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
                 <option value="">All</option>
-                {VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+                {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+              <select value={customerStatusFilter} onChange={(e) => { setCustomerStatusFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
+                <option value="">All</option>
+                {CUSTOMER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
           </div>
@@ -291,6 +306,7 @@ export default function CustomersPage() {
           <div className="flex flex-wrap gap-2">
             {sourceFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">Source: {sourceFilter.replace(/_/g,' ')} <button onClick={() => setSourceFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
             {verticalFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-purple-50 text-purple-700 border border-purple-200">Vertical: {verticalFilter.replace(/_/g,' ')} <button onClick={() => setVerticalFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
+            {customerStatusFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">Status: {CUSTOMER_STATUSES.find(s => s.value === customerStatusFilter)?.label} <button onClick={() => setCustomerStatusFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
           </div>
         )}
       </div>
@@ -311,7 +327,7 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('contactPerson')} className="flex items-center gap-1 font-semibold text-white">Contact <SortIcon col="contactPerson" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Mobile</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Source</th>
-                    <th className="px-4 py-3 text-left"><button onClick={() => handleSort('status')} className="flex items-center gap-1 font-semibold text-white">Status <SortIcon col="status" /></button></th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Owner</th>
                     <th className="px-4 py-3 text-left hidden md:table-cell"><button onClick={() => handleSort('createdAt')} className="flex items-center gap-1 font-semibold text-white">Created <SortIcon col="createdAt" /></button></th>
                     <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
@@ -327,8 +343,8 @@ export default function CustomersPage() {
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{customer.mobile || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell capitalize">{(customer.leadSource || '').replace(/_/g, ' ').toLowerCase()}</td>
                       <td className="px-4 py-3">
-                        <select value={customer.status} onChange={(e) => updateStatus(customer.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${STATUSES.find(s => s.value === customer.status)?.color || 'bg-slate-100'}`}>
-                          {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                        <select value={customer.customerStatus} onChange={(e) => updateCustomerStatus(customer.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${CUSTOMER_STATUSES.find(s => s.value === customer.customerStatus)?.color || 'bg-slate-100'}`}>
+                          {CUSTOMER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell">
