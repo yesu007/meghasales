@@ -20,10 +20,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+    # AWS Login (OIDC)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::492656483405:role/github-actions-ecr-push
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
