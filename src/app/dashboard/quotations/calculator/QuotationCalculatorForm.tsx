@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, TrashIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
@@ -37,6 +37,14 @@ function ModeToggle({ mode, onChange, pctLabel, fixedLabel }: { mode: CostMode; 
 
 export default function QuotationCalculatorForm({ quotationId }: { quotationId?: number }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Deep-link from the Projects page's "New Quotation" action
+  // (/dashboard/quotations/calculator?projectId=..&leadId=..) — leadId is
+  // whichever of Project.customerId/leadId is set (see that model's own
+  // comment: a Project is tied to exactly one). Only consulted for a
+  // brand-new quotation; editing an existing one always keeps its own lead.
+  const prefillProjectId = searchParams.get('projectId');
+  const prefillLeadId = searchParams.get('leadId');
   const queryClient = useQueryClient();
   const { has } = usePermissions();
   const canAuthorizeOverride = has('authorize_quotation_override');
@@ -144,6 +152,28 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     const p = leadProjects.find((x) => String(x.id) === projectId);
     if (p) setProjectName(p.projectName);
   }, [projectId, leadProjects]);
+
+  // Deep-link prefill (create only): pick the client the linked Project
+  // belongs to as soon as the leads list has loaded. Guarded on
+  // `!selectedLeadId` so it only ever fires once, on landing — it must not
+  // fight a client the user deliberately changes afterward.
+  useEffect(() => {
+    if (quotationId || !prefillLeadId || selectedLeadId || existingLeads.length === 0) return;
+    if (existingLeads.some((l) => String(l.id) === prefillLeadId)) {
+      setClientMode('existing');
+      selectExistingLead(prefillLeadId);
+    }
+  }, [quotationId, prefillLeadId, selectedLeadId, existingLeads]);
+  // Once that client's Project dropdown has loaded, select the specific
+  // linked Project (the generic "auto-select if there's exactly one" effect
+  // above already covers the single-project case; this handles multi-project
+  // clients by matching the id explicitly).
+  useEffect(() => {
+    if (quotationId || !prefillProjectId || !prefillLeadId) return;
+    if (leadProjects.some((p) => String(p.id) === prefillProjectId)) {
+      setProjectId(prefillProjectId);
+    }
+  }, [quotationId, prefillProjectId, prefillLeadId, leadProjects]);
 
   useEffect(() => {
     if (!existing) return;

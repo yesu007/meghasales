@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/lib/currency';
+import { usePermissions } from '@/hooks/usePermissions';
 import ProjectFormDrawer, { blankProjectForm, type ProjectFormState } from '@/components/projects/ProjectFormDrawer';
 
 interface ProjectRow {
@@ -31,6 +33,8 @@ async function fetchProjects(): Promise<ProjectRow[]> {
 
 export default function ProjectsPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canManageQuotations = has('manage_quotations');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<ProjectFormState>(blankProjectForm);
@@ -146,6 +150,15 @@ export default function ProjectsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
+                          {canManageQuotations && p.isActive && (
+                            <Link
+                              href={`/dashboard/quotations/calculator?projectId=${p.id}&leadId=${p.customerId ?? p.leadId}`}
+                              title="New Resource-Based Quotation for this project's budget calculation"
+                              className="text-xs font-medium text-amber-700 hover:text-amber-800"
+                            >
+                              New Quotation
+                            </Link>
+                          )}
                           <button onClick={() => openEdit(p)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
                           {p.isActive ? (
                             <button
