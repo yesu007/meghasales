@@ -445,28 +445,26 @@ export default function ExpensesPage() {
         >
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingId ? 'Edit Expense' : 'Record Expense'}</h2>
           <div className="mb-4">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Expense Type</label>
-            <div className="flex items-center gap-5">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="radio"
-                  name="expenseType"
-                  checked={form.expenseType === 'OVERALL'}
-                  onChange={() => setForm((f) => ({ ...f, expenseType: 'OVERALL', projectId: '' }))}
-                  className="text-amber-600 focus:ring-amber-500"
-                />
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Expense Type</label>
+            <div className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, expenseType: 'OVERALL', projectId: '' }))}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  form.expenseType === 'OVERALL' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
                 Overall Expense
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="radio"
-                  name="expenseType"
-                  checked={form.expenseType === 'PROJECT'}
-                  onChange={() => setForm((f) => ({ ...f, expenseType: 'PROJECT' }))}
-                  className="text-amber-600 focus:ring-amber-500"
-                />
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, expenseType: 'PROJECT' }))}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  form.expenseType === 'PROJECT' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
                 Project Expense
-              </label>
+              </button>
             </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
