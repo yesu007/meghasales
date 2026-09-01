@@ -121,7 +121,7 @@ export default function LeadsPage() {
   }, [searchInput]);
 
   // Build query params
-  const params: Record<string, string> = { page: String(page), size: String(size), sortBy, sortDir };
+  const params: Record<string, string> = { page: String(page), size: String(size), sortBy, sortDir, excludeDirectCustomers: 'true' };
   if (search) params.search = search;
   if (statusFilter) params.status = statusFilter;
   if (sourceFilter) params.leadSource = sourceFilter;

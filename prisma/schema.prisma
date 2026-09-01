@@ -649,6 +649,12 @@ model QuotationRevision {
 model Implementation {
   id               Int       @id @default(autoincrement())
   leadId           Int       @map("lead_id")
+  // Which picker the user chose leadId from at creation — LEAD | CUSTOMER
+  // (both are Lead rows; see the Vertical/ExpenseBudget schema note above
+  // for why "Customer" has no table of its own). Purely a classification
+  // for now — same fields either way — kept for future Lead-vs-Customer
+  // implementation behavior. Not editable after creation, same as leadId.
+  sourceType       String    @default("LEAD") @map("source_type")
   projectName      String?   @map("project_name")
   projectManagerId Int?      @map("project_manager_id")
   status           String    @default("PLANNING")

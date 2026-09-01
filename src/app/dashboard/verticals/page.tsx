@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/lib/currency';
+import BudgetVsActualChart, { ActualExpenseBreakdownEntry } from '@/components/verticals/BudgetVsActualChart';
 
 interface UserOption { id: number; firstName: string; lastName: string }
 interface CurrencyOption { currencyCode: string }
@@ -17,12 +18,19 @@ interface VerticalRow {
   budget: string | null;
   budgetCurrencyCode: string | null;
   isActive: boolean;
+  // Present only when the /api/verticals?includeActuals=true request below
+  // succeeds and the session can view Expense Budgets — see that route's
+  // GET handler. Absent (rather than defaulted here) so a permission gap
+  // is distinguishable from "genuinely zero spend" if this ever needs it;
+  // every read below defaults to 0/[] regardless.
+  actualExpenses?: number;
+  actualExpenseBreakdown?: ActualExpenseBreakdownEntry[];
 }
 
 const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
 
 async function fetchVerticals(): Promise<VerticalRow[]> {
-  const res = await fetch('/api/verticals?includeInactive=true');
+  const res = await fetch('/api/verticals?includeInactive=true&includeActuals=true');
   if (!res.ok) throw new Error('Failed to fetch verticals');
   return res.json();
 }
@@ -46,7 +54,7 @@ export default function VerticalsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(blankForm);
 
-  const { data: verticals = [], isLoading } = useQuery({ queryKey: ['verticals-admin'], queryFn: fetchVerticals });
+  const { data: verticals = [], isLoading, isError } = useQuery({ queryKey: ['verticals-admin'], queryFn: fetchVerticals });
   const { data: users = [] } = useQuery({ queryKey: ['users-for-vertical-head'], queryFn: fetchUsers });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
 
@@ -152,6 +160,8 @@ export default function VerticalsPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         {isLoading ? (
           <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
+        ) : isError ? (
+          <p className="text-center py-16 text-red-500">Failed to load verticals. Please try refreshing the page.</p>
         ) : verticals.length === 0 ? (
           <p className="text-center py-16 text-slate-400">No verticals created yet</p>
         ) : (
@@ -162,48 +172,101 @@ export default function VerticalsPage() {
                   <th className="px-4 py-3 text-left font-semibold text-white">Vertical</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Head</th>
                   <th className="px-4 py-3 text-right font-semibold text-white">Budget</th>
+                  <th className="px-4 py-3 text-right font-semibold text-white">Actual Expenses</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Budget Usage</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
-                {verticals.map((v, idx) => (
-                  <tr key={v.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-slate-800">{v.name}</p>
-                      <p className="text-xs text-slate-400">{v.code}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{v.headName || '—'}</td>
-                    <td className="px-4 py-3 text-right text-slate-700">{v.budget ? formatCurrency(v.budget, v.budgetCurrencyCode || 'INR') : '—'}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${v.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                        {v.isActive ? 'Active' : 'Deleted'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => openEdit(v)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
-                        {v.isActive ? (
-                          <button
-                            onClick={() => { if (window.confirm(`Delete vertical "${v.name}"?`)) toggleActive.mutate({ id: v.id, isActive: false }); }}
-                            className="text-xs font-medium text-slate-500 hover:text-red-600"
-                          >
-                            Delete
-                          </button>
-                        ) : (
-                          <button onClick={() => toggleActive.mutate({ id: v.id, isActive: true })} className="text-xs font-medium text-green-700 hover:text-green-800">
-                            Reactivate
-                          </button>
+                {verticals.map((v, idx) => {
+                  const budgetCurrency = v.budgetCurrencyCode || 'INR';
+                  const budgetNum = v.budget != null ? Number(v.budget) : null;
+                  const actualExpenses = v.actualExpenses ?? 0;
+                  const variance = budgetNum != null && budgetNum > 0 ? actualExpenses - budgetNum : null;
+                  const utilizationPercent = budgetNum != null && budgetNum > 0 ? (actualExpenses / budgetNum) * 100 : null;
+                  const isOverBudget = variance !== null && variance > 0;
+                  return (
+                    <tr key={v.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-slate-800">{v.name}</p>
+                        <p className="text-xs text-slate-400">{v.code}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{v.headName || '—'}</td>
+                      <td className="px-4 py-3 text-right text-slate-700">{budgetNum != null ? formatCurrency(budgetNum, budgetCurrency) : '—'}</td>
+                      <td className="px-4 py-3 text-right">
+                        <p className="text-slate-700">{formatCurrency(actualExpenses, budgetCurrency)}</p>
+                        {variance !== null && (
+                          <p className={`text-xs mt-0.5 ${variance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {variance > 0
+                              ? `▲ ${formatCurrency(variance, budgetCurrency)} over budget`
+                              : `${formatCurrency(Math.abs(variance), budgetCurrency)} remaining`}
+                          </p>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3">
+                        {utilizationPercent !== null ? (
+                          <div
+                            className="w-28"
+                            title={`Budget: ${formatCurrency(budgetNum!, budgetCurrency)}\nActual: ${formatCurrency(actualExpenses, budgetCurrency)}\nRemaining: ${formatCurrency(Math.max(budgetNum! - actualExpenses, 0), budgetCurrency)}\nUsage: ${utilizationPercent.toFixed(1)}%`}
+                          >
+                            <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${isOverBudget ? 'bg-red-600' : 'bg-amber-600'}`}
+                                style={{ width: `${Math.min(utilizationPercent, 100)}%` }}
+                              />
+                            </div>
+                            <p className={`text-[11px] mt-0.5 ${isOverBudget ? 'text-red-600 font-medium' : 'text-slate-500'}`}>
+                              {isOverBudget ? `${utilizationPercent.toFixed(1)}% — Over Budget` : `${utilizationPercent.toFixed(1)}%`}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-xs">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${v.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {v.isActive ? 'Active' : 'Deleted'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => openEdit(v)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
+                          {v.isActive ? (
+                            <button
+                              onClick={() => { if (window.confirm(`Delete vertical "${v.name}"?`)) toggleActive.mutate({ id: v.id, isActive: false }); }}
+                              className="text-xs font-medium text-slate-500 hover:text-red-600"
+                            >
+                              Delete
+                            </button>
+                          ) : (
+                            <button onClick={() => toggleActive.mutate({ id: v.id, isActive: true })} className="text-xs font-medium text-green-700 hover:text-green-800">
+                              Reactivate
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {!isLoading && !isError && verticals.length > 0 && (
+        <BudgetVsActualChart
+          verticals={verticals.map((v) => ({
+            id: v.id,
+            name: v.name,
+            budget: v.budget,
+            budgetCurrencyCode: v.budgetCurrencyCode,
+            actualExpenses: v.actualExpenses ?? 0,
+            actualExpenseBreakdown: v.actualExpenseBreakdown ?? [],
+          }))}
+        />
+      )}
     </div>
   );
 }
