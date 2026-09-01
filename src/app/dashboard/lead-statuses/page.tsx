@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { STATUS_COLOR_PRESETS } from '@/lib/leadStatus';
 
@@ -30,7 +31,23 @@ export default function LeadStatusesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ label: '', color: '', sortOrder: 0 });
 
+  // Search — same debounced searchInput/search pattern as the Leads module
+  // (src/app/dashboard/leads/page.tsx), but applied client-side since this
+  // list has no server-side pagination to re-fetch against.
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
   const { data: options = [], isLoading } = useQuery({ queryKey: ['lead-status-options-admin'], queryFn: fetchLeadStatusOptions });
+  const filteredOptions = search
+    ? options.filter((o) => {
+        const term = search.trim().toLowerCase();
+        return o.label.toLowerCase().includes(term) || o.code.toLowerCase().includes(term);
+      })
+    : options;
 
   const openEdit = (o: LeadStatusOptionRow) => {
     setEditingId(o.id);
@@ -65,9 +82,35 @@ export default function LeadStatusesPage() {
         <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Label, color, and display order for the lead pipeline — the 6 stages themselves are fixed</p>
       </div>
 
+      {/* Search — same bordered-card placement above the table as Leads. */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by label, stage..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            />
+            {searchInput && (
+              <button onClick={() => { setSearchInput(''); setSearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         {isLoading ? (
           <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
+        ) : filteredOptions.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-lg font-medium text-slate-600">No statuses found</p>
+            <p className="text-sm text-slate-400 mt-1">Try adjusting your search</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -81,7 +124,7 @@ export default function LeadStatusesPage() {
                 </tr>
               </thead>
               <tbody>
-                {options.map((o, idx) => (
+                {filteredOptions.map((o, idx) => (
                   <tr key={o.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                     {editingId === o.id ? (
                       <>

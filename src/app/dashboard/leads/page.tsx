@@ -43,6 +43,7 @@ interface Lead {
   whatsapp: string | null;
   status: string;
   leadSource: string;
+  businessVerticals: string | null;
   assignedBaId: number | null;
   assignedBaName: string | null;
   createdAt: string;
@@ -50,6 +51,14 @@ interface Lead {
   nextFollowUpDate: string | null;
   followUpCount: number;
   isOverdue: boolean;
+}
+
+// Lead.businessVerticals stores a JSON-encoded vertical name (see
+// LeadFormDrawer's own fetchLeadForEdit / implementations/page.tsx's
+// identical helper) — same decode here, just displayed read-only.
+function parseVerticalName(raw: string | null): string | null {
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return raw; }
 }
 
 interface LeadStats {
@@ -394,8 +403,9 @@ export default function LeadsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-900">
                   <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Project</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('companyName')} className="flex items-center gap-1 font-semibold text-white">Company <SortIcon col="companyName" /></button></th>
-                    <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Project Name</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Vertical</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('contactPerson')} className="flex items-center gap-1 font-semibold text-white">Contact <SortIcon col="contactPerson" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Designation</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Mobile</th>
@@ -412,10 +422,11 @@ export default function LeadsPage() {
                 <tbody>
                   {leads.map((lead, idx) => (
                     <tr key={lead.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.projectName || '—'}</td>
                       <td className="px-4 py-3 font-medium text-slate-800">
                         <Link href={`/dashboard/leads/${lead.id}`} className="hover:text-amber-600 hover:underline">{lead.companyName}</Link>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.projectName || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{parseVerticalName(lead.businessVerticals) || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{lead.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.designation || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.mobile || '—'}</td>

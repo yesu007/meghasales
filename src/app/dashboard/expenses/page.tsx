@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, EyeIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, EyeIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
@@ -196,10 +196,26 @@ export default function ExpensesPage() {
   const [linkForm, setLinkForm] = useState({ categoryId: '', subCategoryId: '' });
   const [editingLinkId, setEditingLinkId] = useState<number | null>(null);
 
+  // Expense Categories search — same debounced searchInput/search pattern
+  // as the Leads/Customer modules, applied client-side (this table has no
+  // server-side pagination to re-fetch against, same as Verticals/Packages).
+  const [categorySearchInput, setCategorySearchInput] = useState('');
+  const [categorySearch, setCategorySearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setCategorySearch(categorySearchInput), 400);
+    return () => clearTimeout(t);
+  }, [categorySearchInput]);
+
   const { data, isLoading } = useQuery({ queryKey: ['expenses', statusFilter, page, size], queryFn: () => fetchExpenses(statusFilter, page, size) });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
   const { data: categoryLinks = [] } = useQuery({ queryKey: ['expense-category-links'], queryFn: fetchCategoryLinks });
+  const filteredCategoryLinks = categorySearch
+    ? categoryLinks.filter((l) => {
+        const term = categorySearch.trim().toLowerCase();
+        return l.categoryName.toLowerCase().includes(term) || l.subCategoryName.toLowerCase().includes(term);
+      })
+    : categoryLinks;
   const { data: customers = [] } = useQuery({ queryKey: ['customers-for-expense-vendor'], queryFn: fetchCustomers });
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
@@ -608,6 +624,27 @@ export default function ExpensesPage() {
           </button>
         </div>
 
+        {/* Search — same bordered-card layout, icon, and clear button as
+            the Leads/Customer modules; filters by Category and Sub Category
+            name. */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+          <div className="relative flex-1">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by category, sub category..."
+              value={categorySearchInput}
+              onChange={(e) => setCategorySearchInput(e.target.value)}
+              className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            />
+            {categorySearchInput && (
+              <button onClick={() => { setCategorySearchInput(''); setCategorySearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
         {showLinkForm && (
           <form
             onSubmit={(e) => { e.preventDefault(); if (!linkForm.categoryId || !linkForm.subCategoryId) { toast.error('Category and Sub Category are required'); return; } saveLink.mutate(); }}
@@ -692,6 +729,11 @@ export default function ExpensesPage() {
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           {categoryLinks.length === 0 ? (
             <p className="text-center py-16 text-slate-400">No Category / Sub Category mappings yet</p>
+          ) : filteredCategoryLinks.length === 0 ? (
+            <div className="text-center py-16">
+              <p className="text-lg font-medium text-slate-600">No categories found</p>
+              <p className="text-sm text-slate-400 mt-1">Try adjusting your search</p>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -703,7 +745,7 @@ export default function ExpensesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {categoryLinks.map((l, idx) => (
+                  {filteredCategoryLinks.map((l, idx) => (
                     <tr key={l.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                       <td className="px-4 py-3 text-slate-600">{l.categoryName}</td>
                       <td className="px-4 py-3 font-medium text-slate-800">{l.subCategoryName}</td>
