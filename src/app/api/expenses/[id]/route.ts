@@ -70,6 +70,17 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       }
     }
 
+    let projectId: number | null | undefined = undefined;
+    if (body.projectId !== undefined) {
+      if (body.projectId === null || body.projectId === '') {
+        projectId = null;
+      } else {
+        const project = await prisma.project.findUnique({ where: { id: parseInt(body.projectId) } });
+        if (!project) return NextResponse.json({ message: 'Selected project not found' }, { status: 404 });
+        projectId = project.id;
+      }
+    }
+
     const nextStatus = body.status !== undefined ? body.status : existing.status;
     const expense = await prisma.expense.update({
       where: { id },
@@ -77,6 +88,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.categoryId !== undefined && { categoryId: parseInt(body.categoryId) }),
         ...(subCategoryId !== undefined && { subCategoryId }),
         ...(vendorUpdate !== undefined && vendorUpdate),
+        ...(projectId !== undefined && { projectId }),
         ...(body.expenseDate !== undefined && { expenseDate: new Date(body.expenseDate) }),
         ...(body.amount !== undefined && { amount: Number(body.amount) }),
         ...(body.currencyCode !== undefined && { currencyCode: body.currencyCode }),

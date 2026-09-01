@@ -19,6 +19,10 @@ interface CurrencyOption { currencyCode: string }
 // src/app/dashboard/customers/page.tsx and the leadId dropdown in
 // InvoiceListPage.tsx.
 interface CustomerOption { id: number; companyName: string; contactPerson: string }
+// Project dropdown source, shown only when the "Project Expense" toggle is
+// selected — same GET /api/projects (default isActive: true) used by the
+// Lead/Demo project pickers.
+interface ProjectOption { id: number; projectName: string }
 interface ExpenseRow {
   id: number;
   expenseNumber: string;
@@ -28,6 +32,7 @@ interface ExpenseRow {
   subCategoryName: string | null;
   vendor: string | null;
   vendorLeadId: number | null;
+  projectId: number | null;
   expenseDate: string;
   amount: string;
   currencyCode: string;
@@ -162,6 +167,11 @@ async function fetchCustomers(): Promise<CustomerOption[]> {
   const data = await res.json();
   return data.content;
 }
+async function fetchProjects(): Promise<ProjectOption[]> {
+  const res = await fetch('/api/projects');
+  if (!res.ok) throw new Error('Failed to fetch projects');
+  return res.json();
+}
 async function fetchCategoryLinks(): Promise<CategoryLink[]> {
   const res = await fetch('/api/expenses/category-links');
   if (!res.ok) throw new Error('Failed to fetch category links');
@@ -172,7 +182,8 @@ async function fetchCategoryLinks(): Promise<CategoryLink[]> {
 }
 
 const blankForm = {
-  categoryId: '', subCategoryId: '', vendorLeadId: '', expenseDate: dayjs().format('YYYY-MM-DD'), amount: '', currencyCode: 'INR',
+  categoryId: '', subCategoryId: '', vendorLeadId: '', expenseType: 'OVERALL' as 'OVERALL' | 'PROJECT', projectId: '',
+  expenseDate: dayjs().format('YYYY-MM-DD'), amount: '', currencyCode: 'INR',
   exchangeRate: '', paymentMethod: '', referenceNumber: '', notes: '', status: 'PENDING',
 };
 
@@ -217,6 +228,7 @@ export default function ExpensesPage() {
       })
     : categoryLinks;
   const { data: customers = [] } = useQuery({ queryKey: ['customers-for-expense-vendor'], queryFn: fetchCustomers });
+  const { data: projects = [] } = useQuery({ queryKey: ['projects-for-expense'], queryFn: fetchProjects });
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
 
@@ -226,6 +238,8 @@ export default function ExpensesPage() {
       categoryId: String(row.categoryId),
       subCategoryId: row.subCategoryId ? String(row.subCategoryId) : '',
       vendorLeadId: row.vendorLeadId ? String(row.vendorLeadId) : '',
+      expenseType: row.projectId ? 'PROJECT' : 'OVERALL',
+      projectId: row.projectId ? String(row.projectId) : '',
       expenseDate: dayjs(row.expenseDate).format('YYYY-MM-DD'),
       amount: row.amount,
       currencyCode: row.currencyCode,
@@ -242,7 +256,13 @@ export default function ExpensesPage() {
     mutationFn: async () => {
       const url = editingId ? `/api/expenses/${editingId}` : '/api/expenses';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      // expenseType is a client-only toggle (not a stored field) — when
+      // Overall is selected, projectId is force-cleared here regardless of
+      // whatever it was left at, so switching away from Project Expense
+      // can't leak a stale selection into the saved record.
+      const { expenseType, ...rest } = form;
+      const payload = { ...rest, projectId: expenseType === 'PROJECT' ? form.projectId : '' };
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save expense'); }
       return res.json();
     },
@@ -415,11 +435,40 @@ export default function ExpensesPage() {
               toast.error('Sub-category is required');
               return;
             }
+            if (form.expenseType === 'PROJECT' && !form.projectId) {
+              toast.error('Select a project, or switch to Overall Expense');
+              return;
+            }
             save.mutate();
           }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
         >
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingId ? 'Edit Expense' : 'Record Expense'}</h2>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-700 mb-1">Expense Type</label>
+            <div className="flex items-center gap-5">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="expenseType"
+                  checked={form.expenseType === 'OVERALL'}
+                  onChange={() => setForm((f) => ({ ...f, expenseType: 'OVERALL', projectId: '' }))}
+                  className="text-amber-600 focus:ring-amber-500"
+                />
+                Overall Expense
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="expenseType"
+                  checked={form.expenseType === 'PROJECT'}
+                  onChange={() => setForm((f) => ({ ...f, expenseType: 'PROJECT' }))}
+                  className="text-amber-600 focus:ring-amber-500"
+                />
+                Project Expense
+              </label>
+            </div>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
@@ -441,6 +490,15 @@ export default function ExpensesPage() {
                 <select value={form.vendorLeadId} onChange={(e) => setForm((f) => ({ ...f, vendorLeadId: e.target.value }))} className={inputCls}>
                   <option value="">Select customer</option>
                   {customers.map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+                </select>
+              </div>
+            )}
+            {form.expenseType === 'PROJECT' && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                <select value={form.projectId} onChange={(e) => setForm((f) => ({ ...f, projectId: e.target.value }))} className={inputCls}>
+                  <option value="">Select project</option>
+                  {projects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
                 </select>
               </div>
             )}
