@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 interface LeadSourceRow {
@@ -28,7 +28,23 @@ export default function LeadSourcesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(blankForm);
 
+  // Search — same debounced searchInput/search pattern as the Leads module
+  // (src/app/dashboard/leads/page.tsx), but applied client-side since this
+  // list has no server-side pagination to re-fetch against.
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
   const { data: sources = [], isLoading } = useQuery({ queryKey: ['lead-sources-admin'], queryFn: fetchLeadSources });
+  const filteredSources = search
+    ? sources.filter((s) => {
+        const term = search.trim().toLowerCase();
+        return s.name.toLowerCase().includes(term) || s.code.toLowerCase().includes(term);
+      })
+    : sources;
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
 
@@ -85,6 +101,27 @@ export default function LeadSourcesPage() {
         </button>
       </div>
 
+      {/* Search — same bordered-card placement above the table as Leads. */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by source, code..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            />
+            {searchInput && (
+              <button onClick={() => { setSearchInput(''); setSearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {showForm && (
         <form
           onSubmit={(e) => { e.preventDefault(); if (!form.name.trim()) { toast.error('Source name is required'); return; } save.mutate(); }}
@@ -111,6 +148,11 @@ export default function LeadSourcesPage() {
           <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
         ) : sources.length === 0 ? (
           <p className="text-center py-16 text-slate-400">No sources created yet</p>
+        ) : filteredSources.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-lg font-medium text-slate-600">No sources found</p>
+            <p className="text-sm text-slate-400 mt-1">Try adjusting your search</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -122,7 +164,7 @@ export default function LeadSourcesPage() {
                 </tr>
               </thead>
               <tbody>
-                {sources.map((s, idx) => (
+                {filteredSources.map((s, idx) => (
                   <tr key={s.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800">{s.name}</p>

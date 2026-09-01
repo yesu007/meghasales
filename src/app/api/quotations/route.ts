@@ -112,6 +112,7 @@ export async function GET(request: NextRequest) {
           { lead: { companyName: { contains: searchTerm, mode: 'insensitive' } } },
           { lead: { contactPerson: { contains: searchTerm, mode: 'insensitive' } } },
           { businessModule: { contains: searchTerm, mode: 'insensitive' } },
+          { projectName: { contains: searchTerm, mode: 'insensitive' } },
         ],
       });
     }

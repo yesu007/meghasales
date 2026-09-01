@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
-import { validateEventDocumentFile, uploadEventDocumentBlob } from '@/lib/eventDocumentUpload';
+import { validateEventDocumentFile, uploadEventDocumentBlob, isBlobConfigured } from '@/lib/eventDocumentUpload';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 export async function POST(request: NextRequest, { params }: { params: { id: string; eventId: string } }) {
   const denied = await requirePermission('manage_lead_events');
   if (denied) return denied;
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  if (!isBlobConfigured()) {
     return NextResponse.json(
       { message: 'File upload is not configured (missing BLOB_READ_WRITE_TOKEN) — provision a Vercel Blob store to enable attachments' },
       { status: 503 }

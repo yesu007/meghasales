@@ -52,6 +52,7 @@ interface Lead {
   status: string;
   customerStatus: string;
   leadSource: string;
+  businessVerticals: string | null;
   assignedBaId: number | null;
   assignedBaName: string | null;
   createdAt: string;
@@ -59,6 +60,14 @@ interface Lead {
   nextFollowUpDate: string | null;
   followUpCount: number;
   isOverdue: boolean;
+}
+
+// Lead.businessVerticals stores a JSON-encoded vertical name (see
+// LeadFormDrawer's own fetchLeadForEdit / the Leads page's identical
+// helper) — same decode here, just displayed read-only.
+function parseVerticalName(raw: string | null): string | null {
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return raw; }
 }
 
 interface UserOption {
@@ -326,8 +335,9 @@ export default function CustomersPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-900">
                   <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Project</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('companyName')} className="flex items-center gap-1 font-semibold text-white">Company <SortIcon col="companyName" /></button></th>
-                    <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Project Name</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Vertical</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('contactPerson')} className="flex items-center gap-1 font-semibold text-white">Contact <SortIcon col="contactPerson" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Mobile</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Source</th>
@@ -340,10 +350,11 @@ export default function CustomersPage() {
                 <tbody>
                   {customers.map((customer, idx) => (
                     <tr key={customer.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{customer.projectName || '—'}</td>
                       <td className="px-4 py-3 font-medium text-slate-800">
                         <Link href={`/dashboard/customers/${customer.id}`} className="hover:text-amber-600 hover:underline">{customer.companyName}</Link>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{customer.projectName || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{parseVerticalName(customer.businessVerticals) || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{customer.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{customer.mobile || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell capitalize">{(customer.leadSource || '').replace(/_/g, ' ').toLowerCase()}</td>
