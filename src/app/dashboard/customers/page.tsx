@@ -335,7 +335,6 @@ export default function CustomersPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-900">
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Project</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('companyName')} className="flex items-center gap-1 font-semibold text-white">Company <SortIcon col="companyName" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Vertical</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('contactPerson')} className="flex items-center gap-1 font-semibold text-white">Contact <SortIcon col="contactPerson" /></button></th>
@@ -350,7 +349,6 @@ export default function CustomersPage() {
                 <tbody>
                   {customers.map((customer, idx) => (
                     <tr key={customer.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{customer.projectName || '—'}</td>
                       <td className="px-4 py-3 font-medium text-slate-800">
                         <Link href={`/dashboard/customers/${customer.id}`} className="hover:text-amber-600 hover:underline">{customer.companyName}</Link>
                       </td>
