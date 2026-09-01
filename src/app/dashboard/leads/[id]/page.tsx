@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
-import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, PhoneIcon, BuildingLibraryIcon, Squares2X2Icon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, PhoneIcon, BuildingLibraryIcon, Squares2X2Icon, RectangleStackIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
@@ -16,6 +16,7 @@ import ActivityTimeline from '@/components/leads/ActivityTimeline';
 import LeadDocumentsTab from '@/components/leads/LeadDocumentsTab';
 import FollowUpsTab from '@/components/leads/FollowUpsTab';
 import CompanyTab from '@/components/leads/CompanyTab';
+import ProjectsTab from '@/components/leads/ProjectsTab';
 
 interface Lead {
   id: number;
@@ -186,6 +187,12 @@ export default function LeadDetailPage() {
               'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
               selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             )}>
+              <RectangleStackIcon className="h-4 w-4" /> Projects
+            </Tab>
+            <Tab className={({ selected }) => classNames(
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+              selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}>
               <PhoneIcon className="h-4 w-4" /> Follow-ups
             </Tab>
             <Tab
@@ -239,6 +246,9 @@ export default function LeadDetailPage() {
                   <div className="sm:col-span-2"><p className="text-xs font-medium text-slate-500 uppercase">Notes</p><p className="text-sm text-slate-800 mt-1 whitespace-pre-wrap">{lead.notes}</p></div>
                 )}
               </div>
+            </Tab.Panel>
+            <Tab.Panel>
+              <ProjectsTab leadId={lead.id} />
             </Tab.Panel>
             <Tab.Panel>
               <FollowUpsTab leadId={lead.id} />

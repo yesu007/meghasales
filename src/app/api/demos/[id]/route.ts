@@ -65,6 +65,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.recordingUrl !== undefined && { recordingUrl: body.recordingUrl }),
         ...(body.stakeholderFeedback !== undefined && { stakeholderFeedback: body.stakeholderFeedback }),
         ...(body.approvalStatus !== undefined && { approvalStatus: body.approvalStatus }),
+        ...(body.nextFollowUpDate !== undefined && { nextFollowUpDate: body.nextFollowUpDate ? new Date(body.nextFollowUpDate) : null }),
       },
     });
 
