@@ -1,14 +1,18 @@
 'use client';
 
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, EyeIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 
 interface ExpenseSubCategory { id: number; categoryId: number; name: string; isActive: boolean }
 interface ExpenseCategory { id: number; name: string; description: string | null; isActive: boolean; subCategories: ExpenseSubCategory[] }
+// A standalone (Category, Sub Category) pairing created via the "+ Add"
+// form — independent of ExpenseSubCategory's own categoryId ownership.
+interface CategoryLink { id: number; categoryId: number; categoryName: string; subCategoryId: number; subCategoryName: string }
 interface CurrencyOption { currencyCode: string }
 interface ExpenseRow {
   id: number;
@@ -46,6 +50,86 @@ const STATUS_COLORS: Record<string, string> = {
 const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'UPI', 'OTHER'];
 const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
 
+// Small reusable modal shell — no dialog component exists elsewhere in the
+// app, so this stays local to the Expenses page. Used only for the existing
+// Category/Sub Category forms when opened from inside the "+ Add" mapping
+// form's dropdowns; the forms themselves are unchanged.
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-lg border border-slate-200 w-full max-w-md p-4 sm:p-5">
+        <h2 className="text-base font-semibold text-slate-800 mb-3">{title}</h2>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// Dropdown with an extra "+ Add …" action styled like the page's other
+// primary buttons (e.g. "New Expense") — a plain <option> can't carry that
+// styling, so the Category/Sub Category selects in the mapping form below
+// use this custom dropdown instead of a native <select>.
+function AddableSelect({
+  value, onChange, options, placeholder, onAdd, addLabel, disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  placeholder: string;
+  onAdd: () => void;
+  addLabel: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.value === value);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className={`${inputCls} flex items-center justify-between text-left ${disabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white'}`}
+      >
+        <span className={selected ? 'text-slate-800' : 'text-slate-400'}>{selected ? selected.label : placeholder}</span>
+        <ChevronDownIcon className="h-4 w-4 text-slate-400 shrink-0" />
+      </button>
+      {open && !disabled && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg flex flex-col max-h-56">
+            {/* Only this options list scrolls — the "+ Add …" button below
+                stays fixed at the bottom of the dropdown, never scrolling
+                out of view. */}
+            <div className="overflow-y-auto flex-1">
+              {options.length === 0 && <p className="px-3 py-2 text-sm text-slate-400">No options yet</p>}
+              {options.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => { onChange(o.value); setOpen(false); }}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-amber-50 ${o.value === value ? 'bg-amber-50 text-amber-700 font-medium' : 'text-slate-700'}`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <div className="border-t border-slate-200 p-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => { setOpen(false); onAdd(); }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+              >
+                <PlusIcon className="h-4 w-4" /> {addLabel}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 async function fetchExpenses(status: string, page: number, size: number): Promise<ExpenseListResponse> {
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (status) params.set('status', status);
@@ -62,6 +146,14 @@ async function fetchCurrencies(): Promise<CurrencyOption[]> {
   const res = await fetch('/api/currencies?activeOnly=true');
   if (!res.ok) throw new Error('Failed to fetch currencies');
   return res.json();
+}
+async function fetchCategoryLinks(): Promise<CategoryLink[]> {
+  const res = await fetch('/api/expenses/category-links');
+  if (!res.ok) throw new Error('Failed to fetch category links');
+  const links = await res.json();
+  return links.map((l: any) => ({
+    id: l.id, categoryId: l.categoryId, categoryName: l.category.name, subCategoryId: l.subCategoryId, subCategoryName: l.subCategory.name,
+  }));
 }
 
 const blankForm = {
@@ -83,10 +175,16 @@ export default function ExpensesPage() {
   const [showSubCategoryForm, setShowSubCategoryForm] = useState(false);
   const [subCategoryForm, setSubCategoryForm] = useState({ categoryId: '', name: '' });
   const [editingSubCategoryId, setEditingSubCategoryId] = useState<number | null>(null);
+  // "+ Add" — a standalone Category/Sub Category link, separate from the
+  // Category and Sub Category forms above (which are untouched).
+  const [showLinkForm, setShowLinkForm] = useState(false);
+  const [linkForm, setLinkForm] = useState({ categoryId: '', subCategoryId: '' });
+  const [editingLinkId, setEditingLinkId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({ queryKey: ['expenses', statusFilter, page, size], queryFn: () => fetchExpenses(statusFilter, page, size) });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
+  const { data: categoryLinks = [] } = useQuery({ queryKey: ['expense-category-links'], queryFn: fetchCategoryLinks });
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
 
@@ -155,7 +253,14 @@ export default function ExpensesPage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save category'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-categories'] }); toast.success(editingCategoryId ? 'Category updated' : 'Category created'); closeCategoryForm(); },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['expense-categories'] });
+      toast.success(editingCategoryId ? 'Category updated' : 'Category created');
+      // Newly created categories are auto-selected into the "+ Add" mapping
+      // form, since that's the only place this popup is opened from now.
+      if (!editingCategoryId) setLinkForm({ categoryId: String(created.id), subCategoryId: '' });
+      closeCategoryForm();
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -183,7 +288,15 @@ export default function ExpensesPage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save sub-category'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-categories'] }); toast.success(editingSubCategoryId ? 'Sub-category updated' : 'Sub-category created'); closeSubCategoryForm(); },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['expense-categories'] });
+      toast.success(editingSubCategoryId ? 'Sub-category updated' : 'Sub-category created');
+      // Newly created sub-categories are auto-selected into the "+ Add"
+      // mapping form (both fields, since a sub-category always belongs to
+      // exactly one category, regardless of what was picked in the popup).
+      if (!editingSubCategoryId) setLinkForm({ categoryId: String(created.categoryId), subCategoryId: String(created.id) });
+      closeSubCategoryForm();
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -206,6 +319,37 @@ export default function ExpensesPage() {
 
   const selectedCategory = categories.find((c) => c.id === Number(form.categoryId));
   const subCategoryOptions = selectedCategory?.subCategories || [];
+
+  const closeLinkForm = () => { setShowLinkForm(false); setEditingLinkId(null); setLinkForm({ categoryId: '', subCategoryId: '' }); };
+  const openAddLink = () => { setEditingLinkId(null); setLinkForm({ categoryId: '', subCategoryId: '' }); setShowLinkForm(true); };
+  const openViewOrEditLink = (l: CategoryLink) => { setEditingLinkId(l.id); setLinkForm({ categoryId: String(l.categoryId), subCategoryId: String(l.subCategoryId) }); setShowLinkForm(true); };
+
+  const saveLink = useMutation({
+    mutationFn: async () => {
+      const url = editingLinkId ? `/api/expenses/category-links/${editingLinkId}` : '/api/expenses/category-links';
+      const method = editingLinkId ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(linkForm) });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save'); }
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-category-links'] }); toast.success(editingLinkId ? 'Updated' : 'Added'); closeLinkForm(); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteLink = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/expenses/category-links/${id}`, { method: 'DELETE' });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to delete'); }
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expense-category-links'] }); toast.success('Deleted'); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+  const handleDeleteLink = (l: CategoryLink) => {
+    if (window.confirm(`Delete "${l.categoryName} → ${l.subCategoryName}"? This cannot be undone.`)) deleteLink.mutate(l.id);
+  };
+
+  const linkSelectedCategory = categories.find((c) => c.id === Number(linkForm.categoryId));
+  const linkSubCategoryOptions = linkSelectedCategory?.subCategories || [];
 
   const expenses = data?.content || [];
   const totalElements = data?.totalElements || 0;
@@ -426,135 +570,133 @@ export default function ExpensesPage() {
         )}
       </div>
 
-      {/* Expense Categories — table layout/header/row/action-button style
-          matches the Leads main table (src/app/dashboard/leads/page.tsx)
-          exactly; only the columns and data are Expense Category's own. */}
+      {/* Expense Categories — only the Category/Sub Category mapping table
+          is shown ("+ Add" below). The existing Category and Sub Category
+          forms are unchanged and only ever reachable as popups from inside
+          the mapping form's dropdowns; they never render a table of their
+          own here. Editing/deleting an individual Sub Category directly
+          (outside of a mapping) still has no entry point — intentionally
+          left for a follow-up; the underlying handlers/mutations remain in
+          place, just unused by this JSX. */}
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h2 className="text-lg font-semibold text-slate-800">Expense Categories</h2>
-          <button onClick={openAddCategory} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-            <PlusIcon className="h-4 w-4" /> Add Category
+          <button
+            onClick={openAddLink}
+            className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+          >
+            <PlusIcon className="h-4 w-4" /> Add
           </button>
         </div>
 
+        {showLinkForm && (
+          <form
+            onSubmit={(e) => { e.preventDefault(); if (!linkForm.categoryId || !linkForm.subCategoryId) { toast.error('Category and Sub Category are required'); return; } saveLink.mutate(); }}
+            className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 gap-3"
+          >
+            <AddableSelect
+              value={linkForm.categoryId}
+              onChange={(v) => setLinkForm({ categoryId: v, subCategoryId: '' })}
+              options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+              placeholder="Select category"
+              onAdd={openAddCategory}
+              addLabel="Add Category"
+            />
+            <AddableSelect
+              value={linkForm.subCategoryId}
+              onChange={(v) => setLinkForm((f) => ({ ...f, subCategoryId: v }))}
+              options={linkSubCategoryOptions.map((s) => ({ value: String(s.id), label: s.name }))}
+              placeholder={linkForm.categoryId ? 'Select sub-category' : 'Select a category first'}
+              onAdd={openAddSubCategory}
+              addLabel="Add Sub Category"
+              disabled={!linkForm.categoryId}
+            />
+            <div className="col-span-2 flex justify-end gap-2">
+              <button type="button" onClick={closeLinkForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+              <button type="submit" disabled={saveLink.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                {saveLink.isPending ? 'Saving...' : editingLinkId ? 'Save Changes' : 'Save'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Existing Category form, unchanged — now only opened as a popup
+            from the "+ Add Category" option above. */}
         {showCategoryForm && (
-          <form
-            onSubmit={(e) => { e.preventDefault(); if (!categoryForm.name) { toast.error('Name is required'); return; } saveCategory.mutate(); }}
-            className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 gap-3"
-          >
-            <input placeholder="Name" value={categoryForm.name} onChange={(e) => setCategoryForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} />
-            <input placeholder="Description (optional)" value={categoryForm.description} onChange={(e) => setCategoryForm((f) => ({ ...f, description: e.target.value }))} className={inputCls} />
-            <div className="col-span-2 flex justify-end gap-2">
-              <button type="button" onClick={closeCategoryForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-              <button type="submit" disabled={saveCategory.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-                {saveCategory.isPending ? 'Saving...' : editingCategoryId ? 'Save Changes' : 'Add'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          {categories.length === 0 ? (
-            <p className="text-center py-16 text-slate-400">No expense categories yet</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-900">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold text-white">Name</th>
-                    <th className="px-4 py-3 text-left font-semibold text-white">Sub Categories</th>
-                    <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {categories.map((c, idx) => (
-                    <tr key={c.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                      <td className="px-4 py-3 font-medium text-slate-800 align-top whitespace-nowrap">{c.name}</td>
-                      <td className="px-4 py-3 text-slate-600">{c.subCategories.length > 0 ? c.subCategories.map((s) => s.name).join(', ') : '—'}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => openEditCategory(c)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View">
-                            <EyeIcon className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => openEditCategory(c)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => handleDeleteCategory(c)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Expense Sub Categories — same table treatment as Categories above,
-          flattened across all categories (allSubCategories). Deleting a
-          sub-category here never touches its parent category row. */}
-      <div className="space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-800">Expense Sub Categories</h2>
-          <button onClick={openAddSubCategory} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-            <PlusIcon className="h-4 w-4" /> Add Sub Category
-          </button>
-        </div>
-
-        {showSubCategoryForm && (
-          <form
-            onSubmit={(e) => { e.preventDefault(); if (!subCategoryForm.categoryId || !subCategoryForm.name) { toast.error('Category and name are required'); return; } saveSubCategory.mutate(); }}
-            className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 gap-3"
-          >
-            <select
-              value={subCategoryForm.categoryId}
-              onChange={(e) => setSubCategoryForm((f) => ({ ...f, categoryId: e.target.value }))}
-              disabled={!!editingSubCategoryId}
-              className={`${inputCls} ${editingSubCategoryId ? 'bg-slate-100 text-slate-500' : ''}`}
+          <Modal title={editingCategoryId ? 'Edit Category' : 'Add Category'} onClose={closeCategoryForm}>
+            <form
+              onSubmit={(e) => { e.preventDefault(); if (!categoryForm.name) { toast.error('Name is required'); return; } saveCategory.mutate(); }}
+              className="grid grid-cols-2 gap-3"
             >
-              <option value="">Select category</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <input placeholder="Sub-category name" value={subCategoryForm.name} onChange={(e) => setSubCategoryForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} />
-            <div className="col-span-2 flex justify-end gap-2">
-              <button type="button" onClick={closeSubCategoryForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-              <button type="submit" disabled={saveSubCategory.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-                {saveSubCategory.isPending ? 'Saving...' : editingSubCategoryId ? 'Save Changes' : 'Add'}
-              </button>
-            </div>
-          </form>
+              <input placeholder="Name" value={categoryForm.name} onChange={(e) => setCategoryForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} />
+              <input placeholder="Description (optional)" value={categoryForm.description} onChange={(e) => setCategoryForm((f) => ({ ...f, description: e.target.value }))} className={inputCls} />
+              <div className="col-span-2 flex justify-end gap-2">
+                <button type="button" onClick={closeCategoryForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+                <button type="submit" disabled={saveCategory.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                  {saveCategory.isPending ? 'Saving...' : editingCategoryId ? 'Save Changes' : 'Add'}
+                </button>
+              </div>
+            </form>
+          </Modal>
         )}
 
+        {/* Existing Sub Category form, unchanged — now only opened as a
+            popup from the "+ Add Sub Category" option above. */}
+        {showSubCategoryForm && (
+          <Modal title={editingSubCategoryId ? 'Edit Sub Category' : 'Add Sub Category'} onClose={closeSubCategoryForm}>
+            <form
+              onSubmit={(e) => { e.preventDefault(); if (!subCategoryForm.categoryId || !subCategoryForm.name) { toast.error('Category and name are required'); return; } saveSubCategory.mutate(); }}
+              className="grid grid-cols-2 gap-3"
+            >
+              <select
+                value={subCategoryForm.categoryId}
+                onChange={(e) => setSubCategoryForm((f) => ({ ...f, categoryId: e.target.value }))}
+                disabled={!!editingSubCategoryId}
+                className={`${inputCls} ${editingSubCategoryId ? 'bg-slate-100 text-slate-500' : ''}`}
+              >
+                <option value="">Select category</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <input placeholder="Sub-category name" value={subCategoryForm.name} onChange={(e) => setSubCategoryForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} />
+              <div className="col-span-2 flex justify-end gap-2">
+                <button type="button" onClick={closeSubCategoryForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+                <button type="submit" disabled={saveSubCategory.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                  {saveSubCategory.isPending ? 'Saving...' : editingSubCategoryId ? 'Save Changes' : 'Add'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+        )}
+
+        {/* The only table on this page now — each row is a Category + Sub
+            Category pairing created via "+ Add". */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          {allSubCategories.length === 0 ? (
-            <p className="text-center py-16 text-slate-400">No expense sub-categories yet</p>
+          {categoryLinks.length === 0 ? (
+            <p className="text-center py-16 text-slate-400">No Category / Sub Category mappings yet</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-900">
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold text-white">Name</th>
                     <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Sub Category</th>
                     <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {allSubCategories.map((s, idx) => (
-                    <tr key={s.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                      <td className="px-4 py-3 font-medium text-slate-800">{s.name}</td>
-                      <td className="px-4 py-3 text-slate-600">{s.categoryName}</td>
+                  {categoryLinks.map((l, idx) => (
+                    <tr key={l.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                      <td className="px-4 py-3 text-slate-600">{l.categoryName}</td>
+                      <td className="px-4 py-3 font-medium text-slate-800">{l.subCategoryName}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => openEditSubCategory(s)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View">
+                          <button onClick={() => openViewOrEditLink(l)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View">
                             <EyeIcon className="h-4 w-4" />
                           </button>
-                          <button onClick={() => openEditSubCategory(s)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                          <button onClick={() => openViewOrEditLink(l)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
                             <PencilIcon className="h-4 w-4" />
                           </button>
-                          <button onClick={() => handleDeleteSubCategory(s)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                          <button onClick={() => handleDeleteLink(l)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
                             <TrashIcon className="h-4 w-4" />
                           </button>
                         </div>

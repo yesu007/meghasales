@@ -117,6 +117,7 @@ export async function GET(request: NextRequest) {
     const content = leads.map((lead) => ({
       id: lead.id,
       companyName: lead.companyName,
+      projectName: lead.projectName,
       contactPerson: lead.contactPerson,
       designation: lead.designation,
       email: lead.email,
@@ -177,6 +178,7 @@ export async function POST(request: NextRequest) {
     const lead = await prisma.lead.create({
       data: {
         companyName: body.companyName,
+        projectName: body.projectName || null,
         contactPerson: body.contactPerson,
         designation: body.designation || null,
         mobile: body.mobile || null,

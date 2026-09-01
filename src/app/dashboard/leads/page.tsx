@@ -35,6 +35,7 @@ const VIEW_TABS = [
 interface Lead {
   id: number;
   companyName: string;
+  projectName: string | null;
   contactPerson: string;
   designation: string | null;
   email: string | null;
@@ -394,6 +395,7 @@ export default function LeadsPage() {
                 <thead className="bg-slate-900">
                   <tr>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('companyName')} className="flex items-center gap-1 font-semibold text-white">Company <SortIcon col="companyName" /></button></th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Project Name</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('contactPerson')} className="flex items-center gap-1 font-semibold text-white">Contact <SortIcon col="contactPerson" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Designation</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Mobile</th>
@@ -413,6 +415,7 @@ export default function LeadsPage() {
                       <td className="px-4 py-3 font-medium text-slate-800">
                         <Link href={`/dashboard/leads/${lead.id}`} className="hover:text-amber-600 hover:underline">{lead.companyName}</Link>
                       </td>
+                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.projectName || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{lead.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.designation || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.mobile || '—'}</td>

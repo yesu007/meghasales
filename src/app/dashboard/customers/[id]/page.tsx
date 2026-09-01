@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
-import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, DocumentTextIcon, BanknotesIcon, PhoneIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, DocumentTextIcon, BanknotesIcon, PhoneIcon, Squares2X2Icon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
@@ -42,6 +42,7 @@ import InvoiceListPage from '@/components/accounting/InvoiceListPage';
 interface Customer {
   id: number;
   companyName: string;
+  projectName: string | null;
   contactPerson: string;
   email: string | null;
   mobile: string | null;
@@ -162,6 +163,7 @@ export default function CustomerDetailPage() {
           </Link>
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">{customer.companyName}</h1>
+            {customer.projectName && <p className="text-sm text-slate-500 mt-0.5 truncate">Project: {customer.projectName}</p>}
             <p className="text-slate-500 mt-1 text-sm sm:text-base truncate">{customer.contactPerson}{customer.email ? ` — ${customer.email}` : ''}</p>
           </div>
         </div>
@@ -191,10 +193,10 @@ export default function CustomerDetailPage() {
         <div className="flex flex-col sm:flex-row gap-4">
           <Tab.List className="flex flex-row sm:flex-col overflow-x-auto sm:overflow-x-visible border-b sm:border-b-0 sm:border-r border-slate-200 sm:w-48 sm:flex-shrink-0">
             <Tab className={({ selected }) => classNames(
-              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px text-left focus:outline-none',
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
               selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             )}>
-              Overview
+              <Squares2X2Icon className="h-4 w-4" /> Overview
             </Tab>
             <Tab
               disabled={!isConfirmed}

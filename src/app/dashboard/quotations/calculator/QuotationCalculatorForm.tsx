@@ -11,7 +11,7 @@ import { formatCurrency } from '@/lib/currency';
 import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/quotationResourceCosting';
 import { usePermissions } from '@/hooks/usePermissions';
 
-interface ExistingLead { id: number; companyName: string; contactPerson: string; email: string | null; mobile: string | null }
+interface ExistingLead { id: number; companyName: string; projectName: string | null; contactPerson: string; email: string | null; mobile: string | null }
 interface Vertical { id: number; name: string; headName?: string | null }
 interface CurrencyOption { currencyCode: string; currencySymbol: string }
 interface ResourceEmployee { id: number; firstName: string; lastName: string; employeeCode: string; designation: string | null; department: string | null; dayRate: number | null }
@@ -47,7 +47,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [clientEmail, setClientEmail] = useState('');
   const [clientPhone, setClientPhone] = useState('');
 
+  // Auto-filled from the selected lead's own Project Name (Leads/Customer
+  // module), but still editable — also used for the loaded value when
+  // editing an existing quotation. Kept separate from newClientProjectName
+  // so Existing Client <-> New Client never copies one into the other.
   const [projectName, setProjectName] = useState('');
+  const [newClientProjectName, setNewClientProjectName] = useState('');
   const [verticalId, setVerticalId] = useState('');
   const [projectManagerName, setProjectManagerName] = useState('');
   const [packageName, setPackageName] = useState('');
@@ -169,6 +174,9 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setCompanyName(lead?.companyName || '');
     setClientEmail(lead?.email || '');
     setClientPhone(lead?.mobile || '');
+    // Auto-populate from the selected lead's own Project Name — the user
+    // shouldn't have to type it again, but can still edit it afterward.
+    setProjectName(lead?.projectName || '');
   };
 
   const selectBillingCompany = (id: string) => { setBillingCompanyId(id); setLegalEntityId(''); };
@@ -228,9 +236,13 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // Existing-client mode (and editing) use `projectName`; a brand-new
+      // client being created here uses its own, separate state — never mix
+      // the two up when saving.
+      const effectiveProjectName = (!quotationId && clientMode === 'new') ? newClientProjectName : projectName;
       const body: Record<string, unknown> = {
         costingMode: 'RESOURCE_BASED',
-        projectName: projectName || null,
+        projectName: effectiveProjectName || null,
         verticalId: verticalId || null,
         legalEntityId: legalEntityId || null,
         currencyCode,
@@ -342,12 +354,18 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               </div>
             )}
             {!quotationId && clientMode === 'existing' ? (
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
-                <select value={selectedLeadId} onChange={(e) => selectExistingLead(e.target.value)} className={inputCls}>
-                  <option value="">Select a client</option>
-                  {existingLeads.map((l) => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}</option>)}
-                </select>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
+                  <select value={selectedLeadId} onChange={(e) => selectExistingLead(e.target.value)} className={inputCls}>
+                    <option value="">Select a client</option>
+                    {existingLeads.map((l) => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
+                  <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Auto-filled from client" className={inputCls} />
+                </div>
               </div>
             ) : !quotationId ? (
               <div className="grid grid-cols-2 gap-3 mb-3">
@@ -355,16 +373,19 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input value={companyName} onChange={(e) => setCompanyName(e.target.value)} className={inputCls} /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} className={inputCls} /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className={inputCls} /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label><input value={newClientProjectName} onChange={(e) => setNewClientProjectName(e.target.value)} className={inputCls} /></div>
               </div>
             ) : (
-              <div className="mb-3 text-sm text-slate-700 font-medium">{companyName} — {clientName}</div>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="flex items-end pb-2 text-sm text-slate-700 font-medium">{companyName} — {clientName}</div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
+                  <input value={projectName} onChange={(e) => setProjectName(e.target.value)} className={inputCls} />
+                </div>
+              </div>
             )}
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div className="col-span-2 sm:col-span-1">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
-                <input value={projectName} onChange={(e) => setProjectName(e.target.value)} className={inputCls} />
-              </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
                 <select value={verticalId} onChange={(e) => selectVertical(e.target.value)} className={inputCls}>

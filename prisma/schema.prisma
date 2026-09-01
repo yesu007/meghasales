@@ -191,6 +191,7 @@ model CompanyLegalEntity {
 model Lead {
   id                    Int      @id @default(autoincrement())
   companyName           String   @map("company_name")
+  projectName           String?  @map("project_name")
   contactPerson         String   @map("contact_person")
   designation           String? // contact person's role/title
   mobile                String?
@@ -1470,6 +1471,11 @@ model Invoice {
   status             String    @default("PENDING") @map("status") // PENDING | PARTIALLY_PAID | PAID | CANCELLED
   accountManagerId   Int?      @map("account_manager_id")
   notes              String?
+  // When to next contact the client about this pending invoice (e.g. "they
+  // said they'll pay on the 5th") — same simple denormalized-date pattern as
+  // Lead.nextFollowUpDate, reused verbatim for the Pending Invoice table's
+  // Next Follow Ups column.
+  nextFollowUpDate   DateTime? @map("next_follow_up_date")
   createdById        Int?      @map("created_by")
   updatedById        Int?      @map("updated_by")
   deletedAt          DateTime? @map("deleted_at")
@@ -1491,6 +1497,7 @@ model Invoice {
   @@index([dueDate])
   @@index([accountManagerId])
   @@index([legalEntityId])
+  @@index([nextFollowUpDate])
   @@map("invoices")
 }
 
@@ -1597,9 +1604,10 @@ model ExpenseCategory {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  expenses      Expense[]
-  budgets       ExpenseBudget[]
-  subCategories ExpenseSubCategory[]
+  expenses         Expense[]
+  budgets          ExpenseBudget[]
+  subCategories    ExpenseSubCategory[]
+  subCategoryLinks ExpenseCategorySubCategoryLink[]
 
   @@map("expense_categories")
 }
@@ -1616,12 +1624,34 @@ model ExpenseSubCategory {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  category ExpenseCategory @relation(fields: [categoryId], references: [id])
-  expenses Expense[]
+  category      ExpenseCategory                  @relation(fields: [categoryId], references: [id])
+  expenses      Expense[]
+  categoryLinks ExpenseCategorySubCategoryLink[]
 
   @@unique([categoryId, name])
   @@index([categoryId])
   @@map("expense_sub_categories")
+}
+
+// A standalone "+ Add" record on the Expenses > Category/Sub Category page,
+// pairing an existing Category with one of its existing Sub Categories as
+// its own editable row — distinct from (and independent of) the ownership
+// relationship above; deleting a link never touches the Category or Sub
+// Category it points to, and vice versa.
+model ExpenseCategorySubCategoryLink {
+  id            Int      @id @default(autoincrement())
+  categoryId    Int      @map("category_id")
+  subCategoryId Int      @map("sub_category_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  category    ExpenseCategory    @relation(fields: [categoryId], references: [id])
+  subCategory ExpenseSubCategory @relation(fields: [subCategoryId], references: [id])
+
+  @@unique([categoryId, subCategoryId])
+  @@index([categoryId])
+  @@index([subCategoryId])
+  @@map("expense_category_sub_category_links")
 }
 
 model Expense {
