@@ -18,18 +18,7 @@ services:
       retries: 5
 
   app:
-    build:
-      context: .
-      # Passed through to the Dockerfile's builder stage as --build-arg —
-      # these are NEXT_PUBLIC_* vars, inlined into the client bundle by
-      # `next build`, so env_file below (runtime-only) can't reach them.
-      # docker-compose resolves ${...} here from the compose-level .env
-      # file next to this docker-compose.yml (same file POSTGRES_USER
-      # above comes from) — set them there, not just in .env.production.
-      args:
-        NEXT_PUBLIC_FEATURE_MEETINGS: ${NEXT_PUBLIC_FEATURE_MEETINGS:-false}
-        NEXT_PUBLIC_FEATURE_PAYROLL: ${NEXT_PUBLIC_FEATURE_PAYROLL:-false}
-        NEXT_PUBLIC_FEATURE_ADMIN_TICKET: ${NEXT_PUBLIC_FEATURE_ADMIN_TICKET:-false}
+    build: .
     restart: always
     env_file:
       - .env.production

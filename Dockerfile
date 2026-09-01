@@ -18,20 +18,6 @@ COPY . .
 # generator still wants the env var present to read schema.prisma cleanly.
 ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 ENV NEXT_TELEMETRY_DISABLED=1
-# NEXT_PUBLIC_* vars are inlined into the client bundle by `next build`
-# below, not read at container runtime — env_file/environment in
-# docker-compose.yml only reach the running container, never the build
-# step. These three gate the Meetings/Payroll/Admin Ticket nav entries
-# (see src/lib/*/featureFlag.ts) and MUST be passed as --build-arg (via
-# docker-compose.yml's build.args, sourced from the compose-level .env —
-# see deploy/DEPLOYMENT.md) or they silently build as disabled regardless
-# of what .env.production sets.
-ARG NEXT_PUBLIC_FEATURE_MEETINGS=false
-ARG NEXT_PUBLIC_FEATURE_PAYROLL=false
-ARG NEXT_PUBLIC_FEATURE_ADMIN_TICKET=false
-ENV NEXT_PUBLIC_FEATURE_MEETINGS=$NEXT_PUBLIC_FEATURE_MEETINGS
-ENV NEXT_PUBLIC_FEATURE_PAYROLL=$NEXT_PUBLIC_FEATURE_PAYROLL
-ENV NEXT_PUBLIC_FEATURE_ADMIN_TICKET=$NEXT_PUBLIC_FEATURE_ADMIN_TICKET
 RUN npm run build
 
 # ---- runner: minimal image, only standalone output + static assets ----

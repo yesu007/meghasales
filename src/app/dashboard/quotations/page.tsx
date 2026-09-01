@@ -15,6 +15,8 @@ import {
   TrashIcon,
   DocumentPlusIcon,
   ClockIcon,
+  MagnifyingGlassIcon,
+  FunnelIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
@@ -136,10 +138,40 @@ export default function QuotationsPage() {
     if (p) setProjectName(p.projectName);
   }, [projectId, leadProjects]);
 
+  // Search + Status filter — same debounced searchInput/search pattern and
+  // Filters-toggle-reveals-a-panel behavior as the Customer module
+  // (src/app/dashboard/customers/page.tsx), reusing the existing
+  // QUOTATION_STATUSES constant (already used by the per-row Status select
+  // below) for the filter dropdown's options. Unlike Customers, there's no
+  // pagination UI on this page today, so search/status are added as extra
+  // query params to the existing fixed size=50 fetch rather than
+  // introducing new page/size state — pagination stays exactly as-is.
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const quotationsParams: Record<string, string> = { size: '50' };
+  if (search) quotationsParams.search = search;
+  if (statusFilter) quotationsParams.status = statusFilter;
+
+  const clearQuotationFilters = () => { setSearchInput(''); setSearch(''); setStatusFilter(''); };
+
   // Fetch quotations from database
   const { data: quotationsData, isError: isQuotationsError } = useQuery({
-    queryKey: ['quotations'],
-    queryFn: async () => { const r = await fetch('/api/quotations?size=50'); if (!r.ok) throw new Error('Failed'); return r.json(); },
+    queryKey: ['quotations', quotationsParams],
+    queryFn: async () => {
+      const query = new URLSearchParams(quotationsParams).toString();
+      const r = await fetch(`/api/quotations?${query}`);
+      if (!r.ok) throw new Error('Failed');
+      return r.json();
+    },
+    placeholderData: (prev: any) => prev,
   });
   const quotations = quotationsData?.content || [];
 
@@ -580,9 +612,52 @@ export default function QuotationsPage() {
           <button onClick={() => { resetCreateState(); setView('create'); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"><PlusIcon className="h-4 w-4" /> New Quotation</button>
         </div>
       </div>
+
+      {/* Search & Filters — same bordered-card layout, debounced search
+          input, and Filters-toggle-reveals-a-panel behavior as the
+          Customer module (src/app/dashboard/customers/page.tsx). */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by quote no, client, company, project..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            />
+            {searchInput && (
+              <button onClick={() => { setSearchInput(''); setSearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <button onClick={() => setFiltersOpen(!filtersOpen)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium ${statusFilter ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600'}`}>
+            <FunnelIcon className="h-4 w-4" /> Filters {statusFilter && <span className="bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">1</span>}
+          </button>
+          {(searchInput || statusFilter) && <button onClick={clearQuotationFilters} className="text-sm text-slate-500 hover:text-red-500">Clear All</button>}
+        </div>
+        {filtersOpen && (
+          <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
+                <option value="">All</option>
+                {QUOTATION_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         {quotations.length === 0 ? (
-          <div className="text-center py-16"><CalculatorIcon className="h-12 w-12 mx-auto text-slate-300" /><p className="mt-4 text-lg font-medium text-slate-600">No quotations yet</p><p className="text-sm text-slate-400">Create your first quotation</p></div>
+          <div className="text-center py-16">
+            <CalculatorIcon className="h-12 w-12 mx-auto text-slate-300" />
+            <p className="mt-4 text-lg font-medium text-slate-600">{search || statusFilter ? 'No quotations found' : 'No quotations yet'}</p>
+            <p className="text-sm text-slate-400">{search || statusFilter ? 'Try adjusting your search or filters' : 'Create your first quotation'}</p>
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-900"><tr>

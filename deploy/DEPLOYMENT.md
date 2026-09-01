@@ -47,30 +47,6 @@ Fill in, at minimum:
 - `BLOB_READ_WRITE_TOKEN` — from the Vercel dashboard → Storage → create a
   Blob store (no need to deploy anything there, just provisioning storage)
 
-**Feature flags need a second file.** `NEXT_PUBLIC_FEATURE_MEETINGS`,
-`NEXT_PUBLIC_FEATURE_PAYROLL` and `NEXT_PUBLIC_FEATURE_ADMIN_TICKET` gate
-the Meetings/Payroll/Admin Ticket nav entries (see `src/lib/*/featureFlag.ts`).
-They're `NEXT_PUBLIC_*`, so Next.js inlines them into the client bundle at
-`next build` time — `.env.production` above only reaches the running
-container (`env_file:` in docker-compose.yml), which is too late. Set them
-in the **compose-level `.env`** file instead — the plain `.env` next to
-`docker-compose.yml`, same file `${POSTGRES_USER}` etc. already resolve
-from — so `docker compose build` passes them through as `--build-arg`:
-
-```bash
-# .env (next to docker-compose.yml, NOT .env.production)
-POSTGRES_USER=...
-POSTGRES_PASSWORD=...
-POSTGRES_DB=...
-NEXT_PUBLIC_FEATURE_MEETINGS=true
-NEXT_PUBLIC_FEATURE_PAYROLL=true
-NEXT_PUBLIC_FEATURE_ADMIN_TICKET=true
-```
-
-Flipping one of these later means `docker compose up -d --build` again —
-restarting the container alone won't pick it up, since it's baked into the
-already-built JS.
-
 ## 5. Build and start the stack
 
 ```bash
