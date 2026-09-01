@@ -258,6 +258,7 @@ model Lead {
   creditNotes     CreditNote[]
   events          Event[]
   documents       EventDocument[]
+  vendorExpenses  Expense[]        @relation("ExpenseVendor")
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, not
   // read/written by any Lead-owned page or API.
@@ -1665,6 +1666,13 @@ model Expense {
   expenseNumber   String    @unique @map("expense_number")
   categoryId      Int       @map("category_id")
   subCategoryId   Int?      @map("sub_category_id")
+  // Vendor is now selected from the Customer module (a Lead row) rather
+  // than typed freehand. vendorLeadId is the source of truth for the
+  // dropdown/edit-mode selection; vendor stays in sync as the resolved
+  // companyName so existing search-by-vendor (route.ts) and historical
+  // free-text rows (recorded before this field existed) keep working
+  // unchanged.
+  vendorLeadId    Int?      @map("vendor_lead_id")
   vendor          String?
   expenseDate     DateTime  @map("expense_date")
   amount          Decimal   @db.Decimal(14, 2)
@@ -1688,11 +1696,13 @@ model Expense {
   category    ExpenseCategory     @relation(fields: [categoryId], references: [id])
   subCategory ExpenseSubCategory? @relation(fields: [subCategoryId], references: [id])
   recordedBy  User?               @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
+  vendorLead  Lead?               @relation("ExpenseVendor", fields: [vendorLeadId], references: [id])
 
   @@index([status])
   @@index([categoryId])
   @@index([subCategoryId])
   @@index([expenseDate])
+  @@index([vendorLeadId])
   @@map("expenses")
 }
 
