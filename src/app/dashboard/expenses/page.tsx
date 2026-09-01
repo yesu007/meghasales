@@ -601,12 +601,15 @@ export default function ExpensesPage() {
                         {e.status === 'PENDING' && (
                           <button onClick={() => markPaid.mutate(e.id)} className="text-xs font-medium text-green-700 hover:text-green-800">Mark Paid</button>
                         )}
-                        <button onClick={() => openEdit(e)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
+                        <button onClick={() => openEdit(e)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                          <PencilIcon className="h-4 w-4" />
+                        </button>
                         <button
                           onClick={() => { if (window.confirm(`Delete expense ${e.expenseNumber}?`)) remove.mutate(e.id); }}
-                          className="text-xs font-medium text-slate-500 hover:text-red-600"
+                          className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          title="Delete"
                         >
-                          Delete
+                          <TrashIcon className="h-4 w-4" />
                         </button>
                       </div>
                     </td>
