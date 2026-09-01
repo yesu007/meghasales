@@ -22,11 +22,12 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { CUSTOMER_STATUSES } from '@/lib/customerStatus';
-import LeadFormDrawer, { SOURCES, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
+import { useLeadSources } from '@/hooks/useLeadSources';
+import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 import CustomerFormDrawer, { blankCustomerForm, type CustomerFormState } from '@/components/customers/CustomerFormDrawer';
 
 // Customers are Leads with status = CONFIRMED (labeled "Converted" — see
-// LEAD_STATUSES in src/lib/leadStatus.ts). There is no separate Customer
+// the LeadStatusOption master, GET /api/lead-status-options). There is no separate Customer
 // entity/table anywhere in this app: Invoices and Quotations already key
 // directly off leadId, so a Lead already IS the customer record once
 // converted. This page is therefore just the existing /api/leads endpoint,
@@ -82,6 +83,7 @@ async function fetchUsers(): Promise<UserOption[]> {
 export default function CustomersPage() {
   const { data: session } = useSession();
   const isAdmin = (session?.user?.roles || []).includes('ADMIN');
+  const SOURCES = useLeadSources();
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -278,7 +280,7 @@ export default function CustomersPage() {
           </div>
           <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
             <option value="">All Sources</option>
-            {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {SOURCES.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
           </select>
           <button onClick={() => setFiltersOpen(!filtersOpen)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium ${activeFilters > 0 ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600'}`}>
             <FunnelIcon className="h-4 w-4" /> Filters {activeFilters > 0 && <span className="bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{activeFilters}</span>}

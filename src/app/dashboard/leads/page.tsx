@@ -18,19 +18,19 @@ import {
   PencilIcon,
   TrashIcon,
   EyeIcon,
+  CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { LEAD_STATUSES } from '@/lib/leadStatus';
-import LeadFormDrawer, { SOURCES, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
+import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
+import { useLeadSources } from '@/hooks/useLeadSources';
+import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 
 const VIEW_TABS = [
   { value: '', label: 'All Leads' },
   { value: 'new', label: 'New Leads' },
   { value: 'followed-up', label: 'Followed-up Leads' },
 ];
-
-const STATUSES = LEAD_STATUSES;
 
 interface Lead {
   id: number;
@@ -80,6 +80,8 @@ async function fetchUsers(): Promise<UserOption[]> {
 
 export default function LeadsPage() {
   const { data: session } = useSession();
+  const { options: STATUSES, color: leadStatusColor } = useLeadStatusOptions();
+  const SOURCES = useLeadSources();
   const isAdmin = (session?.user?.roles || []).includes('ADMIN');
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -241,6 +243,13 @@ export default function LeadsPage() {
     toast.success('BA assigned');
   };
 
+  const updateNextFollowUp = async (id: number, nextFollowUpDate: string) => {
+    const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nextFollowUpDate: nextFollowUpDate || null }) });
+    if (!res.ok) { toast.error('Failed to update next follow-up'); return; }
+    queryClient.invalidateQueries({ queryKey: ['leads'] });
+    toast.success('Next follow-up updated');
+  };
+
   const handleSort = (col: string) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortBy(col); setSortDir('asc'); }
@@ -342,11 +351,11 @@ export default function LeadsPage() {
           </div>
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
             <option value="">All Statuses</option>
-            {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {STATUSES.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
           </select>
           <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
             <option value="">All Sources</option>
-            {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {SOURCES.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
           </select>
           <button onClick={() => setFiltersOpen(!filtersOpen)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium ${activeFilters > 0 ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600'}`}>
             <FunnelIcon className="h-4 w-4" /> Filters {activeFilters > 0 && <span className="bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{activeFilters}</span>}
@@ -413,8 +422,8 @@ export default function LeadsPage() {
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{lead.whatsapp || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase()}</td>
                       <td className="px-4 py-3">
-                        <select value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${STATUSES.find(s => s.value === lead.status)?.color || 'bg-slate-100'}`}>
-                          {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                        <select value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${leadStatusColor(lead.status)}`}>
+                          {STATUSES.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
                         </select>
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell">
@@ -429,12 +438,17 @@ export default function LeadsPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{dayjs(lead.createdAt).format('DD MMM YYYY')}</td>
                       <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{lead.lastFollowUpDate ? dayjs(lead.lastFollowUpDate).format('DD MMM YYYY') : '—'}</td>
-                      <td className={`px-4 py-3 hidden lg:table-cell ${lead.isOverdue ? 'text-red-600 font-semibold' : 'text-slate-500'}`}>
-                        {lead.nextFollowUpDate ? (
-                          <span className={lead.isOverdue ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 border border-red-200' : ''}>
-                            {dayjs(lead.nextFollowUpDate).format('DD MMM YYYY')}{lead.isOverdue ? ' (Overdue)' : ''}
-                          </span>
-                        ) : '—'}
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <div className={`relative inline-flex items-center rounded-lg border ${lead.isOverdue ? 'border-red-300 bg-red-50' : lead.nextFollowUpDate ? 'border-slate-200 bg-white' : 'border-dashed border-slate-300 bg-white'}`}>
+                          <CalendarDaysIcon className={`pointer-events-none absolute left-2 h-3.5 w-3.5 ${lead.isOverdue ? 'text-red-500' : 'text-slate-400'}`} />
+                          <input
+                            type="date"
+                            value={lead.nextFollowUpDate ? dayjs(lead.nextFollowUpDate).format('YYYY-MM-DD') : ''}
+                            onChange={(e) => updateNextFollowUp(lead.id, e.target.value)}
+                            className={`w-[9.5rem] pl-7 pr-2 py-1.5 text-xs bg-transparent border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${lead.isOverdue ? 'text-red-700 font-semibold' : lead.nextFollowUpDate ? 'text-slate-700' : 'text-slate-400'}`}
+                          />
+                        </div>
+                        {lead.isOverdue && <p className="mt-1 text-[10px] font-semibold text-red-600 uppercase tracking-wide">Overdue</p>}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">

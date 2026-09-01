@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/quotationResourceCosting';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface ExistingLead { id: number; companyName: string; projectName: string | null; contactPerson: string; email: string | null; mobile: string | null }
 interface Vertical { id: number; name: string; headName?: string | null }
@@ -17,6 +18,7 @@ interface ResourceEmployee { id: number; firstName: string; lastName: string; em
 interface CompanyOption { id: number; name: string }
 interface LegalEntityOption { id: number; legalName: string; taxRegistrationNumber: string | null; isActive: boolean; country: { countryName: string; flagEmoji: string | null } }
 interface CompanyDetailForQuotation { id: number; legalEntities: LegalEntityOption[] }
+interface CompanyProfileTerms { termsAndConditions: string | null; paymentTerms: string | null; warrantyTerms: string | null; defaultAdminOverheadMode: string | null; defaultAdminOverheadValue: number | string | null }
 
 const employeeLabel = (e: ResourceEmployee) => `${e.firstName} ${e.lastName} — ${e.designation || 'Employee'} (${e.employeeCode})`;
 
@@ -35,6 +37,8 @@ function ModeToggle({ mode, onChange, pctLabel, fixedLabel }: { mode: CostMode; 
 export default function QuotationCalculatorForm({ quotationId }: { quotationId?: number }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canAuthorizeOverride = has('authorize_quotation_override');
 
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
   const [selectedLeadId, setSelectedLeadId] = useState('');
@@ -73,6 +77,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [validityDays, setValidityDays] = useState('30');
   const [overrideAmount, setOverrideAmount] = useState('');
   const [notes, setNotes] = useState('');
+  const [additionalTerms, setAdditionalTerms] = useState('');
 
   const [status, setStatus] = useState('DRAFT');
   const [quotationNumber, setQuotationNumber] = useState('');
@@ -93,6 +98,10 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const { data: currencies = [] } = useQuery<CurrencyOption[]>({
     queryKey: ['currencies'],
     queryFn: async () => { const r = await fetch('/api/currencies?activeOnly=true'); if (!r.ok) throw new Error('Failed to fetch currencies'); return r.json(); },
+  });
+  const { data: companyProfile } = useQuery<CompanyProfileTerms | null>({
+    queryKey: ['company-profile-terms'],
+    queryFn: async () => { const r = await fetch('/api/quotation-config?type=company-profile'); if (!r.ok) throw new Error('Failed to fetch company profile'); return r.json(); },
   });
   const currencySymbol = currencies.find((c) => c.currencyCode === currencyCode)?.currencySymbol || currencyCode;
   const { data: resourceEmployees = [] } = useQuery<ResourceEmployee[]>({
@@ -121,6 +130,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setTravelCost(String(Number(existing.travelCost) || 0));
     setTaxPercentage(String(Number(existing.taxPercentage) || 0));
     setNotes(existing.notes || '');
+    setAdditionalTerms(existing.additionalTerms || '');
     setStatus(existing.status);
     setQuotationNumber(existing.quotationNumber);
     setClientName(existing.lead?.contactPerson || '');
@@ -141,6 +151,15 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setValidityDays(String(Number(snap.validityDays) || 30));
     setOverrideAmount(existing.totalAmountOverridden ? String(Number(existing.totalAmount)) : '');
   }, [existing]);
+
+  // Pre-fill Admin/Overhead from the company-wide default — only for a
+  // brand-new quotation. An existing one already had its own value restored
+  // by the effect above, which must win regardless of fetch timing.
+  useEffect(() => {
+    if (!companyProfile || quotationId) return;
+    setAdminMode(companyProfile.defaultAdminOverheadMode === 'FIXED' ? 'FIXED' : 'PCT');
+    setAdminValue(String(Number(companyProfile.defaultAdminOverheadValue) || 0));
+  }, [companyProfile, quotationId]);
 
   const selectVertical = (id: string) => {
     setVerticalId(id);
@@ -228,6 +247,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
         legalEntityId: legalEntityId || null,
         currencyCode,
         notes: notes || null,
+        additionalTerms: additionalTerms || null,
         resources: validResources,
         adminMode,
         adminValue: Number(adminValue) || 0,
@@ -500,6 +520,27 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
             </div>
           </div>
+
+          {/* Terms & Conditions */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Terms &amp; Conditions</h2>
+            {(companyProfile?.termsAndConditions || companyProfile?.paymentTerms || companyProfile?.warrantyTerms) && (
+              <div className="mb-3">
+                <p className="text-xs font-medium text-slate-500 mb-1">Standard Template (from Settings — applies to every quotation)</p>
+                <div className="text-xs text-slate-600 whitespace-pre-wrap bg-slate-50 border border-slate-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                  {[companyProfile.termsAndConditions, companyProfile.paymentTerms, companyProfile.warrantyTerms].filter(Boolean).join('\n\n')}
+                </div>
+              </div>
+            )}
+            <label className="block text-sm font-medium text-slate-700 mb-1">Additional Clauses (specific to this quotation)</label>
+            <textarea
+              value={additionalTerms}
+              onChange={(e) => setAdditionalTerms(e.target.value)}
+              rows={4}
+              placeholder="Any extra terms or clauses that apply only to this quotation"
+              className={inputCls}
+            />
+          </div>
         </div>
 
         {/* Right: live quotation summary */}
@@ -569,9 +610,13 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4">
               <div className="flex items-center justify-between gap-2">
                 <label className="text-xs font-medium text-slate-600">Final amount (override)</label>
-                <input type="number" min="0" value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} placeholder={fmt(costing.calculatedTotalAmount)} className="w-32 px-2 py-1.5 border border-slate-300 rounded text-sm text-right text-slate-800" />
+                <input type="number" min="0" value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} disabled={!canAuthorizeOverride} placeholder={fmt(costing.calculatedTotalAmount)} className="w-32 px-2 py-1.5 border border-slate-300 rounded text-sm text-right text-slate-800 disabled:bg-slate-100 disabled:text-slate-400" />
               </div>
-              <p className="text-xs text-slate-400 mt-1.5">Leave blank to publish the system-calculated amount.</p>
+              <p className="text-xs text-slate-400 mt-1.5">
+                {canAuthorizeOverride
+                  ? 'Leave blank to publish the system-calculated amount.'
+                  : 'Requires authorization to override the calculated amount — ask a manager.'}
+              </p>
             </div>
 
             <button onClick={handleSave} disabled={saveMutation.isPending} className="w-full px-4 py-2.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">

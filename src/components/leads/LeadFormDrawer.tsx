@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+import { useLeadSources } from '@/hooks/useLeadSources';
 
 interface VerticalOption { id: number; name: string }
 async function fetchVerticalOptions(): Promise<VerticalOption[]> {
@@ -19,16 +20,6 @@ async function fetchVerticalOptions(): Promise<VerticalOption[]> {
 // duplicating this form/validation/save logic — see docs on the Customer
 // module for why converted leads are just Leads with status=CONFIRMED
 // rather than a separate entity.
-
-export const SOURCES = [
-  { value: 'WEBSITE', label: 'Website' },
-  { value: 'WHATSAPP', label: 'WhatsApp' },
-  { value: 'REFERRAL', label: 'Referral' },
-  { value: 'EMAIL', label: 'Email' },
-  { value: 'TRADE_SHOW', label: 'Trade Show' },
-  { value: 'COLD_CALL', label: 'Cold Call' },
-  { value: 'SALES_EXECUTIVE', label: 'Sales Executive' },
-];
 
 export interface LeadFormState {
   companyName: string;
@@ -47,13 +38,15 @@ export interface LeadFormState {
   taxPercentage: number | string;
   state: string;
   city: string;
+  addressLine1: string;
+  addressLine2: string;
   notes: string;
 }
 
 export const blankLeadForm: LeadFormState = {
   companyName: '', projectName: '', contactPerson: '', designation: '', mobile: '', whatsapp: '', email: '', leadSource: '', businessVerticals: '',
   countryId: null, currencyCode: '', currencySymbol: '', taxType: '', taxPercentage: 0,
-  state: '', city: '', notes: '',
+  state: '', city: '', addressLine1: '', addressLine2: '', notes: '',
 };
 
 export interface CurrencyOption {
@@ -90,6 +83,8 @@ export async function fetchLeadForEdit(id: number): Promise<LeadFormState | null
     taxPercentage: 0,
     state: lead.state || '',
     city: lead.city || '',
+    addressLine1: lead.addressLine1 || '',
+    addressLine2: lead.addressLine2 || '',
     notes: lead.notes || '',
   };
 }
@@ -123,6 +118,7 @@ export default function LeadFormDrawer({
   open, onClose, editingId, form, setForm, formErrors, setFormErrors, onSave, isSaving, isAdmin, currencies,
 }: LeadFormDrawerProps) {
   const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
+  const sources = useLeadSources();
 
   const handleCountryChange = (country: Country) => {
     setForm((f) => ({
@@ -183,7 +179,20 @@ export default function LeadFormDrawer({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Mobile *</label>
-                        <input value={form.mobile} onChange={(e) => setForm(f => ({...f, mobile: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.mobile ? 'border-red-400' : 'border-slate-300'}`} />
+                        <input
+                          value={form.mobile}
+                          onChange={(e) => setForm(f => {
+                            const mobile = e.target.value;
+                            // WhatsApp defaults from Mobile as you type, same as the
+                            // BRD's "may default from Contact Number" — but only while
+                            // it hasn't diverged (still empty, or still tracking the old
+                            // Mobile value). The moment someone edits WhatsApp directly,
+                            // it's a deliberate override and Mobile edits stop touching it.
+                            const whatsappTracksMobile = f.whatsapp === '' || f.whatsapp === f.mobile;
+                            return { ...f, mobile, ...(whatsappTracksMobile && { whatsapp: mobile }) };
+                          })}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.mobile ? 'border-red-400' : 'border-slate-300'}`}
+                        />
                         {formErrors.mobile && <p className="text-xs text-red-600 mt-1">{formErrors.mobile}</p>}
                       </div>
                       <div>
@@ -203,7 +212,7 @@ export default function LeadFormDrawer({
                         <label className="block text-sm font-medium text-slate-700 mb-1">Lead Source *</label>
                         <select value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
                           <option value="">Select</option>
-                          {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                          {sources.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
                         </select>
                         {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                       </div>
@@ -248,6 +257,14 @@ export default function LeadFormDrawer({
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
                         <input value={form.city} onChange={(e) => setForm(f => ({...f, city: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Address Line 1</label>
+                        <input value={form.addressLine1} onChange={(e) => setForm(f => ({...f, addressLine1: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Address Line 2</label>
+                        <input value={form.addressLine2} onChange={(e) => setForm(f => ({...f, addressLine2: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>

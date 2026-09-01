@@ -22,6 +22,18 @@ interface Assignment {
   structure: { id: number; name: string };
 }
 
+interface ManagerOption {
+  id: number;
+  firstName: string;
+  lastName: string;
+  employeeCode: string;
+}
+
+interface VerticalOption {
+  id: number;
+  name: string;
+}
+
 interface EmployeeDetail {
   id: number;
   employeeCode: string;
@@ -30,6 +42,9 @@ interface EmployeeDetail {
   email: string;
   department: string | null;
   designation: string | null;
+  role: string | null;
+  managerId: number | null;
+  verticalId: number | null;
   dateOfJoining: string | null;
   dateOfLeaving: string | null;
   employmentType: string;
@@ -61,6 +76,19 @@ async function fetchStructures(): Promise<StructureOption[]> {
   return res.json();
 }
 
+async function fetchManagerOptions(): Promise<ManagerOption[]> {
+  const res = await fetch('/api/payroll/employees?size=200&status=ACTIVE');
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.content;
+}
+
+async function fetchVerticals(): Promise<VerticalOption[]> {
+  const res = await fetch('/api/verticals');
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export default function EmployeeDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -68,6 +96,8 @@ export default function EmployeeDetailPage() {
 
   const { data: employee, isLoading } = useQuery({ queryKey: ['payroll-employee', id], queryFn: () => fetchEmployee(id) });
   const { data: structures = [] } = useQuery({ queryKey: ['payroll-structures'], queryFn: fetchStructures });
+  const { data: managerOptions = [] } = useQuery({ queryKey: ['payroll-employees-manager-options'], queryFn: fetchManagerOptions });
+  const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticals });
 
   const [form, setForm] = useState<Record<string, any>>({});
   useEffect(() => {
@@ -75,6 +105,8 @@ export default function EmployeeDetailPage() {
       setForm({
         firstName: employee.firstName, lastName: employee.lastName, email: employee.email,
         department: employee.department || '', designation: employee.designation || '',
+        role: employee.role || '', managerId: employee.managerId ? String(employee.managerId) : '',
+        verticalId: employee.verticalId ? String(employee.verticalId) : '',
         employmentType: employee.employmentType, panNumber: employee.panNumber || '',
         uanNumber: employee.uanNumber || '', esicNumber: employee.esicNumber || '',
         bankAccountNumber: employee.bankAccountNumber || '', bankIfsc: employee.bankIfsc || '',
@@ -196,6 +228,19 @@ export default function EmployeeDetailPage() {
               <Field label="Email"><input type="email" value={form.email || ''} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputCls} /></Field>
               <Field label="Department"><input value={form.department || ''} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} className={inputCls} /></Field>
               <Field label="Designation"><input value={form.designation || ''} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} className={inputCls} /></Field>
+              <Field label="Role"><input value={form.role || ''} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className={inputCls} /></Field>
+              <Field label="Vertical">
+                <select value={form.verticalId || ''} onChange={(e) => setForm((f) => ({ ...f, verticalId: e.target.value }))} className={inputCls}>
+                  <option value="">—</option>
+                  {verticalOptions.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Manager">
+                <select value={form.managerId || ''} onChange={(e) => setForm((f) => ({ ...f, managerId: e.target.value }))} className={inputCls}>
+                  <option value="">—</option>
+                  {managerOptions.filter((m) => m.id !== employee.id).map((m) => <option key={m.id} value={m.id}>{m.firstName} {m.lastName} ({m.employeeCode})</option>)}
+                </select>
+              </Field>
               <Field label="Employment Type">
                 <select value={form.employmentType || 'FULL_TIME'} onChange={(e) => setForm((f) => ({ ...f, employmentType: e.target.value }))} className={inputCls}>
                   <option value="FULL_TIME">Full-time</option>
