@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Combobox } from '@headlessui/react';
 import { CheckIcon, ChevronUpDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
-import { leadStatusColor, leadStatusLabel } from '@/lib/leadStatus';
+import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
 
 export interface LeadOption {
   id: number;
@@ -25,6 +25,7 @@ interface LeadPickerComboboxProps {
 export default function LeadPickerCombobox({ value, onChange, placeholder }: LeadPickerComboboxProps) {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
+  const { label: leadStatusLabel, color: leadStatusColor } = useLeadStatusOptions();
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 300);

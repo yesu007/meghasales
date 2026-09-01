@@ -24,6 +24,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import PaymentEntryDrawer from './PaymentEntryDrawer';
 import { formatCurrency } from '@/lib/currency';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-green-100 text-green-700',
@@ -110,6 +111,8 @@ function fmt(amount: string | number, currencyCode = 'INR'): string {
 // filter below. The two Accounting pages (pending-invoices, paid-invoices)
 // don't pass it, so their behavior is unchanged.
 export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid'; leadId?: number }) {
+  const { has } = usePermissions();
+  const canExport = has('export_accounting');
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -273,9 +276,11 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
           <p className="text-slate-500 mt-1">{mode === 'paid' ? 'Fully settled invoices and payment history' : 'Invoices awaiting full payment'}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
-            <ArrowDownTrayIcon className="h-4 w-4" /> Export
-          </button>
+          {canExport && (
+            <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
+              <ArrowDownTrayIcon className="h-4 w-4" /> Export
+            </button>
+          )}
           {mode === 'open' && (
             <button onClick={() => { setEditingId(null); setForm(blankForm); setLineItems([]); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
               <PlusIcon className="h-4 w-4" /> New Invoice

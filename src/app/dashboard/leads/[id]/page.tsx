@@ -9,7 +9,7 @@ import { Tab } from '@headlessui/react';
 import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, PhoneIcon, BuildingLibraryIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
-import { LEAD_STATUSES, leadStatusColor } from '@/lib/leadStatus';
+import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
 import { CUSTOMER_STATUSES, customerStatusColor } from '@/lib/customerStatus';
 import EventsTab from '@/components/leads/EventsTab';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
@@ -31,6 +31,8 @@ interface Lead {
   country: string | null;
   state: string | null;
   city: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
   jewelleryBusinessType: string | null;
   numberOfBranches: number | null;
   existingErp: string | null;
@@ -55,6 +57,7 @@ export default function LeadDetailPage() {
   const id = params.id as string;
   const { data: session } = useSession();
   const queryClient = useQueryClient();
+  const { options: leadStatusOptions, color: leadStatusColor } = useLeadStatusOptions();
   const roles = session?.user?.roles || [];
   const permissions = session?.user?.permissions || [];
   const canManage = roles.includes('ADMIN') || permissions.includes('manage_lead_events');
@@ -157,7 +160,7 @@ export default function LeadDetailPage() {
             onChange={(e) => statusMutation.mutate(e.target.value)}
             className={`px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
           >
-            {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {leadStatusOptions.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
           </select>
         </div>
       </div>
@@ -220,7 +223,7 @@ export default function LeadDetailPage() {
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Status</p><p className="text-sm text-slate-800 mt-1">{CUSTOMER_STATUSES.find(s => s.value === lead.customerStatus)?.label || lead.customerStatus}</p></div>
               )}
               <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : 'Unassigned'}</p></div>
-              <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'}</p></div>
+              <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[lead.addressLine1, lead.addressLine2, lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{lead.jewelleryBusinessType || '—'}</p></div>
               <div><p className="text-xs font-medium text-slate-500 uppercase">Created</p><p className="text-sm text-slate-800 mt-1">{dayjs(lead.createdAt).format('DD MMM YYYY')}</p></div>
               {lead.notes && (

@@ -12,7 +12,7 @@ function csvEscape(value: unknown): string {
 }
 
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_accounting');
+  const denied = await requirePermission('export_accounting');
   if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);

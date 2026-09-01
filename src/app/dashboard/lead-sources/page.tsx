@@ -1,0 +1,162 @@
+'use client';
+
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { PlusIcon } from '@heroicons/react/24/outline';
+import toast from 'react-hot-toast';
+
+interface LeadSourceRow {
+  id: number;
+  name: string;
+  code: string;
+  isActive: boolean;
+}
+
+const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
+
+async function fetchLeadSources(): Promise<LeadSourceRow[]> {
+  const res = await fetch('/api/lead-sources?includeInactive=true');
+  if (!res.ok) throw new Error('Failed to fetch lead sources');
+  return res.json();
+}
+
+const blankForm = { name: '' };
+
+export default function LeadSourcesPage() {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState(blankForm);
+
+  const { data: sources = [], isLoading } = useQuery({ queryKey: ['lead-sources-admin'], queryFn: fetchLeadSources });
+
+  const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
+
+  const openEdit = (s: LeadSourceRow) => {
+    setEditingId(s.id);
+    setForm({ name: s.name });
+    setShowForm(true);
+  };
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const url = editingId ? `/api/lead-sources/${editingId}` : '/api/lead-sources';
+      const method = editingId ? 'PATCH' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save source'); }
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['lead-sources-admin'] }); queryClient.invalidateQueries({ queryKey: ['lead-sources'] }); toast.success(editingId ? 'Source updated' : 'Source created'); closeForm(); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const toggleActive = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const res = isActive
+        ? await fetch(`/api/lead-sources/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: true }) })
+        : await fetch(`/api/lead-sources/${id}`, { method: 'DELETE' });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to update source'); }
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['lead-sources-admin'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-sources'] });
+      toast.success(variables.isActive ? 'Source reactivated' : 'Source deleted');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Lead Sources</h1>
+          <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Where a Lead or Customer says they came from</p>
+        </div>
+        <button
+          onClick={() => (showForm ? closeForm() : setShowForm(true))}
+          className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+        >
+          <PlusIcon className="h-4 w-4" /> New Source
+        </button>
+      </div>
+
+      {showForm && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); if (!form.name.trim()) { toast.error('Source name is required'); return; } save.mutate(); }}
+          className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
+        >
+          <h2 className="text-base font-semibold text-slate-800 mb-3">{editingId ? 'Edit Source' : 'New Source'}</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Source Name</label>
+              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="e.g. Trade Show" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button type="button" onClick={closeForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+            <button type="submit" disabled={save.isPending} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+              {save.isPending ? 'Saving...' : editingId ? 'Save Changes' : 'Create Source'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        {isLoading ? (
+          <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
+        ) : sources.length === 0 ? (
+          <p className="text-center py-16 text-slate-400">No sources created yet</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-900">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Source</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sources.map((s, idx) => (
+                  <tr key={s.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-800">{s.name}</p>
+                      <p className="text-xs text-slate-400">{s.code}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {s.isActive ? 'Active' : 'Deleted'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => openEdit(s)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
+                        {s.isActive ? (
+                          <button
+                            onClick={() => { if (window.confirm(`Delete source "${s.name}"?`)) toggleActive.mutate({ id: s.id, isActive: false }); }}
+                            className="text-xs font-medium text-slate-500 hover:text-red-600"
+                          >
+                            Delete
+                          </button>
+                        ) : (
+                          <button onClick={() => toggleActive.mutate({ id: s.id, isActive: true })} className="text-xs font-medium text-green-700 hover:text-green-800">
+                            Reactivate
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

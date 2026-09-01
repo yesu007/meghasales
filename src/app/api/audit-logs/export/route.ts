@@ -14,7 +14,7 @@ function csvEscape(value: unknown): string {
 }
 
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_audit_logs');
+  const denied = await requirePermission('export_audit_logs');
   if (denied) return denied;
 
   try {

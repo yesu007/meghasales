@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requirePermission, getOwnershipFilter } from '@/lib/rbac';
 import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +43,13 @@ export async function GET(request: NextRequest) {
     if (status) AND.push({ status: status.toUpperCase() });
     if (demoType) AND.push({ demoType: demoType.toUpperCase() });
     if (packageId) AND.push({ packageId: parseInt(packageId) });
+
+    // Ownership data-scope boundary — a Demo Team member sees only demos
+    // assigned to them (plus unassigned ones); BUSINESS_ANALYST/SALES keep
+    // full visibility since assignedToId isn't their field — see
+    // getOwnershipFilter's own comment.
+    const ownershipFilter = await getOwnershipFilter('assignedToId', ['DEMO_TEAM']);
+    if (ownershipFilter) AND.push(ownershipFilter);
 
     if (AND.length > 0) where.AND = AND;
 

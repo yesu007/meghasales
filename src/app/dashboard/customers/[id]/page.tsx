@@ -9,7 +9,7 @@ import { Tab } from '@headlessui/react';
 import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, DocumentTextIcon, BanknotesIcon, PhoneIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
-import { LEAD_STATUSES, leadStatusColor } from '@/lib/leadStatus';
+import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
 import EventsTab from '@/components/leads/EventsTab';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
 import FollowUpsTab from '@/components/leads/FollowUpsTab';
@@ -50,6 +50,8 @@ interface Customer {
   country: string | null;
   state: string | null;
   city: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
   jewelleryBusinessType: string | null;
   numberOfBranches: number | null;
   existingErp: string | null;
@@ -80,6 +82,7 @@ export default function CustomerDetailPage() {
   const id = params.id as string;
   const { data: session } = useSession();
   const queryClient = useQueryClient();
+  const { options: leadStatusOptions, color: leadStatusColor } = useLeadStatusOptions();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -168,7 +171,7 @@ export default function CustomerDetailPage() {
           onChange={(e) => statusMutation.mutate(e.target.value)}
           className={`self-start sm:self-auto px-3 py-1.5 min-h-[44px] rounded-lg text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(customer.status)}`}
         >
-          {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          {leadStatusOptions.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
         </select>
       </div>
 
@@ -244,7 +247,7 @@ export default function CustomerDetailPage() {
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Mobile</p><p className="text-sm text-slate-800 mt-1">{customer.mobile || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-sm text-slate-800 mt-1 capitalize">{(customer.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{customer.assignedBa ? `${customer.assignedBa.firstName} ${customer.assignedBa.lastName}` : 'Unassigned'}</p></div>
-                <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[customer.city, customer.state, customer.country].filter(Boolean).join(', ') || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[customer.addressLine1, customer.addressLine2, customer.city, customer.state, customer.country].filter(Boolean).join(', ') || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{customer.jewelleryBusinessType || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Since</p><p className="text-sm text-slate-800 mt-1">{dayjs(customer.createdAt).format('DD MMM YYYY')}</p></div>
                 {customer.notes && (

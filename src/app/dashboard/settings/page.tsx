@@ -544,6 +544,8 @@ export default function SettingsPage() {
     termsAndConditions: '',
     paymentTerms: '',
     warrantyTerms: '',
+    defaultAdminOverheadMode: 'PCT' as 'PCT' | 'FIXED',
+    defaultAdminOverheadValue: '10',
     defaultCountryId: null as number | null,
   });
 
@@ -573,6 +575,8 @@ export default function SettingsPage() {
         termsAndConditions: profile.termsAndConditions || '',
         paymentTerms: profile.paymentTerms || '',
         warrantyTerms: profile.warrantyTerms || '',
+        defaultAdminOverheadMode: profile.defaultAdminOverheadMode === 'FIXED' ? 'FIXED' : 'PCT',
+        defaultAdminOverheadValue: String(profile.defaultAdminOverheadValue ?? 10),
         defaultCountryId: profile.defaultCountryId || null,
       });
     }
@@ -811,6 +815,26 @@ export default function SettingsPage() {
                     onChange={(e) => setForm(f => ({ ...f, bankIfsc: e.target.value }))}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
                   />
+                </div>
+                <div className="md:col-span-2 border-t pt-4 mt-2">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-1">Quotation Defaults</h3>
+                  <p className="text-xs text-slate-500 mb-3">Pre-fills the Quotation Calculator&apos;s Admin/Overhead field on a new quotation — each quotation can still change it, and existing quotations keep whatever they were saved with.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Default Admin / Overhead</label>
+                  <div className="flex gap-2">
+                    <div className="flex border border-slate-300 rounded-lg overflow-hidden text-xs font-medium">
+                      <button type="button" onClick={() => setForm(f => ({ ...f, defaultAdminOverheadMode: 'PCT' }))} className={`px-3 py-2 ${form.defaultAdminOverheadMode === 'PCT' ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>%</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, defaultAdminOverheadMode: 'FIXED' }))} className={`px-3 py-2 ${form.defaultAdminOverheadMode === 'FIXED' ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>Fixed</button>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.defaultAdminOverheadValue}
+                      onChange={(e) => setForm(f => ({ ...f, defaultAdminOverheadValue: e.target.value }))}
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

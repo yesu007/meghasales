@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dayjs from 'dayjs';
+import { getServerSession } from 'next-auth/next';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
+import { authOptions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { invoiceFieldsFromQuotation, nextInvoiceNumber } from '@/lib/invoiceFromQuotation';
 import { requirePermission } from '@/lib/rbac';
+
+// Prisma Decimal/Date instances aren't plain JSON values; round-tripping
+// through JSON collapses them to the same strings Prisma would render
+// anyway — same convention as src/lib/audit.ts's toJsonSafe.
+function toJsonSafe(value: unknown) {
+  return JSON.parse(JSON.stringify(value));
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -77,13 +86,46 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.quotation.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
 
+    // Overriding the system-calculated total is a distinct, more sensitive
+    // action than ordinary quoting — gated on its own permission rather than
+    // manage_quotations so an authoring role (e.g. SALES) can edit a
+    // quotation without also being able to unilaterally override pricing.
+    // Re-checked on every save that carries an override (not just the one
+    // that first sets it) since the calculator resubmits it unchanged
+    // whenever an already-overridden quotation is edited.
+    if (body.totalAmountOverridden === true) {
+      const overrideDenied = await requirePermission('authorize_quotation_override');
+      if (overrideDenied) return overrideDenied;
+    }
+
+    // A pure status transition (Draft -> Sent -> Approved) isn't a new
+    // "version" of the quotation's commercial content — only edits that
+    // touch anything besides status bump the counter and get an entry in
+    // QuotationRevision, so version history stays a re-quote trail rather
+    // than noise from every status click.
+    const isContentUpdate = Object.keys(body).some((key) => key !== 'status');
+    const session = isContentUpdate ? await getServerSession(authOptions) : null;
+    const revisedById = session?.user ? parseInt((session.user as any).id, 10) : null;
+
     // Status update and any resulting invoice generation must succeed or
     // fail together — otherwise a failure generating the invoice leaves the
     // quotation marked APPROVED while the request reports an error.
     const { quotation, generatedInvoice } = await prisma.$transaction(async (tx) => {
+      if (isContentUpdate) {
+        await tx.quotationRevision.create({
+          data: {
+            quotationId: id,
+            versionNumber: existing.version,
+            snapshot: toJsonSafe(existing),
+            revisedById: Number.isFinite(revisedById) ? revisedById : null,
+          },
+        });
+      }
+
       const quotation = await tx.quotation.update({
         where: { id },
         data: {
+          ...(isContentUpdate && { version: { increment: 1 } }),
           ...(body.status && { status: body.status }),
           ...(body.softwareModules !== undefined && { softwareModules: body.softwareModules }),
           ...(body.businessModule !== undefined && { businessModule: body.businessModule }),
@@ -104,6 +146,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           ...(body.addons !== undefined && { addons: body.addons }),
           ...(body.pricingSnapshot !== undefined && { pricingSnapshot: body.pricingSnapshot }),
           ...(body.notes !== undefined && { notes: body.notes }),
+          ...(body.additionalTerms !== undefined && { additionalTerms: body.additionalTerms }),
           ...(body.validUntil !== undefined && { validUntil: body.validUntil ? new Date(body.validUntil) : null }),
           // Resource-based (Quotation Calculator) fields — see POST above for
           // where these are computed. This PUT stays a generic spread updater
