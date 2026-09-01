@@ -16,6 +16,9 @@ export async function GET(request: NextRequest) {
     const size = parseInt(searchParams.get('size') || '10');
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
+    const currentStage = searchParams.get('currentStage') || '';
+    const projectManagerId = searchParams.get('projectManagerId') || '';
+    const businessVertical = searchParams.get('businessVertical') || '';
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortDir = searchParams.get('sortDir') || 'desc';
 
@@ -36,6 +39,12 @@ export async function GET(request: NextRequest) {
     }
 
     if (status) AND.push({ status: status.toUpperCase() });
+    if (currentStage) AND.push({ currentStage });
+    if (projectManagerId) AND.push({ projectManagerId: parseInt(projectManagerId) });
+    // Same relation-filter approach as /api/leads's own businessVertical
+    // filter — businessVerticals is a JSON-encoded name on Lead, matched
+    // via `contains` through the existing lead relation, not a new field.
+    if (businessVertical) AND.push({ lead: { businessVerticals: { contains: businessVertical, mode: 'insensitive' } } });
 
     if (AND.length > 0) where.AND = AND;
 
@@ -50,7 +59,11 @@ export async function GET(request: NextRequest) {
         skip: page * size,
         take: size,
         include: {
-          lead: { select: { companyName: true, contactPerson: true } },
+          // businessVerticals is Lead's own field (see the schema note on
+          // Vertical/ExpenseBudget) — no Vertical relation on Implementation
+          // itself; this just surfaces the Lead's existing value alongside
+          // the fields already selected here.
+          lead: { select: { companyName: true, contactPerson: true, businessVerticals: true } },
           projectManager: { select: { firstName: true, lastName: true } },
         },
       }),
@@ -60,9 +73,11 @@ export async function GET(request: NextRequest) {
     const content = implementations.map((impl) => ({
       id: impl.id,
       leadId: impl.leadId,
+      sourceType: impl.sourceType,
       projectName: impl.projectName,
       companyName: impl.lead.companyName,
       contactPerson: impl.lead.contactPerson,
+      businessVerticals: impl.lead.businessVerticals,
       projectManagerId: impl.projectManagerId,
       projectManagerName: impl.projectManager ? `${impl.projectManager.firstName} ${impl.projectManager.lastName}` : null,
       status: impl.status,
@@ -98,10 +113,14 @@ export async function POST(request: NextRequest) {
     if (!body.leadId) {
       return NextResponse.json({ message: 'leadId is required' }, { status: 400 });
     }
+    if (!body.sourceType || !['LEAD', 'CUSTOMER'].includes(body.sourceType)) {
+      return NextResponse.json({ message: 'Source Type is required' }, { status: 400 });
+    }
 
     const impl = await prisma.implementation.create({
       data: {
         leadId: parseInt(body.leadId),
+        sourceType: body.sourceType,
         projectName: body.projectName || null,
         projectManagerId: body.projectManagerId ? parseInt(body.projectManagerId) : null,
         status: 'PLANNING',

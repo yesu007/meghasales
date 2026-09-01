@@ -46,6 +46,15 @@ export async function GET(request: NextRequest) {
     const sortDir = searchParams.get('sortDir') || 'desc';
     const createdFrom = searchParams.get('createdFrom') || '';
     const createdTo = searchParams.get('createdTo') || '';
+    // Opt-in, passed only by the Leads page's own listing — every other
+    // caller of this endpoint (Quotations, Demos, Implementations,
+    // Accounting, Meetings reports) still needs Customer rows too, since
+    // there's no separate Customer table (see src/app/api/customers/
+    // route.ts's own comment: "Customer" is a Lead row with
+    // status=CONFIRMED). A Customer created directly from the Customer tab
+    // is excluded here — a genuinely-converted Lead (status reached
+    // CONFIRMED via the pipeline) is not.
+    const excludeDirectCustomers = searchParams.get('excludeDirectCustomers') === 'true';
 
     // Build where clause
     const where: Prisma.LeadWhereInput = {};
@@ -85,6 +94,14 @@ export async function GET(request: NextRequest) {
     if (createdTo) AND.push({ createdAt: { lte: new Date(createdTo) } });
     if (view === 'new') AND.push({ followUpCount: 0 });
     if (view === 'followed-up') AND.push({ followUpCount: { gt: 0 } });
+    if (excludeDirectCustomers) {
+      // Both /api/leads and /api/customers write exactly one CREATED
+      // LeadActivity at creation, with a distinct description — the only
+      // existing signal for "was this row ever a real Lead" since Customer
+      // creation writes straight to the Lead table with no field of its
+      // own recording origin.
+      AND.push({ activities: { none: { activityType: 'CREATED', description: { startsWith: 'Customer created for company:' } } } });
+    }
 
     // Ownership data-scope boundary — a Business Analyst / Sales rep sees
     // only leads assigned to them (plus unassigned ones); see
@@ -126,6 +143,7 @@ export async function GET(request: NextRequest) {
       status: lead.status,
       customerStatus: lead.customerStatus,
       leadSource: lead.leadSource,
+      businessVerticals: lead.businessVerticals,
       assignedBaId: lead.assignedBaId,
       assignedBaName: lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : null,
       country: lead.countryRef,
