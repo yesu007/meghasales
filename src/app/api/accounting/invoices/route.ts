@@ -23,6 +23,17 @@ function daysOverdue(dueDate: Date): number {
   return diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;
 }
 
+// Next Follow Ups column — same "has a next-follow-up date in the past, and
+// the record hasn't reached a terminal state" rule as isFollowUpOverdue in
+// src/lib/leadFollowUp.ts (the Leads module's Next Follow-up column this
+// reuses), adapted to Invoice's own terminal statuses (PAID/CANCELLED —
+// once settled or voided there's nothing left to follow up on).
+function isFollowUpOverdue(nextFollowUpDate: Date | null, status: string): boolean {
+  if (!nextFollowUpDate) return false;
+  if (status === 'PAID' || status === 'CANCELLED') return false;
+  return new Date(nextFollowUpDate) < new Date();
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requirePermission('view_accounting');
   if (denied) return denied;
@@ -70,7 +81,7 @@ export async function GET(request: NextRequest) {
 
     if (AND.length > 0) where.AND = AND;
 
-    const validSortFields = ['invoiceDate', 'dueDate', 'totalAmount', 'balanceDue', 'status', 'createdAt'];
+    const validSortFields = ['invoiceDate', 'dueDate', 'totalAmount', 'balanceDue', 'status', 'createdAt', 'nextFollowUpDate'];
     const orderField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const orderDir = sortDir === 'asc' ? 'asc' : 'desc';
 
@@ -108,6 +119,8 @@ export async function GET(request: NextRequest) {
         status: inv.status,
         displayStatus: computeDisplayStatus(inv.status, inv.dueDate),
         daysOverdue: daysOverdue(inv.dueDate),
+        nextFollowUpDate: inv.nextFollowUpDate,
+        isFollowUpOverdue: isFollowUpOverdue(inv.nextFollowUpDate, inv.status),
         accountManagerId: inv.accountManagerId,
         accountManagerName: inv.accountManager ? `${inv.accountManager.firstName} ${inv.accountManager.lastName}` : null,
         latestPaymentDate: latestPayment?.paymentDate || null,

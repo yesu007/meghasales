@@ -1471,6 +1471,11 @@ model Invoice {
   status             String    @default("PENDING") @map("status") // PENDING | PARTIALLY_PAID | PAID | CANCELLED
   accountManagerId   Int?      @map("account_manager_id")
   notes              String?
+  // When to next contact the client about this pending invoice (e.g. "they
+  // said they'll pay on the 5th") — same simple denormalized-date pattern as
+  // Lead.nextFollowUpDate, reused verbatim for the Pending Invoice table's
+  // Next Follow Ups column.
+  nextFollowUpDate   DateTime? @map("next_follow_up_date")
   createdById        Int?      @map("created_by")
   updatedById        Int?      @map("updated_by")
   deletedAt          DateTime? @map("deleted_at")
@@ -1492,6 +1497,7 @@ model Invoice {
   @@index([dueDate])
   @@index([accountManagerId])
   @@index([legalEntityId])
+  @@index([nextFollowUpDate])
   @@map("invoices")
 }
 

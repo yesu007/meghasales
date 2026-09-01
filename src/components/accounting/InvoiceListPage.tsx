@@ -19,6 +19,7 @@ import {
   EyeIcon,
   ArrowDownTrayIcon,
   BanknotesIcon,
+  CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -60,6 +61,10 @@ interface InvoiceRow {
   status: string;
   displayStatus: string;
   daysOverdue: number;
+  // Next Follow Ups — same field/shape as Lead.nextFollowUpDate /
+  // Lead.isOverdue in the Leads module, reused verbatim here.
+  nextFollowUpDate: string | null;
+  isFollowUpOverdue: boolean;
   accountManagerId: number | null;
   accountManagerName: string | null;
   latestPaymentDate: string | null;
@@ -223,6 +228,15 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
     toast.success('Invoice deleted');
   };
 
+  // Same inline partial-update pattern as updateNextFollowUp in the Leads
+  // module (src/app/dashboard/leads/page.tsx) — reused verbatim here.
+  const updateNextFollowUp = async (id: number, nextFollowUpDate: string) => {
+    const res = await fetch(`/api/accounting/invoices/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nextFollowUpDate: nextFollowUpDate || null }) });
+    if (!res.ok) { toast.error('Failed to update next follow-up'); return; }
+    queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
+    toast.success('Next follow-up updated');
+  };
+
   const exportCsv = () => {
     const escape = (v: unknown) => {
       const s = v === null || v === undefined ? '' : String(v);
@@ -360,6 +374,7 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
                         <th className="px-4 py-3 text-right font-semibold text-white hidden lg:table-cell">Balance</th>
                         <th className="px-4 py-3 text-left"><button onClick={() => handleSort('dueDate')} className="flex items-center gap-1 font-semibold text-white">Due Date <SortIcon col="dueDate" /></button></th>
                         <th className="px-4 py-3 text-center font-semibold text-white hidden lg:table-cell">Days Overdue</th>
+                        <th className="px-4 py-3 text-left hidden lg:table-cell"><button onClick={() => handleSort('nextFollowUpDate')} className="flex items-center gap-1 font-semibold text-white">Next Follow Ups <SortIcon col="nextFollowUpDate" /></button></th>
                         <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                         <th className="px-4 py-3 text-left font-semibold text-white hidden xl:table-cell">Manager</th>
                       </>
@@ -392,6 +407,18 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
                           <td className="px-4 py-3 text-right text-slate-600 hidden lg:table-cell">{fmt(inv.balanceDue, inv.currencyCode)}</td>
                           <td className="px-4 py-3 text-slate-600">{dayjs(inv.dueDate).format('DD MMM YYYY')}</td>
                           <td className="px-4 py-3 text-center hidden lg:table-cell">{inv.daysOverdue > 0 ? <span className="text-red-600 font-medium">{inv.daysOverdue}</span> : '—'}</td>
+                          <td className="px-4 py-3 hidden lg:table-cell">
+                            <div className={`relative inline-flex items-center rounded-lg border ${inv.isFollowUpOverdue ? 'border-red-300 bg-red-50' : inv.nextFollowUpDate ? 'border-slate-200 bg-white' : 'border-dashed border-slate-300 bg-white'}`}>
+                              <CalendarDaysIcon className={`pointer-events-none absolute left-2 h-3.5 w-3.5 ${inv.isFollowUpOverdue ? 'text-red-500' : 'text-slate-400'}`} />
+                              <input
+                                type="date"
+                                value={inv.nextFollowUpDate ? dayjs(inv.nextFollowUpDate).format('YYYY-MM-DD') : ''}
+                                onChange={(e) => updateNextFollowUp(inv.id, e.target.value)}
+                                className={`w-[9.5rem] pl-7 pr-2 py-1.5 text-xs bg-transparent border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${inv.isFollowUpOverdue ? 'text-red-700 font-semibold' : inv.nextFollowUpDate ? 'text-slate-700' : 'text-slate-400'}`}
+                              />
+                            </div>
+                            {inv.isFollowUpOverdue && <p className="mt-1 text-[10px] font-semibold text-red-600 uppercase tracking-wide">Overdue</p>}
+                          </td>
                           <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[inv.displayStatus] || 'bg-slate-100 text-slate-700'}`}>{STATUS_LABELS[inv.displayStatus] || inv.displayStatus}</span></td>
                           <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{inv.accountManagerName || '—'}</td>
                         </>
