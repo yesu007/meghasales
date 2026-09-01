@@ -16,6 +16,7 @@ import {
   FunnelIcon,
   PencilIcon,
   TrashIcon,
+  CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -75,6 +76,8 @@ interface Demo {
   feedback: string | null;
   nextAction: string | null;
   approvalStatus: string | null;
+  nextFollowUpDate: string | null;
+  isOverdue: boolean;
   createdAt: string;
 }
 
@@ -281,6 +284,7 @@ export default function DemosPage() {
   const assignTo = (id: number, assignedToId: string) => updateDemo(id, { assignedToId: assignedToId || null }, 'Assigned to updated');
   const updateInterest = (id: number, customerInterestLevel: string) => updateDemo(id, { customerInterestLevel: customerInterestLevel || null }, 'Interest level updated');
   const updateNextAction = (id: number, nextAction: string) => updateDemo(id, { nextAction: nextAction || null }, 'Next action updated');
+  const updateNextFollowUp = (id: number, nextFollowUpDate: string) => updateDemo(id, { nextFollowUpDate: nextFollowUpDate || null }, 'Next follow-up updated');
   const rescheduleDemo = (id: number, scheduledDate: string) => {
     if (!scheduledDate) return;
     updateDemo(id, { scheduledDate: new Date(scheduledDate).toISOString(), status: 'RESCHEDULED' }, 'Demo rescheduled');
@@ -444,6 +448,11 @@ export default function DemosPage() {
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Assigned To</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden xl:table-cell">Interest</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden xl:table-cell">Next Action</th>
+                    <th className="px-4 py-3 text-left hidden lg:table-cell">
+                      <button onClick={() => handleSort('nextFollowUpDate')} className="flex items-center gap-1 font-semibold text-white">
+                        Next Follow-up <SortIcon col="nextFollowUpDate" />
+                      </button>
+                    </th>
                     <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
                   </tr>
                 </thead>
@@ -518,6 +527,18 @@ export default function DemosPage() {
                           <option value="">Select</option>
                           {NEXT_ACTIONS.map(n => <option key={n.value} value={n.value}>{n.label}</option>)}
                         </select>
+                      </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <div className={`relative inline-flex items-center rounded-lg border ${demo.isOverdue ? 'border-red-300 bg-red-50' : demo.nextFollowUpDate ? 'border-slate-200 bg-white' : 'border-dashed border-slate-300 bg-white'}`}>
+                          <CalendarDaysIcon className={`pointer-events-none absolute left-2 h-3.5 w-3.5 ${demo.isOverdue ? 'text-red-500' : 'text-slate-400'}`} />
+                          <input
+                            type="date"
+                            value={demo.nextFollowUpDate ? dayjs(demo.nextFollowUpDate).format('YYYY-MM-DD') : ''}
+                            onChange={(e) => updateNextFollowUp(demo.id, e.target.value)}
+                            className={`w-[9.5rem] pl-7 pr-2 py-1.5 text-xs bg-transparent border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${demo.isOverdue ? 'text-red-700 font-semibold' : demo.nextFollowUpDate ? 'text-slate-700' : 'text-slate-400'}`}
+                          />
+                        </div>
+                        {demo.isOverdue && <p className="mt-1 text-[10px] font-semibold text-red-600 uppercase tracking-wide">Overdue</p>}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">

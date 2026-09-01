@@ -352,6 +352,9 @@ model Demo {
   recordingUrl          String?   @map("recording_url")
   stakeholderFeedback   String?   @map("stakeholder_feedback")
   approvalStatus        String?   @default("PENDING") @map("approval_status")
+  // Same "Next Follow-up" field/behavior as Lead.nextFollowUpDate — directly
+  // editable from the Demos list table, same convention.
+  nextFollowUpDate      DateTime? @map("next_follow_up_date")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
@@ -361,6 +364,7 @@ model Demo {
   project    Project? @relation(fields: [projectId], references: [id])
 
   @@index([projectId])
+  @@index([nextFollowUpDate])
   @@map("demos")
 }
 

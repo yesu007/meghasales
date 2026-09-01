@@ -4,8 +4,13 @@ import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { requirePermission, getOwnershipFilter } from '@/lib/rbac';
 import { DEFAULT_TIMEZONE } from '@/lib/timezones';
+import { isNextDateOverdue } from '@/lib/leadFollowUp';
 
 export const dynamic = 'force-dynamic';
+
+// Demo's own terminal statuses (no further follow-up expected), same role
+// as isTerminalLeadStatus plays for Lead.nextFollowUpDate's overdue check.
+const TERMINAL_DEMO_STATUSES = ['COMPLETED', 'CANCELLED'];
 
 export async function GET(request: NextRequest) {
   const denied = await requirePermission('view_demos');
@@ -54,7 +59,7 @@ export async function GET(request: NextRequest) {
     if (AND.length > 0) where.AND = AND;
 
     // Validate sort field
-    const validSortFields = ['scheduledDate', 'actualDate', 'status', 'demoType', 'createdAt'];
+    const validSortFields = ['scheduledDate', 'actualDate', 'status', 'demoType', 'createdAt', 'nextFollowUpDate'];
     const orderField = validSortFields.includes(sortBy) ? sortBy : 'scheduledDate';
     const orderDir = sortDir === 'asc' ? 'asc' : 'desc';
 
@@ -97,6 +102,8 @@ export async function GET(request: NextRequest) {
       feedback: demo.feedback,
       nextAction: demo.nextAction,
       approvalStatus: demo.approvalStatus,
+      nextFollowUpDate: demo.nextFollowUpDate,
+      isOverdue: isNextDateOverdue(demo.nextFollowUpDate, TERMINAL_DEMO_STATUSES.includes(demo.status)),
       createdAt: demo.createdAt,
     }));
 
