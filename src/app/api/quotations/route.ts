@@ -283,6 +283,13 @@ export async function POST(request: NextRequest) {
       clientState = clientState || lead?.state || null;
     }
 
+    // A picked Project must actually belong to the resolved lead — same
+    // check as /api/demos and /api/implementations.
+    if (body.projectId) {
+      const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: leadId! }, { leadId: leadId! }] } });
+      if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+
     // Generate quotation number
     const count = await prisma.quotation.count();
     const quotationNumber = `QTN-${String(count + 1).padStart(5, '0')}`;
@@ -296,6 +303,7 @@ export async function POST(request: NextRequest) {
       exchangeRate: body.exchangeRate || 1,
       notes: body.notes || null,
       additionalTerms: body.additionalTerms || null,
+      projectId: body.projectId ? parseInt(body.projectId) : null,
       status: 'DRAFT',
     };
     if (resourceBasedFields) {

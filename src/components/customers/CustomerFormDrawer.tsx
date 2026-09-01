@@ -15,6 +15,17 @@ async function fetchVerticalOptions(): Promise<VerticalOption[]> {
   return res.json();
 }
 
+// Project master picker — replaces the old free-text Project Name input.
+// Same fetch/shape as src/components/leads/LeadFormDrawer.tsx's own copy
+// (kept duplicated rather than shared, matching this file's existing
+// standalone-copy convention — see the module comment above).
+interface ProjectOption { id: number; projectName: string; linkedLeadsCount: number }
+async function fetchProjectOptions(): Promise<ProjectOption[]> {
+  const res = await fetch('/api/projects');
+  if (!res.ok) throw new Error('Failed to fetch projects');
+  return res.json();
+}
+
 // Customer-owned create form. Mirrors the UI/UX of
 // src/components/leads/LeadFormDrawer.tsx (same layout, field set and
 // validation shape) but is a standalone copy with its own constants,
@@ -27,7 +38,7 @@ async function fetchVerticalOptions(): Promise<VerticalOption[]> {
 
 export interface CustomerFormState {
   companyName: string;
-  projectName: string;
+  projectId: number | null;
   contactPerson: string;
   designation: string;
   mobile: string;
@@ -57,7 +68,7 @@ export interface CustomerFormState {
 }
 
 export const blankCustomerForm: CustomerFormState = {
-  companyName: '', projectName: '', contactPerson: '', designation: '', mobile: '', email: '', leadSource: '', businessVerticals: '',
+  companyName: '', projectId: null, contactPerson: '', designation: '', mobile: '', email: '', leadSource: '', businessVerticals: '',
   countryId: null, currencyCode: '', currencySymbol: '', taxType: '',
   state: '', city: '', addressLine1: '', addressLine2: '', notes: '',
   legalName: '', taxRegistrationNumber: '', legalAddressLine1: '', legalAddressLine2: '', postalCode: '',
@@ -97,6 +108,7 @@ export default function CustomerFormDrawer({
   open, onClose, form, setForm, formErrors, setFormErrors, onSave, isSaving, isAdmin, currencies,
 }: CustomerFormDrawerProps) {
   const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
+  const { data: projectOptions = [] } = useQuery({ queryKey: ['projects-for-lead-link'], queryFn: fetchProjectOptions });
   const sources = useLeadSources();
 
   const handleCountryChange = (country: Country) => {
@@ -140,8 +152,11 @@ export default function CustomerFormDrawer({
                         {formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
-                        <input value={form.projectName} onChange={(e) => setForm(f => ({...f, projectName: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                        <select value={form.projectId ?? ''} onChange={(e) => setForm(f => ({...f, projectId: e.target.value ? Number(e.target.value) : null}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                          <option value="">Unassigned</option>
+                          {projectOptions.map(p => <option key={p.id} value={p.id}>{p.projectName} — {p.linkedLeadsCount} {p.linkedLeadsCount === 1 ? 'Project' : 'Projects'}</option>)}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person *</label>

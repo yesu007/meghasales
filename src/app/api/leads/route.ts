@@ -193,10 +193,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
     }
 
+    if (body.projectId) {
+      const project = await prisma.project.findUnique({ where: { id: parseInt(body.projectId) }, select: { id: true } });
+      if (!project) return NextResponse.json({ message: 'Selected project not found' }, { status: 404 });
+    }
+
     const lead = await prisma.lead.create({
       data: {
         companyName: body.companyName,
         projectName: body.projectName || null,
+        projectId: body.projectId ? parseInt(body.projectId) : null,
         contactPerson: body.contactPerson,
         designation: body.designation || null,
         mobile: body.mobile || null,

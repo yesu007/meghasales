@@ -20,6 +20,7 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { TIMEZONES, DEFAULT_TIMEZONE, timezoneShortLabel } from '@/lib/timezones';
+import { useAllProjects } from '@/hooks/useProjectsForLead';
 
 const DEMO_TYPES = [
   { value: 'ONLINE', label: 'Online' },
@@ -60,6 +61,8 @@ interface Demo {
   demoType: string;
   packageId: number | null;
   packageName: string | null;
+  projectId: number | null;
+  projectName: string | null;
   scheduledDate: string | null;
   timezone: string | null;
   actualDate: string | null;
@@ -188,10 +191,27 @@ export default function DemosPage() {
   }, [isUsersError]);
 
   // Create/edit demo form
-  const blankForm = { leadId: '', demoType: '', packageId: '', scheduledDate: '', timezone: DEFAULT_TIMEZONE, assignedToId: '', attendees: '', modulesDemonstrated: '' };
+  const blankForm = { leadId: '', demoType: '', packageId: '', projectId: '', scheduledDate: '', timezone: DEFAULT_TIMEZONE, assignedToId: '', attendees: '', modulesDemonstrated: '' };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Project is the entry point here — picking one auto-fills (and locks)
+  // Lead/Company below from whichever the Project belongs to (its
+  // customerId or leadId; see the Project model's own comments). Clearing
+  // Project (create mode only — Project itself is locked once editing, same
+  // as Lead was before) releases Lead/Company back to manual selection.
+  const { data: allProjects = [] } = useAllProjects();
+  const selectedProject = allProjects.find((p) => String(p.id) === form.projectId);
+  useEffect(() => {
+    if (!form.projectId) {
+      if (!editingId) setForm((f) => (f.leadId ? { ...f, leadId: '' } : f));
+      return;
+    }
+    if (!selectedProject) return;
+    const resolvedLeadId = selectedProject.customerId ? String(selectedProject.customerId) : selectedProject.leadId ? String(selectedProject.leadId) : '';
+    setForm((f) => (f.leadId === resolvedLeadId ? f : { ...f, leadId: resolvedLeadId }));
+  }, [form.projectId, selectedProject, editingId]);
 
   const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
 
@@ -224,6 +244,7 @@ export default function DemosPage() {
       leadId: String(demo.leadId),
       demoType: demo.demoType,
       packageId: demo.packageId ? String(demo.packageId) : '',
+      projectId: demo.projectId ? String(demo.projectId) : '',
       scheduledDate: demo.scheduledDate ? dayjs(demo.scheduledDate).format('YYYY-MM-DDTHH:mm') : '',
       timezone: demo.timezone || DEFAULT_TIMEZONE,
       assignedToId: demo.assignedToId ? String(demo.assignedToId) : '',
@@ -588,10 +609,23 @@ export default function DemosPage() {
                     >
                       <div className="space-y-4">
                         <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Lead / Company *</label>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
                           <select
                             disabled={!!editingId}
-                            title={editingId ? 'Lead cannot be changed after creation' : undefined}
+                            title={editingId ? 'Project cannot be changed after creation' : undefined}
+                            value={form.projectId}
+                            onChange={(e) => setForm(f => ({ ...f, projectId: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                          >
+                            <option value="">Select project</option>
+                            {allProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Lead / Company *</label>
+                          <select
+                            disabled={!!form.projectId || !!editingId}
+                            title={form.projectId ? 'Auto-filled from the selected Project' : editingId ? 'Lead cannot be changed after creation' : undefined}
                             value={form.leadId}
                             onChange={(e) => setForm(f => ({ ...f, leadId: e.target.value }))}
                             className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.leadId ? 'border-red-400' : 'border-slate-300'}`}
@@ -605,6 +639,22 @@ export default function DemosPage() {
                           </select>
                           {formErrors.leadId && <p className="text-xs text-red-600 mt-1">{formErrors.leadId}</p>}
                         </div>
+                        {form.projectId && (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
+                              <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
+                                {selectedProject?.verticalName || '—'}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">Head</label>
+                              <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
+                                {selectedProject?.headName || 'No head assigned'}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Demo Type *</label>
