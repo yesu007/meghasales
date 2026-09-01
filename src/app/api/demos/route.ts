@@ -68,6 +68,7 @@ export async function GET(request: NextRequest) {
           lead: { select: { companyName: true, contactPerson: true, mobile: true } },
           assignedTo: { select: { firstName: true, lastName: true } },
           package: { select: { name: true } },
+          project: { select: { projectName: true } },
         },
       }),
       prisma.demo.count({ where }),
@@ -82,6 +83,8 @@ export async function GET(request: NextRequest) {
       demoType: demo.demoType,
       packageId: demo.packageId,
       packageName: demo.package?.name || null,
+      projectId: demo.projectId,
+      projectName: demo.project?.projectName || null,
       scheduledDate: demo.scheduledDate,
       timezone: demo.timezone,
       actualDate: demo.actualDate,
@@ -122,11 +125,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'leadId and demoType are required' }, { status: 400 });
     }
 
+    const leadId = parseInt(body.leadId);
+
+    // A picked Project must actually belong to the selected Lead/Customer —
+    // never trust the id verbatim from the client (same rationale as
+    // /api/projects's own leadId filter: customerId OR leadId match).
+    if (body.projectId) {
+      const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: leadId }, { leadId }] } });
+      if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+
     const demo = await prisma.demo.create({
       data: {
-        leadId: parseInt(body.leadId),
+        leadId,
         demoType: body.demoType,
         packageId: body.packageId ? parseInt(body.packageId) : null,
+        projectId: body.projectId ? parseInt(body.projectId) : null,
         assignedToId: body.assignedToId ? parseInt(body.assignedToId) : null,
         scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : null,
         timezone: body.timezone || DEFAULT_TIMEZONE,

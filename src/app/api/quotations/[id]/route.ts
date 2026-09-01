@@ -66,6 +66,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       include: {
         lead: { select: { companyName: true, contactPerson: true, email: true, mobile: true } },
         legalEntity: { select: { companyId: true } },
+        project: { select: { projectName: true } },
       },
     });
     if (!quotation) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
@@ -85,6 +86,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     const existing = await prisma.quotation.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
+
+    // A picked Project must actually belong to this quotation's lead (leadId
+    // can't change from here — see the form's own locked client section) —
+    // same check as /api/demos and /api/implementations.
+    if (body.projectId) {
+      const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
+      if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
 
     // Overriding the system-calculated total is a distinct, more sensitive
     // action than ordinary quoting — gated on its own permission rather than
@@ -154,6 +163,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           // freshly server-recomputed values for all of these at once.
           ...(body.costingMode !== undefined && { costingMode: body.costingMode }),
           ...(body.projectName !== undefined && { projectName: body.projectName }),
+          ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
           ...(body.verticalId !== undefined && { verticalId: body.verticalId ? parseInt(body.verticalId) : null }),
           ...(body.legalEntityId !== undefined && { legalEntityId: body.legalEntityId ? parseInt(body.legalEntityId) : null }),
           ...(body.resourceCostTotal !== undefined && { resourceCostTotal: body.resourceCostTotal }),

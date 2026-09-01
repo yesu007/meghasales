@@ -19,6 +19,7 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { useAllProjects } from '@/hooks/useProjectsForLead';
 
 const IMPL_STATUSES = [
   { value: 'PLANNING', label: 'Planning', color: 'bg-slate-100 text-slate-700' },
@@ -44,6 +45,8 @@ interface Implementation {
   leadId: number;
   sourceType: string;
   projectName: string | null;
+  projectId: number | null;
+  linkedProjectName: string | null;
   companyName: string;
   contactPerson: string;
   businessVerticals: string | null;
@@ -150,7 +153,7 @@ export default function ImplementationsPage() {
     placeholderData: (prev: any) => prev,
   });
 
-  const blankForm = { sourceType: 'LEAD' as 'LEAD' | 'CUSTOMER', leadId: '', projectName: '', startDate: '', targetEndDate: '', currentStage: '', projectManagerId: '', notes: '' };
+  const blankForm = { sourceType: 'LEAD' as 'LEAD' | 'CUSTOMER', leadId: '', projectName: '', projectId: '', startDate: '', targetEndDate: '', currentStage: '', projectManagerId: '', notes: '' };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -161,6 +164,30 @@ export default function ImplementationsPage() {
     queryKey: ['leads-for-impl', form.sourceType],
     queryFn: () => fetchLeads(form.sourceType),
   });
+
+  // Project is the entry point here — picking one auto-fills (and locks)
+  // Source Type + Lead/Customer below from whichever the Project belongs to
+  // (its customerId or leadId; see the Project model's own comments), same
+  // rationale as the Demos page. Clearing Project (create mode only —
+  // Project itself is locked once editing, same as Source Type/Lead were
+  // before) releases them back to manual selection.
+  const { data: allProjects = [] } = useAllProjects();
+  const selectedProject = allProjects.find((p) => String(p.id) === form.projectId);
+  useEffect(() => {
+    if (!form.projectId) {
+      if (!editingId) setForm((f) => (f.leadId ? { ...f, leadId: '' } : f));
+      return;
+    }
+    if (!selectedProject) return;
+    const resolvedSourceType: 'LEAD' | 'CUSTOMER' = selectedProject.customerId ? 'CUSTOMER' : 'LEAD';
+    const resolvedLeadId = selectedProject.customerId ? String(selectedProject.customerId) : selectedProject.leadId ? String(selectedProject.leadId) : '';
+    setForm((f) => (f.sourceType === resolvedSourceType && f.leadId === resolvedLeadId ? f : { ...f, sourceType: resolvedSourceType, leadId: resolvedLeadId }));
+  }, [form.projectId, selectedProject, editingId]);
+  // Keeps the legacy free-text projectName column (still used for list
+  // search/sort/display) in sync with whichever project is selected.
+  useEffect(() => {
+    if (selectedProject) setForm((f) => (f.projectName === selectedProject.projectName ? f : { ...f, projectName: selectedProject.projectName }));
+  }, [selectedProject]);
 
   const { data: users = [], isError: isUsersError } = useQuery<UserOption[]>({
     queryKey: ['users-for-impl'],
@@ -208,6 +235,7 @@ export default function ImplementationsPage() {
       sourceType: impl.sourceType === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD',
       leadId: String(impl.leadId),
       projectName: impl.projectName || '',
+      projectId: impl.projectId ? String(impl.projectId) : '',
       startDate: impl.startDate ? dayjs(impl.startDate).format('YYYY-MM-DD') : '',
       targetEndDate: impl.targetEndDate ? dayjs(impl.targetEndDate).format('YYYY-MM-DD') : '',
       currentStage: impl.currentStage || '',
@@ -536,10 +564,23 @@ export default function ImplementationsPage() {
                     >
                       <div className="space-y-4">
                         <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Source Type *</label>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
                           <select
                             disabled={!!editingId}
-                            title={editingId ? 'Source Type cannot be changed after creation' : undefined}
+                            title={editingId ? 'Project cannot be changed after creation' : undefined}
+                            value={form.projectId}
+                            onChange={(e) => setForm(f => ({ ...f, projectId: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                          >
+                            <option value="">Select project</option>
+                            {allProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Source Type *</label>
+                          <select
+                            disabled={!!form.projectId || !!editingId}
+                            title={form.projectId ? 'Auto-filled from the selected Project' : editingId ? 'Source Type cannot be changed after creation' : undefined}
                             value={form.sourceType}
                             onChange={(e) => {
                               const sourceType = e.target.value === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD';
@@ -558,8 +599,8 @@ export default function ImplementationsPage() {
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Lead / Company *</label>
                           <select
-                            disabled={!!editingId}
-                            title={editingId ? 'Lead cannot be changed after creation' : undefined}
+                            disabled={!!form.projectId || !!editingId}
+                            title={form.projectId ? 'Auto-filled from the selected Project' : editingId ? 'Lead cannot be changed after creation' : undefined}
                             value={form.leadId}
                             onChange={(e) => setForm(f => ({ ...f, leadId: e.target.value }))}
                             className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.leadId ? 'border-red-400' : 'border-slate-300'}`}
@@ -573,22 +614,23 @@ export default function ImplementationsPage() {
                           </select>
                           {formErrors.leadId && <p className="text-xs text-red-600 mt-1">{formErrors.leadId}</p>}
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
-                          <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
-                            {form.leadId
-                              ? parseVerticalName(leads.find((l) => String(l.id) === form.leadId)?.businessVerticals ?? null) || 'Not assigned'
-                              : '—'}
-                          </p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
-                          <input
-                            value={form.projectName}
-                            onChange={(e) => setForm(f => ({ ...f, projectName: e.target.value }))}
-                            placeholder="e.g., MeghaSales ERP Implementation"
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                          />
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
+                            <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
+                              {form.projectId
+                                ? selectedProject?.verticalName || '—'
+                                : form.leadId
+                                  ? parseVerticalName(leads.find((l) => String(l.id) === form.leadId)?.businessVerticals ?? null) || 'Not assigned'
+                                  : '—'}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Head</label>
+                            <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
+                              {form.projectId ? selectedProject?.headName || 'No head assigned' : '—'}
+                            </p>
+                          </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>

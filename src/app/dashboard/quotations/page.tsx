@@ -24,6 +24,7 @@ import { formatCurrency } from '@/lib/currency';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import dayjs from 'dayjs';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useProjectsForLead } from '@/hooks/useProjectsForLead';
 
 const QUOTATION_STATUSES = [
   { value: 'DRAFT', label: 'Draft', color: 'bg-slate-100 text-slate-700' },
@@ -78,13 +79,18 @@ export default function QuotationsPage() {
   // Create state
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
   const [selectedLeadId, setSelectedLeadId] = useState('');
-  // Auto-filled from the selected lead's own Project Name (Leads module),
-  // but still a plain editable field — it's stored on the Quotation itself,
-  // not re-derived from the lead at read time. Also doubles as the loaded
-  // value when editing an existing quotation. Kept separate from
+  // Which project (Project master) this quotation is for — the dropdown is
+  // scoped to selectedLeadId (create) or editingLeadId (edit) via
+  // useProjectsForLead below. `projectName` is kept in sync from whichever
+  // project is picked (see the sync effect below) so the legacy text column
+  // still gets written on save — it's stored on the Quotation itself, not
+  // re-derived from the lead at read time. Kept separate from
   // newClientProjectName below so switching Existing Client <-> New Client
-  // never copies one tab's Project Name into the other.
+  // never copies one tab's Project Name into the other (New Client has no
+  // lead yet, so it keeps its own free-text field instead of a dropdown).
+  const [projectId, setProjectId] = useState('');
   const [projectName, setProjectName] = useState('');
+  const [editingLeadId, setEditingLeadId] = useState('');
   const [newClientProjectName, setNewClientProjectName] = useState('');
   const [clientName, setClientName] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -105,10 +111,30 @@ export default function QuotationsPage() {
 
   const resetCreateState = () => {
     setEditingId(null); setEditingQuotationNumber('');
-    setSelectedModules([]); setModuleOverrides({}); setServiceOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setProjectName(''); setNewClientProjectName('');
+    setSelectedModules([]); setModuleOverrides({}); setServiceOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setProjectName(''); setNewClientProjectName(''); setProjectId(''); setEditingLeadId('');
     setClientCountry('IN'); setClientState(''); setDiscountPercentage(0); setTaxInclusive(false); setSelectedAddons([]); setPricing(null);
     setClientMode('existing'); setSelectedLeadId(''); setFormErrors({}); setAdditionalTerms('');
   };
+
+  // Project dropdown, scoped to whichever Lead/Customer is active — create
+  // uses selectedLeadId, editing uses editingLeadId (leadId isn't tracked in
+  // `form` state here since the client section is a locked read-only block
+  // once editing). See useProjectsForLead's own comment for the relation
+  // this filters on.
+  const activeLeadIdForProjects = editingId ? editingLeadId : (clientMode === 'existing' ? selectedLeadId : '');
+  const { data: leadProjects = [], isLoading: projectsLoading } = useProjectsForLead(activeLeadIdForProjects);
+  useEffect(() => {
+    if (!activeLeadIdForProjects) return;
+    if (leadProjects.length === 1 && String(leadProjects[0].id) !== projectId) {
+      setProjectId(String(leadProjects[0].id));
+    }
+  }, [activeLeadIdForProjects, leadProjects]);
+  // Keeps the legacy free-text projectName column (still used for
+  // display/PDF/search) in sync with whichever project is selected.
+  useEffect(() => {
+    const p = leadProjects.find((x) => String(x.id) === projectId);
+    if (p) setProjectName(p.projectName);
+  }, [projectId, leadProjects]);
 
   // Fetch quotations from database
   const { data: quotationsData, isError: isQuotationsError } = useQuery({
@@ -192,9 +218,11 @@ export default function QuotationsPage() {
     setCompanyName(lead?.companyName || '');
     setClientEmail(lead?.email || '');
     setClientPhone(lead?.mobile || '');
-    // Auto-populate from the selected lead's own Project Name — the user
-    // shouldn't have to type it again, but can still edit it afterward.
-    setProjectName(lead?.projectName || '');
+    // Reset the Project selection — the previous pick belonged to whichever
+    // lead was selected before, and must not carry over. The Project
+    // dropdown (scoped to this new leadId) auto-selects/repopulates via the
+    // effects above.
+    setProjectId(''); setProjectName('');
     // Currency/tax must follow the lead — country isn't independently
     // re-picked once an existing client is selected (see countryLocked).
     setClientCountry(lead?.country?.isoCode || 'IN');
@@ -260,10 +288,14 @@ export default function QuotationsPage() {
       // client being created here uses its own, separate state — never mix
       // the two up when saving.
       const effectiveProjectName = (!editingId && clientMode === 'new') ? newClientProjectName : projectName;
+      // New-client mode has no lead yet to scope a Project dropdown to, so
+      // it never sets projectId — only the free-text projectName above.
+      const effectiveProjectId = (!editingId && clientMode === 'new') ? null : (projectId ? parseInt(projectId) : null);
       const sharedFields = {
         softwareModules: [...selectedModules, ...customModules.filter(c => c.name).map(c => ({ name: c.name, cost: c.cost, quantity: c.quantity }))],
         businessModule: selectedModules[0] || null,
         projectName: effectiveProjectName || null,
+        projectId: effectiveProjectId,
         clientCountry,
         clientState: clientState || null,
         currencyCode: pricing.currencyCode,
@@ -334,10 +366,14 @@ export default function QuotationsPage() {
     setCompanyName(q.lead?.companyName || '');
     setClientEmail(q.lead?.email || '');
     setClientPhone(q.lead?.mobile || '');
-    // The quotation's own stored Project Name — not re-derived from the
-    // lead's current value, so a per-quotation edit here is never
-    // silently overwritten.
+    // The quotation's own stored Project — not re-derived from the lead's
+    // current value, so a per-quotation edit here is never silently
+    // overwritten. projectName is the initial display value; once
+    // leadProjects loads, the sync effect above re-derives it from
+    // projectId (a no-op unless the two have drifted).
     setProjectName(q.projectName || '');
+    setProjectId(q.projectId ? String(q.projectId) : '');
+    setEditingLeadId(q.leadId ? String(q.leadId) : '');
     setClientCountry(q.clientCountry || 'IN');
     setClientState(q.clientState || '');
     setDiscountPercentage(Number(q.discountPercentage) || 0);
@@ -678,8 +714,8 @@ export default function QuotationsPage() {
               <p className="text-xs text-slate-400 mb-3">Client details are tied to the lead and cannot be changed from here.</p>
             ) : (
               <div className="flex gap-2 mb-4">
-                <button onClick={() => { setClientMode('existing'); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setNewClientProjectName(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'existing' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>Existing Client</button>
-                <button onClick={() => { setClientMode('new'); setSelectedLeadId(''); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setNewClientProjectName(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'new' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>New Client</button>
+                <button onClick={() => { setClientMode('existing'); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setNewClientProjectName(''); setProjectId(''); setProjectName(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'existing' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>Existing Client</button>
+                <button onClick={() => { setClientMode('new'); setSelectedLeadId(''); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setNewClientProjectName(''); setProjectId(''); setProjectName(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'new' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>New Client</button>
               </div>
             )}
             {!editingId && clientMode === 'existing' ? (
@@ -694,8 +730,18 @@ export default function QuotationsPage() {
                   {existingLeads.length === 0 && <p className="text-xs text-slate-400 mt-1">No existing clients yet — switch to &ldquo;New Client&rdquo; to add one.</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
-                  <input value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Auto-filled from client" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                  <select
+                    value={projectId}
+                    onChange={e => setProjectId(e.target.value)}
+                    disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                  >
+                    <option value="">
+                      {!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select project'}
+                    </option>
+                    {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                  </select>
                 </div>
               </div>
             ) : (
@@ -704,7 +750,22 @@ export default function QuotationsPage() {
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input disabled={!!editingId} value={companyName} onChange={e => setCompanyName(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}</div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input disabled={!!editingId} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input disabled={!!editingId} value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label><input value={editingId ? projectName : newClientProjectName} onChange={e => editingId ? setProjectName(e.target.value) : setNewClientProjectName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
+                {editingId ? (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                    <select
+                      value={projectId}
+                      onChange={e => setProjectId(e.target.value)}
+                      disabled={projectsLoading || leadProjects.length === 0}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                    >
+                      <option value="">{projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select project'}</option>
+                      {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div><label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label><input value={newClientProjectName} onChange={e => setNewClientProjectName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
+                )}
               </div>
             )}
           </div>

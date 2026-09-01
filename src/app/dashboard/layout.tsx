@@ -82,6 +82,7 @@ function getNavItems(): NavSection[] {
       title: 'Masters',
       items: [
         { href: '/dashboard/verticals', label: 'Verticals', icon: BuildingOffice2Icon, permission: 'view_verticals' },
+        { href: '/dashboard/projects', label: 'Project', icon: ClipboardDocumentListIcon, permission: 'view_projects' },
         { href: '/dashboard/packages', label: 'Packages', icon: CubeIcon, permission: 'view_packages' },
         { href: '/dashboard/lead-sources', label: 'Lead Sources', icon: MegaphoneIcon, permission: 'view_lead_sources' },
         { href: '/dashboard/lead-statuses', label: 'Lead Statuses', icon: FlagIcon, permission: 'view_lead_status_options' },

@@ -111,6 +111,7 @@ model User {
   createdExpenseBudgets  ExpenseBudget[]         @relation("ExpenseBudgetCreatedBy")
   revisedExpenseBudgets  ExpenseBudgetRevision[] @relation("ExpenseBudgetRevisedBy")
   headOfVerticals        Vertical[]              @relation("VerticalHead")
+  headOfProjects         Project[]               @relation("ProjectHead")
   createdCompanies       Company[]               @relation("CompanyCreatedBy")
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, see
@@ -244,21 +245,31 @@ model Lead {
   nextFollowUpDate DateTime? @map("next_follow_up_date")
   followUpCount    Int       @default(0) @map("follow_up_count")
 
-  assignedBa      User?               @relation("AssignedBA", fields: [assignedBaId], references: [id])
-  createdBy       User?               @relation("CreatedBy", fields: [createdById], references: [id])
-  countryRef      Country?            @relation(fields: [countryId], references: [id])
-  company         Company?            @relation(fields: [companyId], references: [id])
-  legalEntity     CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
-  activities      LeadActivity[]
-  followUps       LeadFollowUp[]
-  demos           Demo[]
-  quotations      Quotation[]
-  implementations Implementation[]
-  invoices        Invoice[]
-  creditNotes     CreditNote[]
-  events          Event[]
-  documents       EventDocument[]
-  vendorExpenses  Expense[]        @relation("ExpenseVendor")
+  assignedBa         User?               @relation("AssignedBA", fields: [assignedBaId], references: [id])
+  createdBy          User?               @relation("CreatedBy", fields: [createdById], references: [id])
+  countryRef         Country?            @relation(fields: [countryId], references: [id])
+  company            Company?            @relation(fields: [companyId], references: [id])
+  legalEntity        CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
+  activities         LeadActivity[]
+  followUps          LeadFollowUp[]
+  demos              Demo[]
+  quotations         Quotation[]
+  implementations    Implementation[]
+  invoices           Invoice[]
+  creditNotes        CreditNote[]
+  events             Event[]
+  documents          EventDocument[]
+  vendorExpenses     Expense[]           @relation("ExpenseVendor")
+  // Project master — two independent relations: this Lead/Customer row as
+  // the project's required Customer (Project.customerId) vs. as the
+  // project's optional Lead reference (Project.leadId, added alongside the
+  // Project form's own Lead dropdown). Separate from projectId/linkedProject
+  // below, which is this Lead/Customer's *own* "Project" picker field (what
+  // used to be the free-text Project Name input on the Lead/Customer forms).
+  projectsAsCustomer Project[]           @relation("ProjectCustomer")
+  projectsAsLead     Project[]           @relation("ProjectLead")
+  projectId          Int?                @map("project_id")
+  linkedProject      Project?            @relation("LeadProjectLink", fields: [projectId], references: [id])
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, not
   // read/written by any Lead-owned page or API.
@@ -276,6 +287,7 @@ model Lead {
   @@index([leadSource])
   @@index([assignedBaId])
   @@index([nextFollowUpDate])
+  @@index([projectId])
   @@index([lastFollowUpDate])
   @@index([companyId])
   @@index([legalEntityId])
@@ -321,6 +333,11 @@ model Demo {
   leadId                Int       @map("lead_id")
   demoType              String    @map("demo_type")
   packageId             Int?      @map("package_id")
+  // Which Project master row this demo is for — scoped to leadId (see
+  // GET /api/projects's own leadId filter): the dropdown only ever offers
+  // projects related to the selected Lead/Customer, same convention as
+  // Quotation.projectId/Implementation.projectId below.
+  projectId             Int?      @map("project_id")
   assignedToId          Int?      @map("assigned_to")
   scheduledDate         DateTime? @map("scheduled_date")
   timezone              String?   @default("Asia/Kolkata") @map("timezone")
@@ -341,7 +358,9 @@ model Demo {
   lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
   assignedTo User?    @relation(fields: [assignedToId], references: [id])
   package    Package? @relation(fields: [packageId], references: [id])
+  project    Project? @relation(fields: [projectId], references: [id])
 
+  @@index([projectId])
   @@map("demos")
 }
 
@@ -593,6 +612,11 @@ model Quotation {
   // than a normalized child table — see softwareModules/addons above).
   costingMode           String   @default("CATALOG") @map("costing_mode")
   projectName           String?  @map("project_name")
+  // Which Project master row this quotation is for — scoped to leadId, same
+  // convention as Demo.projectId. The old projectName TEXT column above is
+  // left untouched (kept in sync from the selected project for display/PDF
+  // purposes) rather than removed.
+  projectId             Int?     @map("project_id")
   verticalId            Int?     @map("vertical_id")
   // Which of the lead's Company's per-country legal entities this
   // quotation bills to — its registered address/tax number print on the
@@ -613,10 +637,12 @@ model Quotation {
   lead        Lead                @relation(fields: [leadId], references: [id], onDelete: Cascade)
   vertical    Vertical?           @relation(fields: [verticalId], references: [id])
   legalEntity CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
+  project     Project?            @relation(fields: [projectId], references: [id])
   invoices    Invoice[]
   revisions   QuotationRevision[]
 
   @@index([legalEntityId])
+  @@index([projectId])
   @@map("quotations")
 }
 
@@ -657,6 +683,11 @@ model Implementation {
   // implementation behavior. Not editable after creation, same as leadId.
   sourceType       String    @default("LEAD") @map("source_type")
   projectName      String?   @map("project_name")
+  // Which Project master row this implementation is for — scoped to leadId,
+  // same convention as Demo.projectId/Quotation.projectId. The old
+  // projectName TEXT column above is left untouched (kept in sync from the
+  // selected project for display purposes) rather than removed.
+  projectId        Int?      @map("project_id")
   projectManagerId Int?      @map("project_manager_id")
   status           String    @default("PLANNING")
   startDate        DateTime? @map("start_date")
@@ -667,13 +698,15 @@ model Implementation {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  lead           Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  projectManager User? @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  lead           Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  projectManager User?    @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  project        Project? @relation(fields: [projectId], references: [id])
 
   // Customer Documents: an NDA/Contract can optionally reference the
   // Implementation it's tied to (its "Project Name").
   customerContracts CustomerContract[]
 
+  @@index([projectId])
   @@map("implementations")
 }
 
@@ -1736,8 +1769,54 @@ model Vertical {
   budgets    ExpenseBudget[]
   quotations Quotation[]
   employees  Employee[]
+  projects   Project[]
 
   @@map("verticals")
+}
+
+// Project master — under Masters alongside Vertical/Package, same
+// admin-managed-list shape: a Customer (Lead) + Vertical pairing with a
+// responsible Head and Budget. Soft-deleted (isActive) rather than hard
+// -deleted, same convention as Vertical, since other modules may key off it
+// later.
+model Project {
+  id                 Int      @id @default(autoincrement())
+  projectName        String   @map("project_name")
+  // Exactly one of customerId/leadId is set — enforced in the API, not here
+  // (see POST/PATCH /api/projects), so a Project is always tied to either an
+  // existing Customer or an existing Lead, never both, never neither.
+  customerId         Int?     @map("customer_id")
+  // Optional, independent reference to a Lead row (any pipeline stage — not
+  // necessarily the same row as customerId, though both FK the same `leads`
+  // table since Customer IS a Lead with status=CONFIRMED). Lets a Project
+  // record which specific enquiry/Lead it grew out of, separate from which
+  // Customer it's billed to.
+  leadId             Int?     @map("lead_id")
+  verticalId         Int      @map("vertical_id")
+  headId             Int?     @map("head_id")
+  budget             Decimal? @db.Decimal(15, 2)
+  budgetCurrencyCode String?  @default("INR") @map("budget_currency_code")
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  customer        Lead?            @relation("ProjectCustomer", fields: [customerId], references: [id])
+  lead            Lead?            @relation("ProjectLead", fields: [leadId], references: [id])
+  vertical        Vertical         @relation(fields: [verticalId], references: [id])
+  head            User?            @relation("ProjectHead", fields: [headId], references: [id])
+  // Reverse side of Lead.projectId — the Leads/Customers that picked this
+  // Project from their own "Project" field (see that field's comment).
+  linkedLeads     Lead[]           @relation("LeadProjectLink")
+  // Reverse side of Demo/Quotation/Implementation.projectId — those
+  // modules' own Project dropdown, scoped to the selected Lead/Customer.
+  demos           Demo[]
+  quotations      Quotation[]
+  implementations Implementation[]
+
+  @@index([customerId])
+  @@index([leadId])
+  @@index([verticalId])
+  @@map("projects")
 }
 
 // The package/offering being demoed — Trading, Jewellery Manufacturing,

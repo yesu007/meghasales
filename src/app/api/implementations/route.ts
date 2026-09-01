@@ -65,6 +65,7 @@ export async function GET(request: NextRequest) {
           // the fields already selected here.
           lead: { select: { companyName: true, contactPerson: true, businessVerticals: true } },
           projectManager: { select: { firstName: true, lastName: true } },
+          project: { select: { projectName: true } },
         },
       }),
       prisma.implementation.count({ where }),
@@ -75,6 +76,8 @@ export async function GET(request: NextRequest) {
       leadId: impl.leadId,
       sourceType: impl.sourceType,
       projectName: impl.projectName,
+      projectId: impl.projectId,
+      linkedProjectName: impl.project?.projectName || null,
       companyName: impl.lead.companyName,
       contactPerson: impl.lead.contactPerson,
       businessVerticals: impl.lead.businessVerticals,
@@ -117,11 +120,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Source Type is required' }, { status: 400 });
     }
 
+    const leadId = parseInt(body.leadId);
+
+    // A picked Project must actually belong to the selected Lead/Customer —
+    // same check as /api/demos.
+    if (body.projectId) {
+      const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: leadId }, { leadId }] } });
+      if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+
     const impl = await prisma.implementation.create({
       data: {
-        leadId: parseInt(body.leadId),
+        leadId,
         sourceType: body.sourceType,
         projectName: body.projectName || null,
+        projectId: body.projectId ? parseInt(body.projectId) : null,
         projectManagerId: body.projectManagerId ? parseInt(body.projectManagerId) : null,
         status: 'PLANNING',
         startDate: body.startDate ? new Date(body.startDate) : null,

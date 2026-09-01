@@ -15,6 +15,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       include: {
         lead: { select: { companyName: true, contactPerson: true, mobile: true, email: true } },
         projectManager: { select: { firstName: true, lastName: true } },
+        project: { select: { projectName: true } },
       },
     });
     if (!impl) return NextResponse.json({ message: 'Implementation not found' }, { status: 404 });
@@ -35,10 +36,19 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.implementation.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Implementation not found' }, { status: 404 });
 
+    // A picked Project must actually belong to this implementation's lead
+    // (leadId can't change from here — see the form's own disabled Lead
+    // field) — same check as POST.
+    if (body.projectId) {
+      const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
+      if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+
     const impl = await prisma.implementation.update({
       where: { id },
       data: {
         ...(body.projectName !== undefined && { projectName: body.projectName }),
+        ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
         ...(body.status && { status: body.status }),
         ...(body.projectManagerId !== undefined && { projectManagerId: body.projectManagerId ? parseInt(body.projectManagerId) : null }),
         ...(body.startDate !== undefined && { startDate: body.startDate ? new Date(body.startDate) : null }),

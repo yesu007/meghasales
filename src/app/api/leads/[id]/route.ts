@@ -59,11 +59,17 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       }
     }
 
+    if (body.projectId !== undefined && body.projectId !== null && body.projectId !== '') {
+      const project = await prisma.project.findUnique({ where: { id: parseInt(body.projectId) }, select: { id: true } });
+      if (!project) return NextResponse.json({ message: 'Selected project not found' }, { status: 404 });
+    }
+
     const lead = await prisma.lead.update({
       where: { id },
       data: {
         ...(body.companyName && { companyName: body.companyName }),
         ...(body.projectName !== undefined && { projectName: body.projectName || null }),
+        ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
         ...(body.contactPerson && { contactPerson: body.contactPerson }),
         ...(body.designation !== undefined && { designation: body.designation || null }),
         ...(body.mobile !== undefined && { mobile: body.mobile }),

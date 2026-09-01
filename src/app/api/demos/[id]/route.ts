@@ -16,6 +16,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         lead: { select: { companyName: true, contactPerson: true, mobile: true, email: true } },
         assignedTo: { select: { firstName: true, lastName: true } },
         package: { select: { name: true } },
+        project: { select: { projectName: true } },
       },
     });
     if (!demo) return NextResponse.json({ message: 'Demo not found' }, { status: 404 });
@@ -36,11 +37,20 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.demo.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Demo not found' }, { status: 404 });
 
+    // A picked Project must actually belong to this demo's lead (leadId
+    // can't change from here — see the form's own disabled Lead field) —
+    // same check as POST.
+    if (body.projectId) {
+      const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
+      if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+
     const demo = await prisma.demo.update({
       where: { id },
       data: {
         ...(body.demoType && { demoType: body.demoType }),
         ...(body.packageId !== undefined && { packageId: body.packageId ? parseInt(body.packageId) : null }),
+        ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
         ...(body.status && { status: body.status }),
         ...(body.scheduledDate !== undefined && { scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : null }),
         ...(body.timezone !== undefined && { timezone: body.timezone || null }),

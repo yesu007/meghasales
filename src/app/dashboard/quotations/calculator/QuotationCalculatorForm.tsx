@@ -10,6 +10,7 @@ import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/quotationResourceCosting';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useProjectsForLead } from '@/hooks/useProjectsForLead';
 
 interface ExistingLead { id: number; companyName: string; projectName: string | null; contactPerson: string; email: string | null; mobile: string | null }
 interface Vertical { id: number; name: string; headName?: string | null }
@@ -47,10 +48,15 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [clientEmail, setClientEmail] = useState('');
   const [clientPhone, setClientPhone] = useState('');
 
-  // Auto-filled from the selected lead's own Project Name (Leads/Customer
-  // module), but still editable — also used for the loaded value when
-  // editing an existing quotation. Kept separate from newClientProjectName
-  // so Existing Client <-> New Client never copies one into the other.
+  // Which project (Project master) this quotation is for — the dropdown is
+  // scoped to selectedLeadId (create) or the loaded quotation's leadId
+  // (edit) via useProjectsForLead below. `projectName` is kept in sync from
+  // whichever project is picked (see the sync effect below) so the legacy
+  // text column still gets written on save. Kept separate from
+  // newClientProjectName so Existing Client <-> New Client never copies one
+  // into the other (New Client has no lead yet, so it keeps its own
+  // free-text field instead of a dropdown).
+  const [projectId, setProjectId] = useState('');
   const [projectName, setProjectName] = useState('');
   const [newClientProjectName, setNewClientProjectName] = useState('');
   const [verticalId, setVerticalId] = useState('');
@@ -121,9 +127,28 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   });
   const legalEntityOptions = (billingCompanyDetail?.legalEntities || []).filter((e) => e.isActive);
 
+  // Project dropdown, scoped to whichever Lead/Customer is active — create
+  // uses selectedLeadId, editing uses the loaded quotation's own leadId. See
+  // useProjectsForLead's own comment for the relation this filters on.
+  const activeLeadIdForProjects = quotationId ? (existing?.leadId ? String(existing.leadId) : '') : (clientMode === 'existing' ? selectedLeadId : '');
+  const { data: leadProjects = [], isLoading: projectsLoading } = useProjectsForLead(activeLeadIdForProjects);
+  useEffect(() => {
+    if (!activeLeadIdForProjects) return;
+    if (leadProjects.length === 1 && String(leadProjects[0].id) !== projectId) {
+      setProjectId(String(leadProjects[0].id));
+    }
+  }, [activeLeadIdForProjects, leadProjects]);
+  // Keeps the legacy free-text projectName column (still used for
+  // display/PDF/search) in sync with whichever project is selected.
+  useEffect(() => {
+    const p = leadProjects.find((x) => String(x.id) === projectId);
+    if (p) setProjectName(p.projectName);
+  }, [projectId, leadProjects]);
+
   useEffect(() => {
     if (!existing) return;
     setProjectName(existing.projectName || '');
+    setProjectId(existing.projectId ? String(existing.projectId) : '');
     setVerticalId(existing.verticalId ? String(existing.verticalId) : '');
     setCurrencyCode(existing.currencyCode || 'INR');
     setOutsourcingCost(String(Number(existing.outsourcingCost) || 0));
@@ -174,9 +199,11 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setCompanyName(lead?.companyName || '');
     setClientEmail(lead?.email || '');
     setClientPhone(lead?.mobile || '');
-    // Auto-populate from the selected lead's own Project Name — the user
-    // shouldn't have to type it again, but can still edit it afterward.
-    setProjectName(lead?.projectName || '');
+    // Reset the Project selection — the previous pick belonged to whichever
+    // lead was selected before, and must not carry over. The Project
+    // dropdown (scoped to this new leadId) auto-selects/repopulates via the
+    // effects above.
+    setProjectId(''); setProjectName('');
   };
 
   const selectBillingCompany = (id: string) => { setBillingCompanyId(id); setLegalEntityId(''); };
@@ -240,9 +267,13 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
       // client being created here uses its own, separate state — never mix
       // the two up when saving.
       const effectiveProjectName = (!quotationId && clientMode === 'new') ? newClientProjectName : projectName;
+      // New-client mode has no lead yet to scope a Project dropdown to, so
+      // it never sets projectId — only the free-text projectName above.
+      const effectiveProjectId = (!quotationId && clientMode === 'new') ? null : (projectId ? parseInt(projectId) : null);
       const body: Record<string, unknown> = {
         costingMode: 'RESOURCE_BASED',
         projectName: effectiveProjectName || null,
+        projectId: effectiveProjectId,
         verticalId: verticalId || null,
         legalEntityId: legalEntityId || null,
         currencyCode,
@@ -363,8 +394,18 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
-                  <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Auto-filled from client" className={inputCls} />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                  <select
+                    value={projectId}
+                    onChange={(e) => setProjectId(e.target.value)}
+                    disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0}
+                    className={inputCls}
+                  >
+                    <option value="">
+                      {!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select project'}
+                    </option>
+                    {leadProjects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                  </select>
                 </div>
               </div>
             ) : !quotationId ? (
@@ -379,8 +420,16 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div className="flex items-end pb-2 text-sm text-slate-700 font-medium">{companyName} — {clientName}</div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
-                  <input value={projectName} onChange={(e) => setProjectName(e.target.value)} className={inputCls} />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                  <select
+                    value={projectId}
+                    onChange={(e) => setProjectId(e.target.value)}
+                    disabled={projectsLoading || leadProjects.length === 0}
+                    className={inputCls}
+                  >
+                    <option value="">{projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select project'}</option>
+                    {leadProjects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                  </select>
                 </div>
               </div>
             )}
