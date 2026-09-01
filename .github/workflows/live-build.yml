@@ -14,8 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write   # needed for OIDC auth to AWS
-
+      id-token: write   
+      
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
