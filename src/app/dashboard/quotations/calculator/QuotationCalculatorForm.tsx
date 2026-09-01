@@ -152,6 +152,22 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     const p = leadProjects.find((x) => String(x.id) === projectId);
     if (p) setProjectName(p.projectName);
   }, [projectId, leadProjects]);
+  // Auto-fill Vertical (and Project Manager) from whichever Project is
+  // selected — Project Master already ties every project to one Vertical
+  // (and that vertical's Head, via Project.headId — see that model's own
+  // comment), so there's no reason to make the user re-pick it here on a
+  // brand-new quotation. Keyed only on [projectId, leadProjects], not
+  // verticalId, so a later manual change to Vertical is never fought back.
+  // Skipped when editing (quotationId set) — the effect above already
+  // restores that quotation's own saved verticalId, which must win even if
+  // the linked project's vertical has since changed.
+  useEffect(() => {
+    if (quotationId) return;
+    const p = leadProjects.find((x) => String(x.id) === projectId);
+    if (!p) return;
+    setVerticalId(String(p.verticalId));
+    if (p.headName) setProjectManagerName(p.headName);
+  }, [quotationId, projectId, leadProjects]);
 
   // Deep-link prefill (create only): pick the client the linked Project
   // belongs to as soon as the leads list has loaded. Guarded on
