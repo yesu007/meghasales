@@ -14,6 +14,11 @@ interface ExpenseCategory { id: number; name: string; description: string | null
 // form — independent of ExpenseSubCategory's own categoryId ownership.
 interface CategoryLink { id: number; categoryId: number; categoryName: string; subCategoryId: number; subCategoryName: string }
 interface CurrencyOption { currencyCode: string }
+// Vendor dropdown source — Customer module reuses Lead rows (status
+// CONFIRMED) rather than a separate customer table, same convention as
+// src/app/dashboard/customers/page.tsx and the leadId dropdown in
+// InvoiceListPage.tsx.
+interface CustomerOption { id: number; companyName: string; contactPerson: string }
 interface ExpenseRow {
   id: number;
   expenseNumber: string;
@@ -22,6 +27,7 @@ interface ExpenseRow {
   subCategoryId: number | null;
   subCategoryName: string | null;
   vendor: string | null;
+  vendorLeadId: number | null;
   expenseDate: string;
   amount: string;
   currencyCode: string;
@@ -147,6 +153,15 @@ async function fetchCurrencies(): Promise<CurrencyOption[]> {
   if (!res.ok) throw new Error('Failed to fetch currencies');
   return res.json();
 }
+// Same fetch-leads-for-a-dropdown pattern as InvoiceListPage.tsx's
+// fetchLeads — scoped to CONFIRMED leads (i.e. Customers), matching how
+// src/app/dashboard/customers/page.tsx defines "Customer".
+async function fetchCustomers(): Promise<CustomerOption[]> {
+  const res = await fetch('/api/leads?size=100&sortBy=companyName&sortDir=asc&status=CONFIRMED');
+  if (!res.ok) throw new Error('Failed to fetch customers');
+  const data = await res.json();
+  return data.content;
+}
 async function fetchCategoryLinks(): Promise<CategoryLink[]> {
   const res = await fetch('/api/expenses/category-links');
   if (!res.ok) throw new Error('Failed to fetch category links');
@@ -157,7 +172,7 @@ async function fetchCategoryLinks(): Promise<CategoryLink[]> {
 }
 
 const blankForm = {
-  categoryId: '', subCategoryId: '', vendor: '', expenseDate: dayjs().format('YYYY-MM-DD'), amount: '', currencyCode: 'INR',
+  categoryId: '', subCategoryId: '', vendorLeadId: '', expenseDate: dayjs().format('YYYY-MM-DD'), amount: '', currencyCode: 'INR',
   exchangeRate: '', paymentMethod: '', referenceNumber: '', notes: '', status: 'PENDING',
 };
 
@@ -185,6 +200,7 @@ export default function ExpensesPage() {
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
   const { data: categoryLinks = [] } = useQuery({ queryKey: ['expense-category-links'], queryFn: fetchCategoryLinks });
+  const { data: customers = [] } = useQuery({ queryKey: ['customers-for-expense-vendor'], queryFn: fetchCustomers });
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
 
@@ -193,7 +209,7 @@ export default function ExpensesPage() {
     setForm({
       categoryId: String(row.categoryId),
       subCategoryId: row.subCategoryId ? String(row.subCategoryId) : '',
-      vendor: row.vendor || '',
+      vendorLeadId: row.vendorLeadId ? String(row.vendorLeadId) : '',
       expenseDate: dayjs(row.expenseDate).format('YYYY-MM-DD'),
       amount: row.amount,
       currencyCode: row.currencyCode,
@@ -404,8 +420,11 @@ export default function ExpensesPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Vendor</label>
-              <input value={form.vendor} onChange={(e) => setForm((f) => ({ ...f, vendor: e.target.value }))} className={inputCls} placeholder="e.g. ACME Office Supplies" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Customer</label>
+              <select value={form.vendorLeadId} onChange={(e) => setForm((f) => ({ ...f, vendorLeadId: e.target.value }))} className={inputCls}>
+                <option value="">Select customer</option>
+                {customers.map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Expense Date</label>

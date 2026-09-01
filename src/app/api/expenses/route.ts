@@ -80,6 +80,7 @@ export async function GET(request: NextRequest) {
       subCategoryId: e.subCategoryId,
       subCategoryName: e.subCategory?.name ?? null,
       vendor: e.vendor,
+      vendorLeadId: e.vendorLeadId,
       expenseDate: e.expenseDate,
       amount: e.amount,
       currencyCode: e.currencyCode,
@@ -165,6 +166,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Vendor is now picked from the Customer module (a Lead row) via
+    // vendorLeadId, same as any other Lead-referencing dropdown in the app
+    // (e.g. Invoice.leadId). vendor (text) is kept in sync from the
+    // resolved companyName so existing vendor-text search/CSV consumers
+    // keep working unchanged — see the schema comment on Expense.vendor.
+    let vendorLeadId: number | null = null;
+    let vendorName: string | null = null;
+    if (body.vendorLeadId !== undefined && body.vendorLeadId !== null && body.vendorLeadId !== '') {
+      const vendorLead = await prisma.lead.findUnique({ where: { id: parseInt(body.vendorLeadId) } });
+      if (!vendorLead) return NextResponse.json({ message: 'Selected vendor (customer) not found' }, { status: 404 });
+      vendorLeadId = vendorLead.id;
+      vendorName = vendorLead.companyName;
+    }
+
     const session = await getServerSession(authOptions);
     const recordedById = session?.user ? parseInt((session.user as any).id, 10) : null;
 
@@ -175,7 +190,8 @@ export async function POST(request: NextRequest) {
         expenseNumber,
         categoryId: category.id,
         subCategoryId,
-        vendor: body.vendor || null,
+        vendorLeadId,
+        vendor: vendorName,
         expenseDate,
         amount: Number(body.amount),
         currencyCode,
