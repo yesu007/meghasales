@@ -435,13 +435,15 @@ export default function ExpensesPage() {
                 {subCategoryOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Customer</label>
-              <select value={form.vendorLeadId} onChange={(e) => setForm((f) => ({ ...f, vendorLeadId: e.target.value }))} className={inputCls}>
-                <option value="">Select customer</option>
-                {customers.map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
-              </select>
-            </div>
+            {editingId && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Customer</label>
+                <select value={form.vendorLeadId} onChange={(e) => setForm((f) => ({ ...f, vendorLeadId: e.target.value }))} className={inputCls}>
+                  <option value="">Select customer</option>
+                  {customers.map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Expense Date</label>
               <input type="date" value={form.expenseDate} onChange={(e) => setForm((f) => ({ ...f, expenseDate: e.target.value }))} className={inputCls} />
