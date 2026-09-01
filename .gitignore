@@ -54,3 +54,6 @@ dbdump.sql
 
 # Claude Code local settings — can contain plaintext secrets (DB URLs, etc.)
 .claude/
+
+# Local project backups (source tarball + DB dump) — machine-local only.
+/.backups/
