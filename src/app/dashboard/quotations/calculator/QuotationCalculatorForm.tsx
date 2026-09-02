@@ -385,11 +385,20 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || 'Failed to save quotation'); }
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
       if (quotationId) queryClient.invalidateQueries({ queryKey: ['quotation', quotationId] });
       toast.success(quotationId ? 'Quotation updated' : 'Quotation created');
-      if (!quotationId) router.push(`/dashboard/quotations/calculator/${data.id}`);
+      if (!quotationId) {
+        // Where to land after creating a brand-new Budget Estimation depends
+        // on where the calculator was opened from: the Projects page's "+
+        // New Estimation" link (carries ?projectId=) sends the user back to
+        // that project's expanded panel; Quotations' own "New (Resource
+        // Calculator)" link (no projectId) sends them to the Quotations list
+        // instead of into edit-mode on the row they just created.
+        if (prefillProjectId) router.push(`/dashboard/projects?expand=${prefillProjectId}`);
+        else router.push('/dashboard/quotations');
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });

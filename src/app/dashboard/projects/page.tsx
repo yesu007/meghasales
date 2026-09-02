@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, Fragment, type ComponentType, type SVGProps } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PlusIcon, ChevronDownIcon, ChevronRightIcon, PencilIcon, TrashIcon, ChartBarIcon, EllipsisVerticalIcon, ArrowPathIcon,
@@ -99,11 +100,16 @@ export default function ProjectsPage() {
   const queryClient = useQueryClient();
   const { has } = usePermissions();
   const canManageQuotations = has('manage_quotations');
+  const searchParams = useSearchParams();
+  // Landed here from the calculator after saving a new Budget Estimation
+  // (?expand=<projectId>, set by QuotationCalculatorForm) — auto-open that
+  // project's panel so the estimation is immediately visible.
+  const expandParam = searchParams.get('expand');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<ProjectFormState>(blankProjectForm);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(expandParam ? parseInt(expandParam) : null);
 
   const { data: projects = [], isLoading, isError } = useQuery({ queryKey: ['projects-admin'], queryFn: fetchProjects });
 
