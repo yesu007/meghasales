@@ -3,7 +3,7 @@
 import { useState, Fragment } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronDownIcon, ChevronRightIcon, PencilIcon, TrashIcon, ChartBarIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/lib/currency';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -168,18 +168,21 @@ export default function ProjectsPage() {
                               <Link
                                 href={`/dashboard/quotations/calculator?projectId=${p.id}&leadId=${p.customerId ?? p.leadId}`}
                                 title="New Budget Estimation (Resource-Based Quotation) for this project"
-                                className="text-xs font-medium text-amber-700 hover:text-amber-800"
+                                className="p-1.5 rounded text-amber-700 hover:text-amber-800 hover:bg-amber-50"
                               >
-                                Budget Estimation
+                                <ChartBarIcon className="h-4 w-4" />
                               </Link>
                             )}
-                            <button onClick={() => openEdit(p)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
+                            <button onClick={() => openEdit(p)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
                             {p.isActive ? (
                               <button
                                 onClick={() => { if (window.confirm(`Delete project "${p.projectName}"?`)) toggleActive.mutate({ id: p.id, isActive: false }); }}
-                                className="text-xs font-medium text-slate-500 hover:text-red-600"
+                                className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                title="Delete"
                               >
-                                Delete
+                                <TrashIcon className="h-4 w-4" />
                               </button>
                             ) : (
                               <button onClick={() => toggleActive.mutate({ id: p.id, isActive: true })} className="text-xs font-medium text-green-700 hover:text-green-800">
