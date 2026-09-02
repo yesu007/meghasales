@@ -671,7 +671,17 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Resource cost</span><span className="font-mono font-medium text-slate-700">{fmt(costing.resourceCostTotal)}</span></div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Outsourcing</span><span className="font-mono font-medium text-slate-700">{fmt(Number(outsourcingCost) || 0)}</span></div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Travel / other</span><span className="font-mono font-medium text-slate-700">{fmt(Number(travelCost) || 0)}</span></div>
-              <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Admin / overhead</span><span className="font-mono font-medium text-slate-700">{fmt(costing.adminCost)}{adminMode === 'PCT' && ` (${adminValue}%)`}</span></div>
+              <div className="flex items-center justify-between py-1 border-b border-dashed border-slate-100">
+                <span className="text-slate-500">Admin / overhead</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-medium text-slate-700">{fmt(costing.adminCost)}</span>
+                  <input type="number" min="0" value={adminValue} onChange={(e) => setAdminValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
+                  <select value={adminMode} onChange={(e) => setAdminMode(e.target.value as CostMode)} className="px-1 py-0.5 border border-slate-300 rounded text-xs text-slate-700">
+                    <option value="PCT">%</option>
+                    <option value="FIXED">₹</option>
+                  </select>
+                </div>
+              </div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100 font-semibold"><span className="text-slate-800">Base project cost</span><span className="font-mono text-slate-800">{fmt(costing.baseCost)}</span></div>
               <div className="flex items-center justify-between py-1 border-b border-dashed border-slate-100">
                 <span className="text-slate-500">Markup</span>
