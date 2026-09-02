@@ -644,45 +644,6 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             </datalist>
           </div>
 
-          {/* Other Project Costs */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
-            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Other Project Costs</h2>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Outsourcing</label><input type="number" min="0" value={outsourcingCost} onChange={(e) => setOutsourcingCost(e.target.value)} className={inputCls} /></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Travel / Other</label><input type="number" min="0" value={travelCost} onChange={(e) => setTravelCost(e.target.value)} className={inputCls} /></div>
-            </div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Admin / Overhead</label>
-            <div className="grid grid-cols-2 gap-3">
-              <ModeToggle mode={adminMode} onChange={setAdminMode} pctLabel="% of resource cost" fixedLabel="Fixed amount" />
-              <input type="number" min="0" value={adminValue} onChange={(e) => setAdminValue(e.target.value)} className={inputCls} />
-            </div>
-            <p className="text-xs text-slate-400 mt-2">Admin allocation as a fixed amount or a % of resource cost.</p>
-          </div>
-
-          {/* Commercial Terms */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
-            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Commercial Terms</h2>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Markup</label>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <ModeToggle mode={markupMode} onChange={setMarkupMode} pctLabel="% of base cost" fixedLabel="Fixed amount" />
-              <input type="number" min="0" value={markupValue} onChange={(e) => setMarkupValue(e.target.value)} className={inputCls} />
-            </div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Discount</label>
-            <div className="grid grid-cols-2 gap-3 mb-1">
-              <ModeToggle mode={discountMode} onChange={setDiscountMode} pctLabel="% of subtotal" fixedLabel="Fixed amount" />
-              <input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className={inputCls} />
-            </div>
-            <p className="text-xs text-slate-400 mb-3">Applied to the subtotal (cost + markup) before tax.</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Tax % (where applicable)</label><input type="number" min="0" value={taxPercentage} onChange={(e) => setTaxPercentage(e.target.value)} className={inputCls} /></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Quotation Validity (days)</label><input type="number" min="1" value={validityDays} onChange={(e) => setValidityDays(e.target.value)} className={inputCls} /></div>
-            </div>
-            <div className="mt-3">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-              <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
-            </div>
-          </div>
-
           {/* Payment Milestones */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Payment Milestones</h2>
@@ -753,6 +714,45 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 )}
               </>
             )}
+          </div>
+
+          {/* Other Project Costs */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Other Project Costs</h2>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Outsourcing</label><input type="number" min="0" value={outsourcingCost} onChange={(e) => setOutsourcingCost(e.target.value)} className={inputCls} /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Travel / Other</label><input type="number" min="0" value={travelCost} onChange={(e) => setTravelCost(e.target.value)} className={inputCls} /></div>
+            </div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Admin / Overhead</label>
+            <div className="grid grid-cols-2 gap-3">
+              <ModeToggle mode={adminMode} onChange={setAdminMode} pctLabel="% of resource cost" fixedLabel="Fixed amount" />
+              <input type="number" min="0" value={adminValue} onChange={(e) => setAdminValue(e.target.value)} className={inputCls} />
+            </div>
+            <p className="text-xs text-slate-400 mt-2">Admin allocation as a fixed amount or a % of resource cost.</p>
+          </div>
+
+          {/* Commercial Terms */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Commercial Terms</h2>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Markup</label>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <ModeToggle mode={markupMode} onChange={setMarkupMode} pctLabel="% of base cost" fixedLabel="Fixed amount" />
+              <input type="number" min="0" value={markupValue} onChange={(e) => setMarkupValue(e.target.value)} className={inputCls} />
+            </div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Discount</label>
+            <div className="grid grid-cols-2 gap-3 mb-1">
+              <ModeToggle mode={discountMode} onChange={setDiscountMode} pctLabel="% of subtotal" fixedLabel="Fixed amount" />
+              <input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className={inputCls} />
+            </div>
+            <p className="text-xs text-slate-400 mb-3">Applied to the subtotal (cost + markup) before tax.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Tax % (where applicable)</label><input type="number" min="0" value={taxPercentage} onChange={(e) => setTaxPercentage(e.target.value)} className={inputCls} /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Quotation Validity (days)</label><input type="number" min="1" value={validityDays} onChange={(e) => setValidityDays(e.target.value)} className={inputCls} /></div>
+            </div>
+            <div className="mt-3">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+              <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
+            </div>
           </div>
 
           {/* Terms & Conditions */}
