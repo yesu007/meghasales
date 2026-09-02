@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/quotationResourceCosting';
+import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
 
 // Validates and normalizes the raw request body for a resource-based
 // (Quotation Calculator) quotation, then runs it through the shared pure
@@ -48,6 +49,18 @@ function buildResourceBasedCosting(body: any) {
   if (overrideAmount < 0) throw new Error('Override amount cannot be negative');
   if (validityDays < 1) throw new Error('Quotation validity must be at least 1 day');
 
+  // Milestone 1 is always immediate (invoiced the moment the quotation is
+  // approved — see materializeMilestonePlan), so its own gapDays is
+  // meaningless input; normalized to 0 here rather than trusted from the
+  // client, same as the rest of this function's inputs.
+  const rawMilestones = Array.isArray(body.paymentMilestones) ? body.paymentMilestones : [];
+  const paymentMilestones: MilestonePlanInput[] = rawMilestones.map((m: any, idx: number) => ({
+    percentage: Number(m.percentage),
+    gapDays: idx === 0 ? 0 : Number(m.gapDays),
+  }));
+  const milestoneError = validateMilestonePlan(paymentMilestones);
+  if (milestoneError) throw new Error(milestoneError);
+
   const costing = computeResourceCosting({
     resources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, discountMode, discountValue, taxPercentage, overrideAmount,
   });
@@ -82,6 +95,7 @@ function buildResourceBasedCosting(body: any) {
       projectManagerName: body.projectManagerName ? String(body.projectManagerName).trim() : null,
       packageName: body.packageName ? String(body.packageName).trim() : null,
       validityDays,
+      paymentMilestones,
     },
   };
 }

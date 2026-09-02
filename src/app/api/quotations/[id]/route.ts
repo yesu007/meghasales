@@ -7,6 +7,8 @@ import { authOptions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { invoiceFieldsFromQuotation, nextInvoiceNumber } from '@/lib/invoiceFromQuotation';
 import { requirePermission } from '@/lib/rbac';
+import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
+import { materializeQuotationMilestones } from '@/lib/quotationMilestoneInvoicing';
 
 // Prisma Decimal/Date instances aren't plain JSON values; round-tripping
 // through JSON collapses them to the same strings Prisma would render
@@ -67,6 +69,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         lead: { select: { companyName: true, contactPerson: true, email: true, mobile: true } },
         legalEntity: { select: { companyId: true } },
         project: { select: { projectName: true } },
+        paymentMilestones: {
+          orderBy: { sequence: 'asc' },
+          include: { invoice: { select: { id: true, invoiceNumber: true, status: true, dueDate: true, totalAmount: true } } },
+        },
       },
     });
     if (!quotation) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
@@ -105,6 +111,16 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     if (body.totalAmountOverridden === true) {
       const overrideDenied = await requirePermission('authorize_quotation_override');
       if (overrideDenied) return overrideDenied;
+    }
+
+    // Defensive re-validation of the milestone plan the calculator already
+    // validates client-side — pricingSnapshot is accepted verbatim by the
+    // generic spread updater below, so a malformed plan must be rejected
+    // here rather than silently reaching materializeQuotationMilestones on
+    // a later approval.
+    if (body.pricingSnapshot?.paymentMilestones !== undefined) {
+      const milestoneError = validateMilestonePlan(body.pricingSnapshot.paymentMilestones as MilestonePlanInput[]);
+      if (milestoneError) return NextResponse.json({ message: milestoneError }, { status: 400 });
     }
 
     // A pure status transition (Draft -> Sent -> Approved) isn't a new
@@ -181,8 +197,16 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       let generatedInvoice = null;
       if (body.status === 'APPROVED' && existing.status !== 'APPROVED') {
         const existingInvoice = await tx.invoice.findFirst({ where: { quotationId: id, deletedAt: null } });
-        if (!existingInvoice) {
-          generatedInvoice = await generateInvoiceForQuotation(tx, quotation);
+        const existingMilestones = await tx.quotationPaymentMilestone.count({ where: { quotationId: id } });
+        const plan = (quotation.pricingSnapshot as any)?.paymentMilestones as MilestonePlanInput[] | undefined;
+
+        if (!existingInvoice && !existingMilestones) {
+          if (Array.isArray(plan) && plan.length > 0 && !validateMilestonePlan(plan)) {
+            const { firstInvoice } = await materializeQuotationMilestones(tx, quotation, plan);
+            generatedInvoice = firstInvoice;
+          } else {
+            generatedInvoice = await generateInvoiceForQuotation(tx, quotation);
+          }
         }
       }
 

@@ -16,6 +16,10 @@
     {
       "path": "/api/reminders/action-items/generate",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/quotations/milestones/generate",
+      "schedule": "0 6 * * *"
     }
   ]
 }

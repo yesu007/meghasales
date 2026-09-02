@@ -638,16 +638,57 @@ model Quotation {
   calculatedTotalAmount Decimal? @map("calculated_total_amount") @db.Decimal(15, 2)
   totalAmountOverridden Boolean  @default(false) @map("total_amount_overridden")
 
-  lead        Lead                @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  vertical    Vertical?           @relation(fields: [verticalId], references: [id])
-  legalEntity CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
-  project     Project?            @relation(fields: [projectId], references: [id])
-  invoices    Invoice[]
-  revisions   QuotationRevision[]
+  lead              Lead                        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  vertical          Vertical?                   @relation(fields: [verticalId], references: [id])
+  legalEntity       CompanyLegalEntity?         @relation(fields: [legalEntityId], references: [id])
+  project           Project?                    @relation(fields: [projectId], references: [id])
+  invoices          Invoice[]
+  revisions         QuotationRevision[]
+  paymentMilestones QuotationPaymentMilestone[]
 
   @@index([legalEntityId])
   @@index([projectId])
   @@map("quotations")
+}
+
+// A quotation's payment plan, split into per-milestone invoices instead of
+// one lump-sum invoice on approval. Rows are only materialized once the
+// quotation is APPROVED (see generateInvoiceForQuotation's sibling in
+// api/quotations/[id]/route.ts) — before that, the plan the user is editing
+// is just percentage/gapDays config living in Quotation.pricingSnapshot,
+// same convention as adminMode/markupMode. scheduledDate is computed once,
+// at materialization time, from cumulative gapDays off the approval date
+// (milestone 1 is always gapDays=0 — invoiced immediately on approval); it's
+// never recomputed from siblings afterward, so rescheduling one milestone
+// deliberately doesn't cascade into shifting the others.
+model QuotationPaymentMilestone {
+  id               Int       @id @default(autoincrement())
+  quotationId      Int       @map("quotation_id")
+  sequence         Int
+  percentage       Decimal   @db.Decimal(5, 2)
+  // Computed once at materialization time (percentage x the quotation's
+  // totalAmount, with the last milestone absorbing any rounding remainder —
+  // see materializeMilestonePlan) and stored permanently rather than
+  // recomputed later, so the cron invoicing milestone 2+ months from now
+  // doesn't need (and can't drift from) the full sibling-plan context that
+  // produced it.
+  amount           Decimal   @db.Decimal(15, 2)
+  gapDays          Int       @map("gap_days")
+  scheduledDate    DateTime  @map("scheduled_date")
+  // PENDING (not yet due, or due but the cron hasn't run) | INVOICED
+  status           String    @default("PENDING")
+  invoiceId        Int?      @map("invoice_id")
+  rescheduledAt    DateTime? @map("rescheduled_at")
+  rescheduleReason String?   @map("reschedule_reason")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  invoice   Invoice?  @relation(fields: [invoiceId], references: [id])
+
+  @@unique([quotationId, sequence])
+  @@index([status, scheduledDate])
+  @@map("quotation_payment_milestones")
 }
 
 // Append-only history of a quotation's prior states. Unlike
@@ -1526,15 +1567,16 @@ model Invoice {
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
-  lead           Lead                @relation(fields: [leadId], references: [id])
-  quotation      Quotation?          @relation(fields: [quotationId], references: [id])
-  legalEntity    CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
-  accountManager User?               @relation("InvoiceAccountManager", fields: [accountManagerId], references: [id])
-  createdBy      User?               @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
-  updatedBy      User?               @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
-  payments       Payment[]
-  reminders      PaymentReminder[]
-  creditNotes    CreditNote[]
+  lead              Lead                        @relation(fields: [leadId], references: [id])
+  quotation         Quotation?                  @relation(fields: [quotationId], references: [id])
+  legalEntity       CompanyLegalEntity?         @relation(fields: [legalEntityId], references: [id])
+  accountManager    User?                       @relation("InvoiceAccountManager", fields: [accountManagerId], references: [id])
+  createdBy         User?                       @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  updatedBy         User?                       @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
+  payments          Payment[]
+  reminders         PaymentReminder[]
+  creditNotes       CreditNote[]
+  paymentMilestones QuotationPaymentMilestone[]
 
   @@index([status])
   @@index([leadId])

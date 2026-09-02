@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/quotationResourceCosting';
+import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
 
@@ -92,6 +93,15 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [overrideAmount, setOverrideAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [additionalTerms, setAdditionalTerms] = useState('');
+
+  // Payment Milestones plan — optional (empty = the existing one lump-sum
+  // invoice on approval, unchanged). Only percentage + gapDays are edited
+  // here; milestone 1's gapDays is meaningless (it's always invoiced
+  // immediately on approval) so its input is disabled rather than shown as
+  // a live field. Turned into dated, invoiced QuotationPaymentMilestone rows
+  // server-side once the quotation is approved — see
+  // materializeQuotationMilestones.
+  const [milestones, setMilestones] = useState<{ percentage: string; gapDays: string }[]>([]);
 
   const [status, setStatus] = useState('DRAFT');
   const [quotationNumber, setQuotationNumber] = useState('');
@@ -220,6 +230,11 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setProjectManagerName(snap.projectManagerName || '');
     setPackageName(snap.packageName || '');
     setValidityDays(String(Number(snap.validityDays) || 30));
+    setMilestones(
+      Array.isArray(snap.paymentMilestones)
+        ? snap.paymentMilestones.map((m: any) => ({ percentage: String(m.percentage ?? ''), gapDays: String(m.gapDays ?? '') }))
+        : []
+    );
     setOverrideAmount(existing.totalAmountOverridden ? String(Number(existing.totalAmount)) : '');
   }, [existing]);
 
@@ -297,6 +312,18 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     overrideAmount: Number(overrideAmount) || 0,
   }), [validResources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, discountMode, discountValue, taxPercentage, overrideAmount]);
 
+  const addMilestone = () => setMilestones((prev) => [...prev, { percentage: '', gapDays: prev.length === 0 ? '0' : '15' }]);
+  const removeMilestone = (idx: number) => setMilestones((prev) => prev.filter((_, i) => i !== idx));
+  const updateMilestone = (idx: number, field: 'percentage' | 'gapDays', value: string) =>
+    setMilestones((prev) => prev.map((m, i) => (i === idx ? { ...m, [field]: value } : m)));
+
+  const milestonePlan: MilestonePlanInput[] = useMemo(
+    () => milestones.map((m, idx) => ({ percentage: Number(m.percentage) || 0, gapDays: idx === 0 ? 0 : Number(m.gapDays) || 0 })),
+    [milestones]
+  );
+  const milestonesTotalPct = useMemo(() => Math.round(milestonePlan.reduce((sum, m) => sum + m.percentage, 0) * 100) / 100, [milestonePlan]);
+  const milestoneError = useMemo(() => validateMilestonePlan(milestonePlan), [milestonePlan]);
+
   const fmt = (n: number) => formatCurrency(n, currencyCode, { symbol: currencySymbol });
 
   const marginBand = costing.marginPercent >= 30 ? 'healthy' : costing.marginPercent >= 15 ? 'caution' : 'risk';
@@ -339,6 +366,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
         overrideAmount: Number(overrideAmount) || 0,
         projectManagerName: projectManagerName || null,
         packageName: packageName || null,
+        paymentMilestones: milestonePlan,
       };
 
       if (quotationId) {
@@ -371,6 +399,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             projectManagerName: projectManagerName || null,
             packageName: packageName || null,
             validityDays: Number(validityDays) || 30,
+            paymentMilestones: milestonePlan,
           },
         });
       } else if (clientMode === 'existing') {
@@ -403,12 +432,41 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ milestoneId, newScheduledDate, reason }: { milestoneId: number; newScheduledDate: string; reason?: string }) => {
+      const res = await fetch(`/api/quotations/${quotationId}/milestones/${milestoneId}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newScheduledDate, reason }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || 'Failed to reschedule milestone'); }
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['quotation', quotationId] }); toast.success('Milestone rescheduled'); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  // A milestone whose invoice has already been partially paid needs a reason
+  // on record (enforced again server-side — see the reschedule route) since
+  // money has already moved against the date being changed; one that's
+  // unpaid or not yet invoiced needs no such friction.
+  const handleRescheduleMilestone = (milestone: any, newDateStr: string) => {
+    let reason: string | undefined;
+    if (milestone.invoice?.status === 'PARTIALLY_PAID') {
+      const entered = window.prompt('This milestone has already been partially paid — enter a reason for rescheduling it:');
+      if (!entered || !entered.trim()) { toast.error('A reason is required to reschedule a partially paid milestone'); return; }
+      reason = entered.trim();
+    }
+    rescheduleMutation.mutate({ milestoneId: milestone.id, newScheduledDate: newDateStr, reason });
+  };
+
   const handleSave = () => {
     if (!quotationId) {
       if (clientMode === 'existing' && !selectedLeadId) { toast.error('Select a client'); return; }
       if (clientMode === 'new' && (!clientName || !companyName)) { toast.error('Client name and company are required'); return; }
     }
     if (validResources.length === 0) { toast.error('At least one resource line item is required'); return; }
+    if (milestoneError) { toast.error(milestoneError); return; }
     saveMutation.mutate();
   };
 
@@ -623,6 +681,78 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
               <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
             </div>
+          </div>
+
+          {/* Payment Milestones */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Payment Milestones</h2>
+
+            {status === 'APPROVED' && Array.isArray(existing?.paymentMilestones) && existing.paymentMilestones.length > 0 ? (
+              <div className="space-y-2">
+                {existing.paymentMilestones.map((m: any) => (
+                  <div key={m.id} className="flex items-center justify-between gap-3 py-2 border-b border-dashed border-slate-100 last:border-0">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Milestone {m.sequence} — {Number(m.percentage)}% ({fmt(Number(m.amount))})</p>
+                      {m.invoice && (
+                        <p className="text-xs text-slate-400">
+                          <Link href={`/dashboard/accounting/invoices/${m.invoice.id}`} className="text-amber-700 hover:underline">{m.invoice.invoiceNumber}</Link> — {m.invoice.status}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        // Keyed on scheduledDate too (not just m.id) so a
+                        // successful reschedule — which invalidates and
+                        // refetches this quotation — fully remounts this
+                        // uncontrolled input instead of leaving the old
+                        // date showing in an unchanged DOM node.
+                        key={`${m.id}-${m.scheduledDate}`}
+                        type="date"
+                        defaultValue={dayjs(m.scheduledDate).format('YYYY-MM-DD')}
+                        disabled={m.invoice?.status === 'PAID'}
+                        onBlur={(e) => {
+                          if (e.target.value && e.target.value !== dayjs(m.scheduledDate).format('YYYY-MM-DD')) handleRescheduleMilestone(m, e.target.value);
+                        }}
+                        className="px-2 py-1 border border-slate-300 rounded text-xs text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                        title={m.invoice?.status === 'PAID' ? 'Fully paid — date is locked' : 'Reschedule this milestone'}
+                      />
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${m.status === 'INVOICED' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{m.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : status === 'APPROVED' ? (
+              <p className="text-xs text-slate-400">No payment milestones were configured — the full amount was invoiced on approval.</p>
+            ) : (
+              <>
+                <p className="text-xs text-slate-400 mb-3">Optional — split the quoted amount into staged invoices instead of one lump sum on approval. Leave empty to invoice the full amount once approved.</p>
+                <div className="space-y-2">
+                  {milestones.map((m, idx) => (
+                    <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-0.5">Milestone {idx + 1} — % of total</label>
+                        <input type="number" min="0" step="0.01" value={m.percentage} onChange={(e) => updateMilestone(idx, 'percentage', e.target.value)} className={inputCls} placeholder="e.g. 50" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-0.5">{idx === 0 ? 'Invoiced on approval' : 'Days after previous milestone'}</label>
+                        <input type="number" min="0" value={idx === 0 ? '0' : m.gapDays} disabled={idx === 0} onChange={(e) => updateMilestone(idx, 'gapDays', e.target.value)} className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`} placeholder="e.g. 15" />
+                      </div>
+                      <button type="button" onClick={() => removeMilestone(idx)} className="p-2 text-slate-400 hover:text-red-600" title="Remove milestone">
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={addMilestone} className="mt-2 flex items-center gap-1 text-sm text-amber-700 hover:text-amber-800 font-medium">
+                  <PlusIcon className="h-4 w-4" /> Add Milestone
+                </button>
+                {milestones.length > 0 && (
+                  <p className={`text-xs mt-2 ${milestoneError ? 'text-red-600' : 'text-green-600'}`}>
+                    Total: {milestonesTotalPct}% {milestoneError ? `— ${milestoneError}` : '— OK'}
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           {/* Terms & Conditions */}
