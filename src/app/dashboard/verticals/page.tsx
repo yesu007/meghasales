@@ -25,6 +25,12 @@ interface VerticalRow {
   // every read below defaults to 0/[] regardless.
   actualExpenses?: number;
   actualExpenseBreakdown?: ActualExpenseBreakdownEntry[];
+  // Annual Budget shown in the table's "Budget" column — Expense Budgets'
+  // Monthly Budget × 12 for this vertical, computed server-side. null (not
+  // 0/absent) when the caller can't view Expense Budgets, distinguishing
+  // "no permission" from "genuinely zero budget configured".
+  annualBudget?: number | null;
+  annualBudgetCurrencyCode?: string | null;
 }
 
 const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
@@ -222,6 +228,20 @@ export default function VerticalsPage() {
               </thead>
               <tbody>
                 {filteredVerticals.map((v, idx) => {
+                  // "Budget" column — dynamically computed from Expense
+                  // Budgets (Monthly Budget × 12 for this vertical, current
+                  // financial year; see GET /api/verticals's annualBudget),
+                  // NOT the legacy manually-typed Vertical.budget figure
+                  // (that field still exists — see openEdit/save and the
+                  // Budget input above — but no longer drives this column).
+                  const displayBudgetCurrency = v.annualBudgetCurrencyCode || v.budgetCurrencyCode || 'INR';
+                  const displayBudgetNum = v.annualBudget ?? null;
+
+                  // Actual Expenses / Budget Usage / variance below are
+                  // unrelated to the Budget column change above — kept
+                  // exactly as before, still measured against the legacy
+                  // Vertical.budget figure, so that column's meaning is
+                  // unaffected.
                   const budgetCurrency = v.budgetCurrencyCode || 'INR';
                   const budgetNum = v.budget != null ? Number(v.budget) : null;
                   const actualExpenses = v.actualExpenses ?? 0;
@@ -235,7 +255,7 @@ export default function VerticalsPage() {
                         <p className="text-xs text-slate-400">{v.code}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{v.headName || '—'}</td>
-                      <td className="px-4 py-3 text-right text-slate-700">{budgetNum != null ? formatCurrency(budgetNum, budgetCurrency) : '—'}</td>
+                      <td className="px-4 py-3 text-right text-slate-700">{displayBudgetNum != null ? formatCurrency(displayBudgetNum, displayBudgetCurrency) : '—'}</td>
                       <td className="px-4 py-3 text-right">
                         <p className="text-slate-700">{formatCurrency(actualExpenses, budgetCurrency)}</p>
                         {variance !== null && (
