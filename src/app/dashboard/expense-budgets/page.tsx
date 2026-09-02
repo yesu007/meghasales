@@ -103,7 +103,12 @@ export default function ExpenseBudgetsPage() {
   const [categoryAmounts, setCategoryAmounts] = useState<Record<number, string>>({});
   const [editingBudget, setEditingBudget] = useState<BudgetRow | null>(null);
 
-  const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
+  // Which dimension runs down the rows — the "Category vs. Vertical" /
+  // "Vertical vs. Category" toggle just flips this; the matrix itself,
+  // pagination and totals all key off it rather than assuming categories
+  // are always the rows.
+  const [rowAxis, setRowAxis] = useState<'category' | 'vertical'>('category');
+  const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ key: string; value: string } | null>(null);
 
   const { data: matrixData, isLoading: matrixLoading } = useQuery({
@@ -138,14 +143,34 @@ export default function ExpenseBudgetsPage() {
   );
   const grandTotals = useMemo(() => sumByCurrency(matrixBudgets), [matrixBudgets]);
 
+  // Both axes reduced to the same shape so the table below can render
+  // either one as rows and the other as columns without caring which is
+  // which — `axis` records where each item came from, so cell lookups and
+  // totals still key off the right one of categoryId/verticalId.
+  type AxisItem = { key: string; id: number | null; label: string; headName?: string | null; axis: 'category' | 'vertical' };
+  const categoryAxisItems: AxisItem[] = useMemo(
+    () => categories.map((c) => ({ key: `cat-${c.id}`, id: c.id, label: c.name, axis: 'category' as const })),
+    [categories]
+  );
+  const verticalAxisItems: AxisItem[] = useMemo(
+    () => columns.map((col) => ({ key: `vert-${col.verticalId ?? 'company-wide'}`, id: col.verticalId, label: col.label, headName: col.headName, axis: 'vertical' as const })),
+    [columns]
+  );
+  const rowAxisItems = rowAxis === 'category' ? categoryAxisItems : verticalAxisItems;
+  const colAxisItems = rowAxis === 'category' ? verticalAxisItems : categoryAxisItems;
+  const budgetsForAxisItem = (item: AxisItem) =>
+    item.axis === 'category'
+      ? matrixBudgets.filter((b) => b.categoryId === item.id)
+      : matrixBudgets.filter((b) => b.verticalId === item.id);
+
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
-  const [categoryPage, setCategoryPage] = useState(0);
-  const [categoryPageSize, setCategoryPageSize] = useState(10);
-  const categoryTotalPages = Math.max(1, Math.ceil(categories.length / categoryPageSize));
-  const safeCategoryPage = Math.min(categoryPage, categoryTotalPages - 1);
-  const pagedCategories = useMemo(
-    () => categories.slice(safeCategoryPage * categoryPageSize, safeCategoryPage * categoryPageSize + categoryPageSize),
-    [categories, safeCategoryPage, categoryPageSize]
+  const [rowPage, setRowPage] = useState(0);
+  const [rowPageSize, setRowPageSize] = useState(10);
+  const rowTotalPages = Math.max(1, Math.ceil(rowAxisItems.length / rowPageSize));
+  const safeRowPage = Math.min(rowPage, rowTotalPages - 1);
+  const pagedRowItems = useMemo(
+    () => rowAxisItems.slice(safeRowPage * rowPageSize, safeRowPage * rowPageSize + rowPageSize),
+    [rowAxisItems, safeRowPage, rowPageSize]
   );
 
   const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); setEditingBudget(null); };
@@ -462,8 +487,26 @@ export default function ExpenseBudgetsPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" style={{ minHeight: 420 }}>
         {/* Category x vertical matrix, one cell = one expense budget */}
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="px-4 py-2.5 border-b border-slate-200 text-sm font-medium text-slate-700">
-            Category vs. Vertical
+          <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-700">
+              {rowAxis === 'category' ? 'Category vs. Vertical' : 'Vertical vs. Category'}
+            </span>
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+              <button
+                type="button"
+                onClick={() => { setRowAxis('category'); setRowPage(0); setActiveRowKey(null); }}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${rowAxis === 'category' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                By Category
+              </button>
+              <button
+                type="button"
+                onClick={() => { setRowAxis('vertical'); setRowPage(0); setActiveRowKey(null); }}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${rowAxis === 'vertical' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                By Vertical
+              </button>
+            </div>
           </div>
           {matrixLoading ? (
             <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
@@ -478,17 +521,17 @@ export default function ExpenseBudgetsPage() {
               <table className="w-full border-collapse text-sm table-fixed">
                 <colgroup>
                   <col className="w-44" />
-                  {columns.map((col) => <col key={col.verticalId ?? 'company-wide'} className="w-48" />)}
+                  {colAxisItems.map((col) => <col key={col.key} className="w-48" />)}
                   <col className="w-36" />
                   <col className="w-36" />
                 </colgroup>
                 <thead>
                   <tr>
                     <th className="sticky top-0 left-0 z-20 bg-white text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 pr-3 border-b border-slate-200">
-                      Category
+                      {rowAxis === 'category' ? 'Category' : 'Vertical'}
                     </th>
-                    {columns.map((col) => (
-                      <th key={col.verticalId ?? 'company-wide'} className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 px-3 border-b border-slate-200">
+                    {colAxisItems.map((col) => (
+                      <th key={col.key} className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 px-3 border-b border-slate-200">
                         <div className="truncate" title={col.label}>{col.label}</div>
                         {col.headName && <div className="truncate text-[10px] font-normal normal-case text-slate-400" title={`Head: ${col.headName}`}>Head: {col.headName}</div>}
                       </th>
@@ -502,25 +545,33 @@ export default function ExpenseBudgetsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedCategories.map((cat) => {
-                    const isActive = cat.id === activeCategoryId;
-                    const rowBudgets = matrixBudgets.filter((b) => b.categoryId === cat.id);
+                  {pagedRowItems.map((row) => {
+                    const isActive = row.key === activeRowKey;
+                    const rowBudgets = budgetsForAxisItem(row);
                     return (
                       <tr
-                        key={cat.id}
-                        onClick={() => setActiveCategoryId(cat.id)}
+                        key={row.key}
+                        onClick={() => setActiveRowKey(row.key)}
                         className={`cursor-pointer border-b border-slate-100 ${isActive ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
                       >
                         <td className={`sticky left-0 z-10 py-2 pr-3 truncate ${isActive ? 'bg-amber-50' : 'bg-white'}`}>
-                          <span className={isActive ? 'font-medium text-amber-700' : 'text-slate-700'}>{cat.name}</span>
+                          <div className="truncate" title={row.label}>
+                            <span className={isActive ? 'font-medium text-amber-700' : 'text-slate-700'}>{row.label}</span>
+                          </div>
+                          {row.headName && <div className="truncate text-[10px] text-slate-400" title={`Head: ${row.headName}`}>Head: {row.headName}</div>}
                         </td>
-                        {columns.map((col) => {
-                          const key = cellKey(cat.id, col.verticalId);
+                        {colAxisItems.map((col) => {
+                          const catItem = row.axis === 'category' ? row : col;
+                          const vertItem = row.axis === 'category' ? col : row;
+                          const categoryId = catItem.id as number;
+                          const verticalId = vertItem.id;
+                          const cat: ExpenseCategory = { id: categoryId, name: catItem.label };
+                          const key = cellKey(categoryId, verticalId);
                           const budget = budgetsByCell.get(key);
                           const isEditing = editingCell?.key === key;
                           const displayValue = isEditing ? editingCell!.value : fmt(budget ? budget.totalAmount : 0);
                           return (
-                            <td key={col.verticalId ?? 'company-wide'} className="py-1.5 px-3 text-right">
+                            <td key={col.key} className="py-1.5 px-3 text-right">
                               <div className="group flex items-center justify-end gap-1">
                                 {/* Reserved-width slots placed BEFORE the number, never after —
                                     an element after the input sits between it and the cell's
@@ -573,7 +624,7 @@ export default function ExpenseBudgetsPage() {
                                   }}
                                   onChange={(e) => setEditingCell({ key, value: e.target.value.replace(/[^0-9.]/g, '') })}
                                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                                  onBlur={() => commitCell(cat, col.verticalId)}
+                                  onBlur={() => commitCell(cat, verticalId)}
                                   title={budget?.status === 'APPROVED' ? 'Approved — open the budget to revise with a reason' : undefined}
                                   className={`w-[84px] shrink-0 text-right bg-transparent outline-none rounded px-1.5 py-1 text-slate-800 ${budget?.status === 'APPROVED' ? 'cursor-not-allowed' : 'focus:bg-white focus:ring-1 focus:ring-amber-500'}`}
                                 />
@@ -594,10 +645,10 @@ export default function ExpenseBudgetsPage() {
                 <tfoot>
                   <tr className="border-t-2 border-slate-200">
                     <td className="py-2.5 pr-3 font-semibold text-slate-800">Monthly Budget</td>
-                    {columns.map((col) => {
-                      const colBudgets = matrixBudgets.filter((b) => b.verticalId === col.verticalId);
+                    {colAxisItems.map((col) => {
+                      const colBudgets = budgetsForAxisItem(col);
                       return (
-                        <td key={col.verticalId ?? 'company-wide'} className="py-2.5 px-3 text-right font-semibold text-slate-800">
+                        <td key={col.key} className="py-2.5 px-3 text-right font-semibold text-slate-800">
                           {sumByCurrency(colBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
                         </td>
                       );
@@ -618,8 +669,8 @@ export default function ExpenseBudgetsPage() {
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
                 <select
-                  value={categoryPageSize}
-                  onChange={(e) => { setCategoryPageSize(Number(e.target.value)); setCategoryPage(0); }}
+                  value={rowPageSize}
+                  onChange={(e) => { setRowPageSize(Number(e.target.value)); setRowPage(0); }}
                   className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
                 >
                   {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -627,35 +678,35 @@ export default function ExpenseBudgetsPage() {
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setCategoryPage((p) => Math.max(0, p - 1))}
-                  disabled={safeCategoryPage === 0}
+                  onClick={() => setRowPage((p) => Math.max(0, p - 1))}
+                  disabled={safeRowPage === 0}
                   className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
                 >
                   <ChevronLeftIcon className="h-4 w-4" /> Previous
                 </button>
-                {getPageNumbers(safeCategoryPage, categoryTotalPages).map((p, i) =>
+                {getPageNumbers(safeRowPage, rowTotalPages).map((p, i) =>
                   p === 'ellipsis' ? (
                     <span key={`ellipsis-${i}`} className="px-2 text-sm text-slate-400">…</span>
                   ) : (
                     <button
                       key={p}
-                      onClick={() => setCategoryPage(p)}
-                      className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === safeCategoryPage ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                      onClick={() => setRowPage(p)}
+                      className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === safeRowPage ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
                     >
                       {p + 1}
                     </button>
                   )
                 )}
                 <button
-                  onClick={() => setCategoryPage((p) => Math.min(categoryTotalPages - 1, p + 1))}
-                  disabled={safeCategoryPage >= categoryTotalPages - 1}
+                  onClick={() => setRowPage((p) => Math.min(rowTotalPages - 1, p + 1))}
+                  disabled={safeRowPage >= rowTotalPages - 1}
                   className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
                 >
                   Next <ChevronRightIcon className="h-4 w-4" />
                 </button>
               </div>
               <p className="text-sm text-slate-500">
-                Showing {safeCategoryPage * categoryPageSize + 1}–{Math.min((safeCategoryPage + 1) * categoryPageSize, categories.length)} of {categories.length}
+                Showing {safeRowPage * rowPageSize + 1}–{Math.min((safeRowPage + 1) * rowPageSize, rowAxisItems.length)} of {rowAxisItems.length}
               </p>
             </div>
           )}
