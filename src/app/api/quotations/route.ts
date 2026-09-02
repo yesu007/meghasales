@@ -295,13 +295,9 @@ export async function POST(request: NextRequest) {
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
     }
 
-    // Generate quotation number
-    const count = await prisma.quotation.count();
-    const quotationNumber = `QTN-${String(count + 1).padStart(5, '0')}`;
-
     const data: Prisma.QuotationUncheckedCreateInput = {
       leadId: leadId!,
-      quotationNumber,
+      quotationNumber: '',
       clientCountry,
       clientState,
       currencyCode,
@@ -334,12 +330,31 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const quotation = await prisma.quotation.create({
-      data,
-      include: {
-        lead: { select: { companyName: true } },
-      },
-    });
+    // The number derives from the highest existing suffix (not a row count,
+    // which drifts once any quotation is deleted) and the create is retried
+    // on a collision, since two concurrent requests can still read the same
+    // "next" number before either has inserted.
+    let quotation;
+    for (let attempt = 0; ; attempt++) {
+      const last = await prisma.quotation.findFirst({ orderBy: { id: 'desc' }, select: { quotationNumber: true } });
+      const lastSeq = last ? parseInt(last.quotationNumber.replace('QTN-', ''), 10) || 0 : 0;
+      data.quotationNumber = `QTN-${String(lastSeq + 1).padStart(5, '0')}`;
+
+      try {
+        quotation = await prisma.quotation.create({
+          data,
+          include: {
+            lead: { select: { companyName: true } },
+          },
+        });
+        break;
+      } catch (error: any) {
+        const isCollision = error instanceof Prisma.PrismaClientKnownRequestError
+          && error.code === 'P2002'
+          && (error.meta?.target as string[] | undefined)?.includes('quotation_number');
+        if (!isCollision || attempt >= 4) throw error;
+      }
+    }
 
     await logAudit({ action: 'CREATE', entityType: 'QUOTATION', entityId: quotation.id, newValue: quotation, description: `Quotation ${quotation.quotationNumber} created for ${quotation.lead.companyName}`, request });
 
