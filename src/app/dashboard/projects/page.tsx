@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/lib/currency';
 import { usePermissions } from '@/hooks/usePermissions';
 import ProjectFormDrawer, { blankProjectForm, type ProjectFormState } from '@/components/projects/ProjectFormDrawer';
+import ProjectBudgetPanel from '@/components/projects/ProjectBudgetPanel';
 
 interface ProjectRow {
   id: number;
@@ -39,6 +40,7 @@ export default function ProjectsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<ProjectFormState>(blankProjectForm);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const { data: projects = [], isLoading, isError } = useQuery({ queryKey: ['projects-admin'], queryFn: fetchProjects });
 
@@ -121,6 +123,7 @@ export default function ProjectsPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-900">
                 <tr>
+                  <th className="px-2 py-3"></th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Project Name</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Customer</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Lead</th>
@@ -135,46 +138,65 @@ export default function ProjectsPage() {
                 {projects.map((p, idx) => {
                   const budgetCurrency = p.budgetCurrencyCode || 'INR';
                   const budgetNum = p.budget != null ? Number(p.budget) : null;
+                  const isExpanded = expandedId === p.id;
                   return (
-                    <tr key={p.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                      <td className="px-4 py-3 font-medium text-slate-800">{p.projectName}</td>
-                      <td className="px-4 py-3 text-slate-600">{p.customerName || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{p.leadName || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{p.verticalName}</td>
-                      <td className="px-4 py-3 text-slate-600">{p.headName || '—'}</td>
-                      <td className="px-4 py-3 text-right text-slate-700">{budgetNum != null ? formatCurrency(budgetNum, budgetCurrency) : '—'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {p.isActive ? 'Active' : 'Deleted'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          {canManageQuotations && p.isActive && (
-                            <Link
-                              href={`/dashboard/quotations/calculator?projectId=${p.id}&leadId=${p.customerId ?? p.leadId}`}
-                              title="New Resource-Based Quotation for this project's budget calculation"
-                              className="text-xs font-medium text-amber-700 hover:text-amber-800"
-                            >
-                              New Quotation
-                            </Link>
-                          )}
-                          <button onClick={() => openEdit(p)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
-                          {p.isActive ? (
-                            <button
-                              onClick={() => { if (window.confirm(`Delete project "${p.projectName}"?`)) toggleActive.mutate({ id: p.id, isActive: false }); }}
-                              className="text-xs font-medium text-slate-500 hover:text-red-600"
-                            >
-                              Delete
-                            </button>
-                          ) : (
-                            <button onClick={() => toggleActive.mutate({ id: p.id, isActive: true })} className="text-xs font-medium text-green-700 hover:text-green-800">
-                              Reactivate
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                    <Fragment key={p.id}>
+                      <tr className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                        <td className="px-2 py-3">
+                          <button
+                            onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                            className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                            title={isExpanded ? 'Hide Budget Estimations' : 'Show Budget Estimations'}
+                          >
+                            {isExpanded ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-800">{p.projectName}</td>
+                        <td className="px-4 py-3 text-slate-600">{p.customerName || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{p.leadName || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{p.verticalName}</td>
+                        <td className="px-4 py-3 text-slate-600">{p.headName || '—'}</td>
+                        <td className="px-4 py-3 text-right text-slate-700">{budgetNum != null ? formatCurrency(budgetNum, budgetCurrency) : '—'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {p.isActive ? 'Active' : 'Deleted'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end gap-2">
+                            {canManageQuotations && p.isActive && (
+                              <Link
+                                href={`/dashboard/quotations/calculator?projectId=${p.id}&leadId=${p.customerId ?? p.leadId}`}
+                                title="New Budget Estimation (Resource-Based Quotation) for this project"
+                                className="text-xs font-medium text-amber-700 hover:text-amber-800"
+                              >
+                                Budget Estimation
+                              </Link>
+                            )}
+                            <button onClick={() => openEdit(p)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
+                            {p.isActive ? (
+                              <button
+                                onClick={() => { if (window.confirm(`Delete project "${p.projectName}"?`)) toggleActive.mutate({ id: p.id, isActive: false }); }}
+                                className="text-xs font-medium text-slate-500 hover:text-red-600"
+                              >
+                                Delete
+                              </button>
+                            ) : (
+                              <button onClick={() => toggleActive.mutate({ id: p.id, isActive: true })} className="text-xs font-medium text-green-700 hover:text-green-800">
+                                Reactivate
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-slate-50/60">
+                          <td colSpan={9} className="px-6 border-t border-slate-100">
+                            <ProjectBudgetPanel projectId={p.id} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>

@@ -50,6 +50,10 @@ export async function GET(request: NextRequest) {
     if (subCategoryId) AND.push({ subCategoryId: parseInt(subCategoryId) });
     if (dateFrom) AND.push({ expenseDate: { gte: new Date(dateFrom) } });
     if (dateTo) AND.push({ expenseDate: { lte: new Date(dateTo) } });
+    // Used by the Projects page's Budget vs Actual panel to total a single
+    // project's actual expenses.
+    const projectId = searchParams.get('projectId') || '';
+    if (projectId) AND.push({ projectId: parseInt(projectId) });
 
     if (AND.length > 0) where.AND = AND;
 
