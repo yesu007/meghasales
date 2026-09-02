@@ -18,7 +18,18 @@ services:
       retries: 5
 
   app:
-    build: .
+    build:
+      context: .
+      # These are NEXT_PUBLIC_* vars, which Next.js inlines into the client
+      # bundle at build time — env_file below only reaches the running
+      # container, too late to affect the already-built bundle. Source
+      # values from the root .env (docker compose auto-loads it for
+      # variable substitution, same as POSTGRES_* above).
+      args:
+        NEXT_PUBLIC_FEATURE_ADMIN_TICKET: ${NEXT_PUBLIC_FEATURE_ADMIN_TICKET}
+        NEXT_PUBLIC_FEATURE_MEETINGS: ${NEXT_PUBLIC_FEATURE_MEETINGS}
+        NEXT_PUBLIC_FEATURE_PAYROLL: ${NEXT_PUBLIC_FEATURE_PAYROLL}
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
     restart: always
     env_file:
       - .env.production
