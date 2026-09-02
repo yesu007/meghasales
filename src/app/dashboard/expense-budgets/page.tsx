@@ -111,10 +111,13 @@ export default function ExpenseBudgetsPage() {
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ key: string; value: string } | null>(null);
 
-  // Scales only the footer total row (label + per-column totals + grand
-  // totals) between the monthly figures ExpenseBudget.totalAmount stores
-  // and their ×12 yearly equivalent — the matrix cells and Row Total
-  // column above always stay on the monthly basis they're entered in.
+  // Scales every displayed figure in the grid — matrix cells, Row Total
+  // column and the footer total row — between the monthly figures
+  // ExpenseBudget.totalAmount stores and their ×12 yearly equivalent.
+  // A cell being actively edited is the one exception: it always shows/
+  // accepts the raw monthly amount, since that's the basis everything is
+  // actually stored and spread across months on (see defaultMonthlySpread
+  // and commitCell below) — only the at-rest display scales with the toggle.
   const [valueMode, setValueMode] = useState<'monthly' | 'yearly'>('monthly');
   const valueScale = valueMode === 'yearly' ? 12 : 1;
 
@@ -548,7 +551,6 @@ export default function ExpenseBudgetsPage() {
                   <col className="w-44" />
                   {colAxisItems.map((col) => <col key={col.key} className="w-48" />)}
                   <col className="w-36" />
-                  <col className="w-36" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -563,9 +565,6 @@ export default function ExpenseBudgetsPage() {
                     ))}
                     <th className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-700 uppercase tracking-wide py-2 pl-3 border-b border-slate-200">
                       Row Total
-                    </th>
-                    <th className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-700 uppercase tracking-wide py-2 pl-3 border-b border-slate-200">
-                      Annual Budget
                     </th>
                   </tr>
                 </thead>
@@ -594,7 +593,7 @@ export default function ExpenseBudgetsPage() {
                           const key = cellKey(categoryId, verticalId);
                           const budget = budgetsByCell.get(key);
                           const isEditing = editingCell?.key === key;
-                          const displayValue = isEditing ? editingCell!.value : fmt(budget ? budget.totalAmount : 0);
+                          const displayValue = isEditing ? editingCell!.value : fmt((budget ? Number(budget.totalAmount) : 0) * valueScale);
                           return (
                             <td key={col.key} className="py-1.5 px-3 text-right">
                               <div className="group flex items-center justify-end gap-1">
@@ -658,10 +657,7 @@ export default function ExpenseBudgetsPage() {
                           );
                         })}
                         <td className="py-1.5 pl-3 text-right font-medium text-slate-800">
-                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
-                        </td>
-                        <td className="py-1.5 pl-3 text-right font-medium text-slate-800">
-                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * 12, t.currencyCode)}</div>)}
+                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * valueScale, t.currencyCode)}</div>)}
                         </td>
                       </tr>
                     );
@@ -680,9 +676,6 @@ export default function ExpenseBudgetsPage() {
                     })}
                     <td className="py-2.5 pl-3 text-right font-semibold text-amber-700">
                       {grandTotals.length === 0 ? formatCurrency(0, 'INR') : grandTotals.map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * valueScale, t.currencyCode)}</div>)}
-                    </td>
-                    <td className="py-2.5 pl-3 text-right font-semibold text-amber-700">
-                      {grandTotals.length === 0 ? formatCurrency(0, 'INR') : grandTotals.map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * 12, t.currencyCode)}</div>)}
                     </td>
                   </tr>
                 </tfoot>
