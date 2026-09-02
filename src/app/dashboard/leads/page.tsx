@@ -25,7 +25,6 @@ import dayjs from 'dayjs';
 import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
 import { useLeadSources } from '@/hooks/useLeadSources';
 import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
-import { useAllProjects } from '@/hooks/useProjectsForLead';
 
 const VIEW_TABS = [
   { value: '', label: 'All Leads' },
@@ -202,20 +201,6 @@ export default function LeadsPage() {
     queryKey: ['verticals'],
     queryFn: async () => { const res = await fetch('/api/verticals'); if (!res.ok) throw new Error('Failed to fetch verticals'); return res.json(); },
   });
-
-  // Project Master now allows multiple Projects per Lead/Customer
-  // (Project.customerId/leadId — see that model's own comments), so the
-  // table's Project Name column reads off that relationship instead of the
-  // legacy single-value Lead.projectName. Reuses the same all-projects
-  // fetch already used by Demo/Implementation's Project-first flow, rather
-  // than a new per-lead endpoint.
-  const { data: allProjects = [] } = useAllProjects();
-  const projectNamesForLead = (leadId: number): string => {
-    const names = allProjects.filter(p => p.customerId === leadId || p.leadId === leadId).map(p => p.projectName);
-    if (names.length === 0) return '—';
-    if (names.length <= 2) return names.join(', ');
-    return `${names[0]} +${names.length - 1} more`;
-  };
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -439,7 +424,7 @@ export default function LeadsPage() {
                       <td className="px-4 py-3 font-medium text-slate-800">
                         <Link href={`/dashboard/leads/${lead.id}`} className="hover:text-amber-600 hover:underline">{lead.companyName}</Link>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{projectNamesForLead(lead.id)}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{parseVerticalName(lead.businessVerticals) || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{lead.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.designation || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.mobile || '—'}</td>
