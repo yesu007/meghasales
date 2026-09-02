@@ -35,7 +35,7 @@ git clone <your-repo-url> meghasales && cd meghasales
 ## 4. Configure environment
 
 ```bash
-cp .env.production.example .env.production
+cp .env.example .env.production
 nano .env.production   # fill in real secrets — see checklist below
 ```
 
@@ -46,6 +46,34 @@ Fill in, at minimum:
 - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — `npx web-push generate-vapid-keys`
 - `BLOB_READ_WRITE_TOKEN` — from the Vercel dashboard → Storage → create a
   Blob store (no need to deploy anything there, just provisioning storage)
+
+**Also create a root `.env`** (separate from `.env.production` above — yes,
+this is a second file). `docker-compose.yml` passes `POSTGRES_USER`,
+`POSTGRES_PASSWORD`, `POSTGRES_DB`, and every `NEXT_PUBLIC_*` var as Docker
+build `args`, and build args are resolved by Compose's own variable
+substitution when it parses `docker-compose.yml` — which only reads a root
+`.env` (or the shell environment), never `.env.production`. `.env.production`
+via `env_file:` only reaches the already-running container, too late to
+affect a `NEXT_PUBLIC_*` var that Next.js must inline into the client bundle
+*at build time*. Concretely:
+
+```bash
+cat > .env << 'EOF'
+POSTGRES_USER=meghasales
+POSTGRES_PASSWORD=same-value-as-in-.env.production
+POSTGRES_DB=meghasales
+NEXT_PUBLIC_FEATURE_ADMIN_TICKET=true
+NEXT_PUBLIC_FEATURE_MEETINGS=true
+NEXT_PUBLIC_FEATURE_PAYROLL=true
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=same-value-as-in-.env.production
+EOF
+```
+
+Any `NEXT_PUBLIC_*` flag missing or blank here silently renders as
+`ENV NEXT_PUBLIC_FEATURE_X=""` in the built image — `=== 'true'` then
+evaluates false and the nav item disappears with no error anywhere. If you
+change a value in this file, you must `docker compose up -d --build` again
+(a plain `up -d` won't pick it up, since it's already baked into the image).
 
 ## 5. Build and start the stack
 
