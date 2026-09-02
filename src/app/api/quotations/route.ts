@@ -330,15 +330,26 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // The number derives from the highest existing suffix (not a row count,
-    // which drifts once any quotation is deleted) and the create is retried
-    // on a collision, since two concurrent requests can still read the same
-    // "next" number before either has inserted.
+    // The number derives from the highest existing *numeric suffix* across
+    // every QTN-##### row, via MAX() rather than "whichever row has the
+    // highest id" — the latest-inserted row isn't necessarily the
+    // highest-numbered one (a legacy/imported row out of sequence, or one
+    // fixed up manually, breaks that assumption) and reading the wrong "last"
+    // row means the very first candidate collides with some earlier row.
+    // Also, a failed create() never inserts anything, so the seed must
+    // advance by `attempt` on every retry — recomputing from the same query
+    // would regenerate the identical doomed number forever instead of
+    // actually resolving the collision.
+    const [{ maxSeq }] = await prisma.$queryRaw<{ maxSeq: number | null }[]>`
+      SELECT MAX(CAST(SUBSTRING(quotation_number FROM 5) AS INTEGER)) AS "maxSeq"
+      FROM quotations
+      WHERE quotation_number ~ '^QTN-[0-9]+$'
+    `;
+    const lastSeq = Number(maxSeq) || 0;
+
     let quotation;
     for (let attempt = 0; ; attempt++) {
-      const last = await prisma.quotation.findFirst({ orderBy: { id: 'desc' }, select: { quotationNumber: true } });
-      const lastSeq = last ? parseInt(last.quotationNumber.replace('QTN-', ''), 10) || 0 : 0;
-      data.quotationNumber = `QTN-${String(lastSeq + 1).padStart(5, '0')}`;
+      data.quotationNumber = `QTN-${String(lastSeq + 1 + attempt).padStart(5, '0')}`;
 
       try {
         quotation = await prisma.quotation.create({
@@ -352,7 +363,7 @@ export async function POST(request: NextRequest) {
         const isCollision = error instanceof Prisma.PrismaClientKnownRequestError
           && error.code === 'P2002'
           && (error.meta?.target as string[] | undefined)?.includes('quotation_number');
-        if (!isCollision || attempt >= 4) throw error;
+        if (!isCollision || attempt >= 9) throw error;
       }
     }
 
