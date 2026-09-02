@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PencilIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
@@ -55,7 +55,7 @@ function sumByCurrency(amounts: { amount: number; currencyCode: string }[]): Rec
   return totals;
 }
 
-export default function ProjectBudgetPanel({ projectId }: { projectId: number }) {
+export default function ProjectBudgetPanel({ projectId, newEstimationHref }: { projectId: number; newEstimationHref?: string }) {
   const queryClient = useQueryClient();
   const { data: quotations = [], isLoading: loadingQuotations } = useQuery({
     queryKey: ['project-budget-quotations', projectId],
@@ -85,111 +85,99 @@ export default function ProjectBudgetPanel({ projectId }: { projectId: number })
   }
 
   return (
-    <div className="py-4 space-y-4">
+    <div className="py-4 space-y-5">
       <div>
-        <p className="text-sm font-bold text-slate-800 uppercase mb-2">Budget Estimations</p>
+        <div className="flex items-center justify-between mb-2.5">
+          <p className="text-sm text-slate-500">Budget estimation</p>
+          {newEstimationHref && (
+            <Link href={newEstimationHref} className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-800">
+              <PlusIcon className="h-3.5 w-3.5" /> New Estimation
+            </Link>
+          )}
+        </div>
         {quotations.length === 0 ? (
           <p className="text-sm text-slate-400">No Budget Estimation created for this project yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-slate-500 uppercase">
-                  <th className="py-1.5 pr-4">Quotation #</th>
-                  <th className="py-1.5 pr-4">Status</th>
-                  <th className="py-1.5 pr-4">Date</th>
-                  <th className="py-1.5 pr-4 text-right">Total</th>
-                  <th className="py-1.5"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {quotations.map((q) => (
-                  <tr key={q.id}>
-                    <td className="py-1.5 pr-4 text-slate-700">{q.quotationNumber}</td>
-                    <td className="py-1.5 pr-4">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${QUOTATION_STATUS_COLORS[q.status] || 'bg-slate-100 text-slate-700'}`}>{q.status}</span>
-                    </td>
-                    <td className="py-1.5 pr-4 text-slate-500">{dayjs(q.createdAt).format('DD MMM YYYY')}</td>
-                    <td className="py-1.5 pr-4 text-right text-slate-700">{formatCurrency(q.totalAmount, q.currencyCode)}</td>
-                    <td className="py-1.5 text-right whitespace-nowrap">
-                      <Link href={`/dashboard/quotations/calculator/${q.id}`} className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-flex" title="View / Edit">
-                        <PencilIcon className="h-3.5 w-3.5" />
-                      </Link>
-                      <button
-                        onClick={() => deleteQuotation(q.id, q.quotationNumber)}
-                        className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex"
-                        title="Delete"
-                      >
-                        <TrashIcon className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-2">
+            {quotations.map((q) => (
+              <div key={q.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-medium text-slate-800">{q.quotationNumber}</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${QUOTATION_STATUS_COLORS[q.status] || 'bg-slate-100 text-slate-700'}`}>{q.status}</span>
+                  <span className="text-xs text-slate-400">{dayjs(q.createdAt).format('DD MMM YYYY')}</span>
+                </div>
+                <div className="flex items-center gap-3.5">
+                  <span className="text-sm font-medium text-slate-800">{formatCurrency(q.totalAmount, q.currencyCode)}</span>
+                  <Link href={`/dashboard/quotations/calculator/${q.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-flex" title="View / Edit">
+                    <PencilIcon className="h-3.5 w-3.5" />
+                  </Link>
+                  <button
+                    onClick={() => deleteQuotation(q.id, q.quotationNumber)}
+                    className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex"
+                    title="Delete"
+                  >
+                    <TrashIcon className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      <div className="pt-3 border-t border-slate-100">
-        <p className="text-sm font-bold text-slate-800 uppercase mb-2">Budget vs Actual</p>
+      <div className="pt-1">
         {currencies.length === 0 ? (
-          <p className="text-sm text-slate-400">No Sent/Approved Budget Estimation or recorded expense yet.</p>
+          <>
+            <p className="text-sm text-slate-500 mb-2.5">Budget vs actual</p>
+            <p className="text-sm text-slate-400">No Sent/Approved Budget Estimation or recorded expense yet.</p>
+          </>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-slate-500 uppercase">
-                  <th className="py-1.5 pr-4">Currency</th>
-                  <th className="py-1.5 pr-4 text-right">Estimated Budget</th>
-                  <th className="py-1.5 pr-4 text-right">Actual Expenses</th>
-                  <th className="py-1.5 pr-4">Budget Usage</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {currencies.map((currency) => {
-                  const estimated = estimatedByCurrency[currency] || 0;
-                  const actual = actualByCurrency[currency] || 0;
-                  const variance = actual - estimated;
-                  const utilizationPercent = estimated > 0 ? (actual / estimated) * 100 : null;
-                  const isOverBudget = utilizationPercent !== null && actual > estimated;
-                  return (
-                    <tr key={currency}>
-                      <td className="py-2 pr-4 text-slate-500">{currency}</td>
-                      <td className="py-2 pr-4 text-right text-slate-700">{formatCurrency(estimated, currency)}</td>
-                      <td className="py-2 pr-4 text-right">
-                        <p className="text-slate-700">{formatCurrency(actual, currency)}</p>
-                        {estimated > 0 && (
-                          <p className={`text-xs mt-0.5 ${isOverBudget ? 'text-red-600' : 'text-emerald-600'}`}>
-                            {isOverBudget ? `▲ ${formatCurrency(variance, currency)} over budget` : `${formatCurrency(Math.abs(variance), currency)} remaining`}
-                          </p>
-                        )}
-                      </td>
-                      <td className="py-2 pr-4">
-                        {utilizationPercent !== null ? (
-                          <div
-                            className="w-28"
-                            title={`Estimated: ${formatCurrency(estimated, currency)}\nActual: ${formatCurrency(actual, currency)}\nRemaining: ${formatCurrency(Math.max(estimated - actual, 0), currency)}\nUsage: ${utilizationPercent.toFixed(1)}%`}
-                          >
-                            <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${isOverBudget ? 'bg-red-600' : 'bg-amber-600'}`}
-                                style={{ width: `${Math.min(utilizationPercent, 100)}%` }}
-                              />
-                            </div>
-                            <p className={`text-[11px] mt-0.5 ${isOverBudget ? 'text-red-600 font-medium' : 'text-slate-500'}`}>
-                              {isOverBudget ? `${utilizationPercent.toFixed(1)}% — Over Budget` : `${utilizationPercent.toFixed(1)}%`}
-                            </p>
+          <div className="space-y-4">
+            {currencies.map((currency) => {
+              const estimated = estimatedByCurrency[currency] || 0;
+              const actual = actualByCurrency[currency] || 0;
+              const variance = actual - estimated;
+              const utilizationPercent = estimated > 0 ? (actual / estimated) * 100 : null;
+              const isOverBudget = utilizationPercent !== null && actual > estimated;
+              return (
+                <div key={currency}>
+                  <p className="text-sm text-slate-500 mb-2.5">Budget vs actual — {currency}</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-slate-50 rounded-lg p-4">
+                      <p className="text-xs text-slate-500 mb-1">Estimated</p>
+                      <p className="text-xl font-medium text-slate-800">{formatCurrency(estimated, currency)}</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-4">
+                      <p className="text-xs text-slate-500 mb-1">Spent</p>
+                      <p className="text-xl font-medium text-slate-800 mb-1">{formatCurrency(actual, currency)}</p>
+                      {estimated > 0 && (
+                        <p className={`text-xs ${isOverBudget ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {isOverBudget ? `▲ ${formatCurrency(variance, currency)} over budget` : `${formatCurrency(Math.abs(variance), currency)} remaining`}
+                        </p>
+                      )}
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-4">
+                      <p className="text-xs text-slate-500 mb-1.5">Usage</p>
+                      {utilizationPercent !== null ? (
+                        <div title={`Estimated: ${formatCurrency(estimated, currency)}\nActual: ${formatCurrency(actual, currency)}\nRemaining: ${formatCurrency(Math.max(estimated - actual, 0), currency)}\nUsage: ${utilizationPercent.toFixed(1)}%`}>
+                          <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden mb-1.5">
+                            <div
+                              className={`h-full rounded-full ${isOverBudget ? 'bg-red-600' : 'bg-amber-600'}`}
+                              style={{ width: `${Math.min(utilizationPercent, 100)}%` }}
+                            />
                           </div>
-                        ) : (
-                          <span className="text-slate-400 text-xs">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          <p className={`text-xs ${isOverBudget ? 'text-red-600 font-medium' : 'text-slate-500'}`}>
+                            {isOverBudget ? `${utilizationPercent.toFixed(1)}% — Over Budget` : `${utilizationPercent.toFixed(1)}%`}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

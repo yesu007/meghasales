@@ -1,14 +1,77 @@
 'use client';
 
-import { useState, Fragment } from 'react';
+import { useState, useRef, useEffect, Fragment, type ComponentType, type SVGProps } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, ChevronDownIcon, ChevronRightIcon, PencilIcon, TrashIcon, ChartBarIcon } from '@heroicons/react/24/outline';
+import {
+  PlusIcon, ChevronDownIcon, ChevronRightIcon, PencilIcon, TrashIcon, ChartBarIcon, EllipsisVerticalIcon, ArrowPathIcon,
+} from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/lib/currency';
 import { usePermissions } from '@/hooks/usePermissions';
 import ProjectFormDrawer, { blankProjectForm, type ProjectFormState } from '@/components/projects/ProjectFormDrawer';
 import ProjectBudgetPanel from '@/components/projects/ProjectBudgetPanel';
+
+interface RowActionItem {
+  key: string;
+  label: string;
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+  onClick: () => void;
+  danger?: boolean;
+}
+
+// Portal-rendered dropdown — the projects table scrolls horizontally
+// (overflow-x-auto), and CSS forces overflow-y to clip too once overflow-x
+// is anything but visible, so an absolutely-positioned menu inside the
+// table would be cut off. Rendering into document.body at a computed
+// fixed position sidesteps that entirely.
+function RowActionsMenu({ items }: { items: RowActionItem[] }) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (btnRef.current?.contains(e.target as Node) || menuRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setCoords({ top: rect.bottom + 4, left: rect.right - 192 });
+    }
+    setOpen((o) => !o);
+  };
+
+  return (
+    <>
+      <button ref={btnRef} onClick={toggle} className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Row actions">
+        <EllipsisVerticalIcon className="h-5 w-5" />
+      </button>
+      {open && createPortal(
+        <div ref={menuRef} style={{ position: 'fixed', top: coords.top, left: coords.left }} className="w-48 z-50 rounded-lg bg-white shadow-lg border border-slate-200 py-1">
+          {items.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => { item.onClick(); setOpen(false); }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-slate-50 ${item.danger ? 'text-red-600' : 'text-slate-700'}`}
+            >
+              <item.icon className={`h-4 w-4 ${item.danger ? '' : 'text-slate-400'}`} /> {item.label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 interface ProjectRow {
   id: number;
@@ -163,39 +226,34 @@ export default function ProjectsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex justify-end gap-2">
-                            {canManageQuotations && p.isActive && (
-                              <Link
-                                href={`/dashboard/quotations/calculator?projectId=${p.id}&leadId=${p.customerId ?? p.leadId}`}
-                                title="New Budget Estimation (Resource-Based Quotation) for this project"
-                                className="p-1.5 rounded text-amber-700 hover:text-amber-800 hover:bg-amber-50"
-                              >
-                                <ChartBarIcon className="h-4 w-4" />
-                              </Link>
-                            )}
-                            <button onClick={() => openEdit(p)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                              <PencilIcon className="h-4 w-4" />
-                            </button>
-                            {p.isActive ? (
-                              <button
-                                onClick={() => { if (window.confirm(`Delete project "${p.projectName}"?`)) toggleActive.mutate({ id: p.id, isActive: false }); }}
-                                className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
-                                title="Delete"
-                              >
-                                <TrashIcon className="h-4 w-4" />
-                              </button>
-                            ) : (
-                              <button onClick={() => toggleActive.mutate({ id: p.id, isActive: true })} className="text-xs font-medium text-green-700 hover:text-green-800">
-                                Reactivate
-                              </button>
-                            )}
-                          </div>
+                          <RowActionsMenu
+                            items={[
+                              { key: 'analytics', label: 'View Analytics', icon: ChartBarIcon, onClick: () => setExpandedId(isExpanded ? null : p.id) },
+                              { key: 'edit', label: 'Edit Project', icon: PencilIcon, onClick: () => openEdit(p) },
+                              p.isActive
+                                ? {
+                                    key: 'delete',
+                                    label: 'Delete Project',
+                                    icon: TrashIcon,
+                                    danger: true,
+                                    onClick: () => { if (window.confirm(`Delete project "${p.projectName}"?`)) toggleActive.mutate({ id: p.id, isActive: false }); },
+                                  }
+                                : { key: 'reactivate', label: 'Reactivate Project', icon: ArrowPathIcon, onClick: () => toggleActive.mutate({ id: p.id, isActive: true }) },
+                            ]}
+                          />
                         </td>
                       </tr>
                       {isExpanded && (
                         <tr className="bg-slate-50/60">
                           <td colSpan={9} className="px-6 border-t border-slate-100">
-                            <ProjectBudgetPanel projectId={p.id} />
+                            <ProjectBudgetPanel
+                              projectId={p.id}
+                              newEstimationHref={
+                                canManageQuotations && p.isActive
+                                  ? `/dashboard/quotations/calculator?projectId=${p.id}&leadId=${p.customerId ?? p.leadId}`
+                                  : undefined
+                              }
+                            />
                           </td>
                         </tr>
                       )}
