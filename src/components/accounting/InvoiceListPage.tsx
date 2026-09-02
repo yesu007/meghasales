@@ -127,8 +127,11 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
   const [dueDateFrom, setDueDateFrom] = useState('');
   const [dueDateTo, setDueDateTo] = useState('');
   const [overdueOnly, setOverdueOnly] = useState(false);
-  const [sortBy, setSortBy] = useState('dueDate');
-  const [sortDir, setSortDir] = useState('asc');
+  // Pending Invoices defaults to newest-created-first so a freshly generated
+  // invoice is immediately visible at the top without changing sort; Paid
+  // Invoices keeps the original due-date ordering (unaffected by this ask).
+  const [sortBy, setSortBy] = useState(mode === 'open' ? 'createdAt' : 'dueDate');
+  const [sortDir, setSortDir] = useState(mode === 'open' ? 'desc' : 'asc');
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
 
