@@ -87,10 +87,12 @@ export default function ProjectFormDrawer({
   const { data: leads = [] } = useQuery({ queryKey: ['leads-for-project'], queryFn: fetchLeadOptions });
   const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
 
-  // Vertical is never picked directly here — it's read off whichever
-  // Lead/Customer is selected (Lead.businessVerticals) and resolved to the
-  // matching Vertical master row, same rationale as Implementations page's
-  // own read-only "Business Vertical" display.
+  // Vertical is freely selectable — the Lead/Customer's own business
+  // vertical (Lead.businessVerticals) is only used to *suggest* an initial
+  // pick when one is first selected, matching Implementations page's read
+  // of the same field. It never overrides a vertical the user has already
+  // chosen, so switching the suggestion source (or picking a different
+  // Lead/Customer afterward) doesn't silently clobber a manual selection.
   const selectedLead = leads.find(l => String(l.id) === form.leadId);
   const selectedCustomer = customers.find(c => String(c.id) === form.customerId);
   const sourceVerticalName = form.leadId
@@ -98,24 +100,39 @@ export default function ProjectFormDrawer({
     : form.customerId
       ? parseVerticalName(selectedCustomer?.businessVerticals ?? null)
       : null;
-  // The name only counts once it resolves to a real Vertical master row —
-  // this is what actually gets saved as verticalId, so the display below
-  // must reflect this, not the raw (possibly stale/unmatched) source name.
-  const matchedVertical = verticalOptions.find(v => v.name === sourceVerticalName);
+  const suggestedVertical = verticalOptions.find(v => v.name === sourceVerticalName);
 
-  // Head is never picked directly either — it's the Vertical Master's own
-  // Head assignment (Vertical.headId/headName, already returned by
-  // /api/verticals), so it rides along with whichever Vertical was matched
-  // above rather than needing its own users lookup.
+  // Head is never picked directly — it's the Vertical Master's own Head
+  // assignment (Vertical.headId/headName, already returned by
+  // /api/verticals), so it rides along with whichever Vertical is currently
+  // selected rather than needing its own users lookup.
+  const selectedVertical = verticalOptions.find(v => String(v.id) === form.verticalId);
+
   useEffect(() => {
     if (!form.leadId && !form.customerId) {
-      setForm(f => (f.verticalId || f.headId ? { ...f, verticalId: '', headId: '' } : f));
+      setForm(f => (f.verticalId ? { ...f, verticalId: '' } : f));
       return;
     }
-    const nextVerticalId = matchedVertical ? String(matchedVertical.id) : '';
-    const nextHeadId = matchedVertical?.headId ? String(matchedVertical.headId) : '';
-    setForm(f => (f.verticalId === nextVerticalId && f.headId === nextHeadId ? f : { ...f, verticalId: nextVerticalId, headId: nextHeadId }));
-  }, [form.leadId, form.customerId, matchedVertical]);
+    // Only fills in a blank Vertical — never overwrites one already set, so
+    // this can't fight a manual selection made after picking a Lead/Customer.
+    if (form.verticalId || !suggestedVertical) return;
+    setForm(f => ({ ...f, verticalId: String(suggestedVertical.id) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately
+    // omits form.verticalId/suggestedVertical from deps: this should only
+    // react to a Lead/Customer being (de)selected, not re-fire (and
+    // potentially re-suggest) every time the form's own vertical changes.
+  }, [form.leadId, form.customerId]);
+
+  // Head just mirrors whichever Vertical is selected — clear it here rather
+  // than in the effect above so it stays in sync even when the user changes
+  // the Vertical selection directly (not just via the Lead/Customer effect).
+  useEffect(() => {
+    const nextHeadId = selectedVertical?.headId ? String(selectedVertical.headId) : '';
+    setForm(f => (f.headId === nextHeadId ? f : { ...f, headId: nextHeadId }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the
+    // primitive id, not the selectedVertical object (a new reference every
+    // render), to avoid re-running this every render.
+  }, [selectedVertical?.headId]);
 
   const handleClose = () => { setFormErrors({}); onClose(); };
 
@@ -179,15 +196,20 @@ export default function ProjectFormDrawer({
                       {formErrors.customerId && <p className="col-span-1 sm:col-span-2 -mt-3 text-xs text-red-600">{formErrors.customerId}</p>}
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Vertical *</label>
-                        <p className={`w-full px-3 py-2 border rounded-lg text-sm bg-slate-50 ${formErrors.verticalId ? 'border-red-400' : 'border-slate-200'} ${matchedVertical ? 'text-slate-700' : 'text-slate-400'}`}>
-                          {!form.leadId && !form.customerId ? 'Select a Lead or Customer first' : matchedVertical?.name || 'No vertical assigned'}
-                        </p>
+                        <select
+                          value={form.verticalId}
+                          onChange={(e) => setForm(f => ({ ...f, verticalId: e.target.value }))}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.verticalId ? 'border-red-400' : 'border-slate-300'}`}
+                        >
+                          <option value="">Select Vertical</option>
+                          {verticalOptions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                        </select>
                         {formErrors.verticalId && <p className="text-xs text-red-600 mt-1">{formErrors.verticalId}</p>}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Head *</label>
-                        <p className={`w-full px-3 py-2 border rounded-lg text-sm bg-slate-50 ${formErrors.headId ? 'border-red-400' : 'border-slate-200'} ${matchedVertical?.headName ? 'text-slate-700' : 'text-slate-400'}`}>
-                          {!form.leadId && !form.customerId ? 'Select a Lead or Customer first' : matchedVertical?.headName || 'No head assigned'}
+                        <p className={`w-full px-3 py-2 border rounded-lg text-sm bg-slate-50 ${formErrors.headId ? 'border-red-400' : 'border-slate-200'} ${selectedVertical?.headName ? 'text-slate-700' : 'text-slate-400'}`}>
+                          {selectedVertical?.headName || 'No head assigned'}
                         </p>
                         {formErrors.headId && <p className="text-xs text-red-600 mt-1">{formErrors.headId}</p>}
                       </div>
