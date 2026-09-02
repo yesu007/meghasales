@@ -228,7 +228,7 @@ export default function ProjectsPage() {
                         <td className="px-4 py-3 text-right">
                           <RowActionsMenu
                             items={[
-                              { key: 'analytics', label: 'View Analytics', icon: ChartBarIcon, onClick: () => setExpandedId(isExpanded ? null : p.id) },
+                              { key: 'analytics', label: 'Budget Estimation', icon: ChartBarIcon, onClick: () => setExpandedId(isExpanded ? null : p.id) },
                               { key: 'edit', label: 'Edit Project', icon: PencilIcon, onClick: () => openEdit(p) },
                               p.isActive
                                 ? {
