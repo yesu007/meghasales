@@ -480,6 +480,7 @@ export default function ExpenseBudgetsPage() {
                   <col className="w-44" />
                   {columns.map((col) => <col key={col.verticalId ?? 'company-wide'} className="w-48" />)}
                   <col className="w-36" />
+                  <col className="w-36" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -494,6 +495,9 @@ export default function ExpenseBudgetsPage() {
                     ))}
                     <th className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-700 uppercase tracking-wide py-2 pl-3 border-b border-slate-200">
                       Row Total
+                    </th>
+                    <th className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-700 uppercase tracking-wide py-2 pl-3 border-b border-slate-200">
+                      Annual Budget
                     </th>
                   </tr>
                 </thead>
@@ -580,13 +584,16 @@ export default function ExpenseBudgetsPage() {
                         <td className="py-1.5 pl-3 text-right font-medium text-slate-800">
                           {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
                         </td>
+                        <td className="py-1.5 pl-3 text-right font-medium text-slate-800">
+                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * 12, t.currencyCode)}</div>)}
+                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-slate-200">
-                    <td className="py-2.5 pr-3 font-semibold text-slate-800">Column Total</td>
+                    <td className="py-2.5 pr-3 font-semibold text-slate-800">Monthly Budget</td>
                     {columns.map((col) => {
                       const colBudgets = matrixBudgets.filter((b) => b.verticalId === col.verticalId);
                       return (
@@ -597,6 +604,9 @@ export default function ExpenseBudgetsPage() {
                     })}
                     <td className="py-2.5 pl-3 text-right font-semibold text-amber-700">
                       {grandTotals.length === 0 ? formatCurrency(0, 'INR') : grandTotals.map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
+                    </td>
+                    <td className="py-2.5 pl-3 text-right font-semibold text-amber-700">
+                      {grandTotals.length === 0 ? formatCurrency(0, 'INR') : grandTotals.map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * 12, t.currencyCode)}</div>)}
                     </td>
                   </tr>
                 </tfoot>

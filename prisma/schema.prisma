@@ -1711,6 +1711,11 @@ model Expense {
   // unchanged.
   vendorLeadId    Int?      @map("vendor_lead_id")
   vendor          String?
+  // Set only for a Project Expense (the create form's "Overall Expense" vs
+  // "Project Expense" toggle) — null means Overall/company-wide spend, same
+  // "optional FK, null when not applicable" convention as Demo.projectId /
+  // Implementation.projectId.
+  projectId       Int?      @map("project_id")
   expenseDate     DateTime  @map("expense_date")
   amount          Decimal   @db.Decimal(14, 2)
   currencyCode    String    @default("INR") @map("currency_code")
@@ -1734,12 +1739,14 @@ model Expense {
   subCategory ExpenseSubCategory? @relation(fields: [subCategoryId], references: [id])
   recordedBy  User?               @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
   vendorLead  Lead?               @relation("ExpenseVendor", fields: [vendorLeadId], references: [id])
+  project     Project?            @relation(fields: [projectId], references: [id])
 
   @@index([status])
   @@index([categoryId])
   @@index([subCategoryId])
   @@index([expenseDate])
   @@index([vendorLeadId])
+  @@index([projectId])
   @@map("expenses")
 }
 
@@ -1816,6 +1823,7 @@ model Project {
   demos           Demo[]
   quotations      Quotation[]
   implementations Implementation[]
+  expenses        Expense[]
 
   @@index([customerId])
   @@index([leadId])

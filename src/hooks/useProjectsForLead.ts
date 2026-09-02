@@ -5,6 +5,10 @@ import { useQuery } from '@tanstack/react-query';
 export interface LeadProjectOption {
   id: number;
   projectName: string;
+  verticalId: number;
+  verticalName: string;
+  headId: number | null;
+  headName: string | null;
 }
 
 async function fetchProjectsForLead(leadId: string): Promise<LeadProjectOption[]> {

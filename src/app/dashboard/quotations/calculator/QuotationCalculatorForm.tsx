@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, TrashIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
@@ -37,6 +37,14 @@ function ModeToggle({ mode, onChange, pctLabel, fixedLabel }: { mode: CostMode; 
 
 export default function QuotationCalculatorForm({ quotationId }: { quotationId?: number }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Deep-link from the Projects page's "New Quotation" action
+  // (/dashboard/quotations/calculator?projectId=..&leadId=..) — leadId is
+  // whichever of Project.customerId/leadId is set (see that model's own
+  // comment: a Project is tied to exactly one). Only consulted for a
+  // brand-new quotation; editing an existing one always keeps its own lead.
+  const prefillProjectId = searchParams.get('projectId');
+  const prefillLeadId = searchParams.get('leadId');
   const queryClient = useQueryClient();
   const { has } = usePermissions();
   const canAuthorizeOverride = has('authorize_quotation_override');
@@ -144,6 +152,44 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     const p = leadProjects.find((x) => String(x.id) === projectId);
     if (p) setProjectName(p.projectName);
   }, [projectId, leadProjects]);
+  // Auto-fill Vertical (and Project Manager) from whichever Project is
+  // selected — Project Master already ties every project to one Vertical
+  // (and that vertical's Head, via Project.headId — see that model's own
+  // comment), so there's no reason to make the user re-pick it here on a
+  // brand-new quotation. Keyed only on [projectId, leadProjects], not
+  // verticalId, so a later manual change to Vertical is never fought back.
+  // Skipped when editing (quotationId set) — the effect above already
+  // restores that quotation's own saved verticalId, which must win even if
+  // the linked project's vertical has since changed.
+  useEffect(() => {
+    if (quotationId) return;
+    const p = leadProjects.find((x) => String(x.id) === projectId);
+    if (!p) return;
+    setVerticalId(String(p.verticalId));
+    if (p.headName) setProjectManagerName(p.headName);
+  }, [quotationId, projectId, leadProjects]);
+
+  // Deep-link prefill (create only): pick the client the linked Project
+  // belongs to as soon as the leads list has loaded. Guarded on
+  // `!selectedLeadId` so it only ever fires once, on landing — it must not
+  // fight a client the user deliberately changes afterward.
+  useEffect(() => {
+    if (quotationId || !prefillLeadId || selectedLeadId || existingLeads.length === 0) return;
+    if (existingLeads.some((l) => String(l.id) === prefillLeadId)) {
+      setClientMode('existing');
+      selectExistingLead(prefillLeadId);
+    }
+  }, [quotationId, prefillLeadId, selectedLeadId, existingLeads]);
+  // Once that client's Project dropdown has loaded, select the specific
+  // linked Project (the generic "auto-select if there's exactly one" effect
+  // above already covers the single-project case; this handles multi-project
+  // clients by matching the id explicitly).
+  useEffect(() => {
+    if (quotationId || !prefillProjectId || !prefillLeadId) return;
+    if (leadProjects.some((p) => String(p.id) === prefillProjectId)) {
+      setProjectId(prefillProjectId);
+    }
+  }, [quotationId, prefillProjectId, prefillLeadId, leadProjects]);
 
   useEffect(() => {
     if (!existing) return;
@@ -339,11 +385,20 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || 'Failed to save quotation'); }
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
       if (quotationId) queryClient.invalidateQueries({ queryKey: ['quotation', quotationId] });
       toast.success(quotationId ? 'Quotation updated' : 'Quotation created');
-      if (!quotationId) router.push(`/dashboard/quotations/calculator/${data.id}`);
+      if (!quotationId) {
+        // Where to land after creating a brand-new Budget Estimation depends
+        // on where the calculator was opened from: the Projects page's "+
+        // New Estimation" link (carries ?projectId=) sends the user back to
+        // that project's expanded panel; Quotations' own "New (Resource
+        // Calculator)" link (no projectId) sends them to the Quotations list
+        // instead of into edit-mode on the row they just created.
+        if (prefillProjectId) router.push(`/dashboard/projects?expand=${prefillProjectId}`);
+        else router.push('/dashboard/quotations');
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });

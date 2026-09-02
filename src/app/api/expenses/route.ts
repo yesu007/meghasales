@@ -50,6 +50,10 @@ export async function GET(request: NextRequest) {
     if (subCategoryId) AND.push({ subCategoryId: parseInt(subCategoryId) });
     if (dateFrom) AND.push({ expenseDate: { gte: new Date(dateFrom) } });
     if (dateTo) AND.push({ expenseDate: { lte: new Date(dateTo) } });
+    // Used by the Projects page's Budget vs Actual panel to total a single
+    // project's actual expenses.
+    const projectId = searchParams.get('projectId') || '';
+    if (projectId) AND.push({ projectId: parseInt(projectId) });
 
     if (AND.length > 0) where.AND = AND;
 
@@ -81,6 +85,7 @@ export async function GET(request: NextRequest) {
       subCategoryName: e.subCategory?.name ?? null,
       vendor: e.vendor,
       vendorLeadId: e.vendorLeadId,
+      projectId: e.projectId,
       expenseDate: e.expenseDate,
       amount: e.amount,
       currencyCode: e.currencyCode,
@@ -180,6 +185,15 @@ export async function POST(request: NextRequest) {
       vendorName = vendorLead.companyName;
     }
 
+    // Project Expense vs Overall Expense (the create form's toggle) —
+    // projectId is set only for a Project Expense; Overall stays null.
+    let projectId: number | null = null;
+    if (body.projectId !== undefined && body.projectId !== null && body.projectId !== '') {
+      const project = await prisma.project.findUnique({ where: { id: parseInt(body.projectId) } });
+      if (!project) return NextResponse.json({ message: 'Selected project not found' }, { status: 404 });
+      projectId = project.id;
+    }
+
     const session = await getServerSession(authOptions);
     const recordedById = session?.user ? parseInt((session.user as any).id, 10) : null;
 
@@ -192,6 +206,7 @@ export async function POST(request: NextRequest) {
         subCategoryId,
         vendorLeadId,
         vendor: vendorName,
+        projectId,
         expenseDate,
         amount: Number(body.amount),
         currencyCode,

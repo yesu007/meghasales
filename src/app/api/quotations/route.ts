@@ -122,6 +122,10 @@ export async function GET(request: NextRequest) {
     // auto-generates an invoice, only quotations still missing one (e.g.
     // approved before that existed) should show up as pickable there.
     if (searchParams.get('withoutInvoice') === 'true') AND.push({ invoices: { none: { deletedAt: null } } });
+    // Used by the Projects page's Budget Estimation panel to list a single
+    // project's quotations.
+    const projectId = searchParams.get('projectId') || '';
+    if (projectId) AND.push({ projectId: parseInt(projectId) });
 
     if (AND.length > 0) where.AND = AND;
 
