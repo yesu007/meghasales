@@ -87,7 +87,7 @@ export default function ProjectBudgetPanel({ projectId }: { projectId: number })
   return (
     <div className="py-4 space-y-4">
       <div>
-        <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Budget Estimations</p>
+        <p className="text-sm font-bold text-slate-800 uppercase mb-2">Budget Estimations</p>
         {quotations.length === 0 ? (
           <p className="text-sm text-slate-400">No Budget Estimation created for this project yet.</p>
         ) : (
@@ -132,7 +132,7 @@ export default function ProjectBudgetPanel({ projectId }: { projectId: number })
       </div>
 
       <div className="pt-3 border-t border-slate-100">
-        <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Budget vs Actual</p>
+        <p className="text-sm font-bold text-slate-800 uppercase mb-2">Budget vs Actual</p>
         {currencies.length === 0 ? (
           <p className="text-sm text-slate-400">No Sent/Approved Budget Estimation or recorded expense yet.</p>
         ) : (
