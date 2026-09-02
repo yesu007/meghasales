@@ -111,10 +111,10 @@ export default function ExpenseBudgetsPage() {
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ key: string; value: string } | null>(null);
 
-  // Every stored ExpenseBudget.totalAmount is a monthly figure — this just
-  // scales what's displayed/edited (cells, Row Total, the footer total row)
-  // by 12, converting back on commit so the monthly figure in the database
-  // never changes regardless of which basis the user is looking at.
+  // Scales only the footer total row (label + per-column totals + grand
+  // totals) between the monthly figures ExpenseBudget.totalAmount stores
+  // and their ×12 yearly equivalent — the matrix cells and Row Total
+  // column above always stay on the monthly basis they're entered in.
   const [valueMode, setValueMode] = useState<'monthly' | 'yearly'>('monthly');
   const valueScale = valueMode === 'yearly' ? 12 : 1;
 
@@ -315,11 +315,7 @@ export default function ExpenseBudgetsPage() {
     if (editingCell?.key !== key) return;
     const raw = editingCell.value.trim();
     setEditingCell(null);
-    // The input holds a value on the currently-selected basis (monthly or
-    // yearly) — convert back to the monthly figure the database stores
-    // before comparing/persisting.
-    const enteredValue = raw === '' ? 0 : Number(raw);
-    const newValue = Math.round((enteredValue / valueScale) * 100) / 100;
+    const newValue = raw === '' ? 0 : Number(raw);
     const existing = budgetsByCell.get(key);
 
     if (!existing) {
@@ -598,7 +594,7 @@ export default function ExpenseBudgetsPage() {
                           const key = cellKey(categoryId, verticalId);
                           const budget = budgetsByCell.get(key);
                           const isEditing = editingCell?.key === key;
-                          const displayValue = isEditing ? editingCell!.value : fmt(budget ? Number(budget.totalAmount) * valueScale : 0);
+                          const displayValue = isEditing ? editingCell!.value : fmt(budget ? budget.totalAmount : 0);
                           return (
                             <td key={col.key} className="py-1.5 px-3 text-right">
                               <div className="group flex items-center justify-end gap-1">
@@ -649,7 +645,7 @@ export default function ExpenseBudgetsPage() {
                                       e.target.blur();
                                       return;
                                     }
-                                    setEditingCell({ key, value: budget ? String(Number(budget.totalAmount) * valueScale) : '' });
+                                    setEditingCell({ key, value: budget ? String(budget.totalAmount) : '' });
                                   }}
                                   onChange={(e) => setEditingCell({ key, value: e.target.value.replace(/[^0-9.]/g, '') })}
                                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
@@ -662,7 +658,7 @@ export default function ExpenseBudgetsPage() {
                           );
                         })}
                         <td className="py-1.5 pl-3 text-right font-medium text-slate-800">
-                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * valueScale, t.currencyCode)}</div>)}
+                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
                         </td>
                         <td className="py-1.5 pl-3 text-right font-medium text-slate-800">
                           {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * 12, t.currencyCode)}</div>)}
