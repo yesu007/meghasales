@@ -111,6 +111,13 @@ export default function ExpenseBudgetsPage() {
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ key: string; value: string } | null>(null);
 
+  // Every stored ExpenseBudget.totalAmount is a monthly figure — this just
+  // scales what's displayed/edited (cells, Row Total, the footer total row)
+  // by 12, converting back on commit so the monthly figure in the database
+  // never changes regardless of which basis the user is looking at.
+  const [valueMode, setValueMode] = useState<'monthly' | 'yearly'>('monthly');
+  const valueScale = valueMode === 'yearly' ? 12 : 1;
+
   const { data: matrixData, isLoading: matrixLoading } = useQuery({
     queryKey: ['expense-budgets-matrix', fyStart.format('YYYY-MM-DD')],
     queryFn: () => fetchMatrixBudgets(fyStart.format('YYYY-MM-DD')),
@@ -308,7 +315,11 @@ export default function ExpenseBudgetsPage() {
     if (editingCell?.key !== key) return;
     const raw = editingCell.value.trim();
     setEditingCell(null);
-    const newValue = raw === '' ? 0 : Number(raw);
+    // The input holds a value on the currently-selected basis (monthly or
+    // yearly) — convert back to the monthly figure the database stores
+    // before comparing/persisting.
+    const enteredValue = raw === '' ? 0 : Number(raw);
+    const newValue = Math.round((enteredValue / valueScale) * 100) / 100;
     const existing = budgetsByCell.get(key);
 
     if (!existing) {
@@ -491,21 +502,39 @@ export default function ExpenseBudgetsPage() {
             <span className="text-sm font-medium text-slate-700">
               {rowAxis === 'category' ? 'Category vs. Vertical' : 'Vertical vs. Category'}
             </span>
-            <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
-              <button
-                type="button"
-                onClick={() => { setRowAxis('category'); setRowPage(0); setActiveRowKey(null); }}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${rowAxis === 'category' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                By Category
-              </button>
-              <button
-                type="button"
-                onClick={() => { setRowAxis('vertical'); setRowPage(0); setActiveRowKey(null); }}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${rowAxis === 'vertical' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                By Vertical
-              </button>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={() => { setRowAxis('category'); setRowPage(0); setActiveRowKey(null); }}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${rowAxis === 'category' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  By Category
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setRowAxis('vertical'); setRowPage(0); setActiveRowKey(null); }}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${rowAxis === 'vertical' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  By Vertical
+                </button>
+              </div>
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={() => setValueMode('monthly')}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${valueMode === 'monthly' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Monthly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setValueMode('yearly')}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${valueMode === 'yearly' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Yearly
+                </button>
+              </div>
             </div>
           </div>
           {matrixLoading ? (
@@ -569,7 +598,7 @@ export default function ExpenseBudgetsPage() {
                           const key = cellKey(categoryId, verticalId);
                           const budget = budgetsByCell.get(key);
                           const isEditing = editingCell?.key === key;
-                          const displayValue = isEditing ? editingCell!.value : fmt(budget ? budget.totalAmount : 0);
+                          const displayValue = isEditing ? editingCell!.value : fmt(budget ? Number(budget.totalAmount) * valueScale : 0);
                           return (
                             <td key={col.key} className="py-1.5 px-3 text-right">
                               <div className="group flex items-center justify-end gap-1">
@@ -620,7 +649,7 @@ export default function ExpenseBudgetsPage() {
                                       e.target.blur();
                                       return;
                                     }
-                                    setEditingCell({ key, value: budget ? String(budget.totalAmount) : '' });
+                                    setEditingCell({ key, value: budget ? String(Number(budget.totalAmount) * valueScale) : '' });
                                   }}
                                   onChange={(e) => setEditingCell({ key, value: e.target.value.replace(/[^0-9.]/g, '') })}
                                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
@@ -633,7 +662,7 @@ export default function ExpenseBudgetsPage() {
                           );
                         })}
                         <td className="py-1.5 pl-3 text-right font-medium text-slate-800">
-                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
+                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * valueScale, t.currencyCode)}</div>)}
                         </td>
                         <td className="py-1.5 pl-3 text-right font-medium text-slate-800">
                           {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * 12, t.currencyCode)}</div>)}
@@ -644,17 +673,17 @@ export default function ExpenseBudgetsPage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-slate-200">
-                    <td className="py-2.5 pr-3 font-semibold text-slate-800">Monthly Budget</td>
+                    <td className="py-2.5 pr-3 font-semibold text-slate-800">{valueMode === 'yearly' ? 'Yearly Budget' : 'Monthly Budget'}</td>
                     {colAxisItems.map((col) => {
                       const colBudgets = budgetsForAxisItem(col);
                       return (
                         <td key={col.key} className="py-2.5 px-3 text-right font-semibold text-slate-800">
-                          {sumByCurrency(colBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
+                          {sumByCurrency(colBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * valueScale, t.currencyCode)}</div>)}
                         </td>
                       );
                     })}
                     <td className="py-2.5 pl-3 text-right font-semibold text-amber-700">
-                      {grandTotals.length === 0 ? formatCurrency(0, 'INR') : grandTotals.map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
+                      {grandTotals.length === 0 ? formatCurrency(0, 'INR') : grandTotals.map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * valueScale, t.currencyCode)}</div>)}
                     </td>
                     <td className="py-2.5 pl-3 text-right font-semibold text-amber-700">
                       {grandTotals.length === 0 ? formatCurrency(0, 'INR') : grandTotals.map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * 12, t.currencyCode)}</div>)}

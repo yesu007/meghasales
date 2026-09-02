@@ -74,6 +74,13 @@ export default function VerticalsPage() {
   const { data: users = [] } = useQuery({ queryKey: ['users-for-vertical-head'], queryFn: fetchUsers });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
 
+  // Vertical.budget is stored and always compared against Actual Expenses as
+  // a yearly figure (see the model comment in prisma/schema.prisma) — this
+  // only changes how the "Budget" column displays that figure, never the
+  // stored value or the usage/variance math below, which stay on the yearly
+  // basis they're defined against.
+  const [budgetViewMode, setBudgetViewMode] = useState<'monthly' | 'yearly'>('yearly');
+
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
 
   const openEdit = (v: VerticalRow) => {
@@ -136,7 +143,7 @@ export default function VerticalsPage() {
 
       {/* Search — same bordered-card placement above the table as Leads. */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-        <div className="flex flex-col md:flex-row gap-3">
+        <div className="flex flex-col md:flex-row gap-3 md:items-center">
           <div className="relative flex-1">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
@@ -151,6 +158,25 @@ export default function VerticalsPage() {
                 <XMarkIcon className="h-4 w-4" />
               </button>
             )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-slate-500">Budget shown as</span>
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+              <button
+                type="button"
+                onClick={() => setBudgetViewMode('monthly')}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${budgetViewMode === 'monthly' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Monthly
+              </button>
+              <button
+                type="button"
+                onClick={() => setBudgetViewMode('yearly')}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${budgetViewMode === 'yearly' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Yearly
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -235,7 +261,9 @@ export default function VerticalsPage() {
                         <p className="text-xs text-slate-400">{v.code}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{v.headName || '—'}</td>
-                      <td className="px-4 py-3 text-right text-slate-700">{budgetNum != null ? formatCurrency(budgetNum, budgetCurrency) : '—'}</td>
+                      <td className="px-4 py-3 text-right text-slate-700">
+                        {budgetNum != null ? formatCurrency(budgetViewMode === 'monthly' ? budgetNum / 12 : budgetNum, budgetCurrency) : '—'}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <p className="text-slate-700">{formatCurrency(actualExpenses, budgetCurrency)}</p>
                         {variance !== null && (
