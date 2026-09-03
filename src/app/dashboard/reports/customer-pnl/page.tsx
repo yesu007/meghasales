@@ -178,10 +178,6 @@ export default function CustomerPnlPage() {
         </div>
       </div>
 
-      <p className="text-xs text-slate-500 -mt-3">
-        Actual is billed revenue (invoiced, not necessarily collected yet) and Expense is direct project cost — Overall (no-project) expenses sit outside every row, same caveat as Vertical Ledger. Budget compares at the customer/project level; the Monthly view below has no Budget column because Project budgets aren&apos;t phased month by month.
-      </p>
-
       <div className="flex flex-wrap gap-2 print:hidden">
         {REPORT_TYPES.map((t) => (
           <button key={t.value} onClick={() => setType(t.value)}
