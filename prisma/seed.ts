@@ -522,6 +522,24 @@ async function main() {
   }
   console.log('  ✓ Leave types seeded');
 
+  // Salary Allocation matrix — starter allocation categories (internal cost
+  // lines, distinct from the client-facing Vertical master). Upsert by code
+  // so re-seeding never duplicates; sortOrder keeps them in the order the
+  // business actually reviews them in.
+  const allocationCategories = [
+    { name: 'Megha', code: 'MEGHA', sortOrder: 1 },
+    { name: 'Megha+', code: 'MEGHA_PLUS', sortOrder: 2 },
+    { name: 'Megha OS', code: 'MEGHA_OS', sortOrder: 3 },
+    { name: 'Individual Projects', code: 'INDIVIDUAL_PROJECTS', sortOrder: 4 },
+    { name: 'Retail', code: 'RETAIL_ALLOC', sortOrder: 5 },
+    { name: 'AI', code: 'AI', sortOrder: 6 },
+    { name: 'BPO', code: 'BPO', sortOrder: 7 },
+  ];
+  for (const c of allocationCategories) {
+    await prisma.allocationCategory.upsert({ where: { code: c.code }, update: {}, create: c });
+  }
+  console.log('  ✓ Salary allocation categories seeded');
+
   console.log('✅ Seeding complete!');
 }
 

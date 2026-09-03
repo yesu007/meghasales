@@ -116,6 +116,7 @@ model User {
   headOfVerticals        Vertical[]              @relation("VerticalHead")
   headOfProjects         Project[]               @relation("ProjectHead")
   createdCompanies       Company[]               @relation("CompanyCreatedBy")
+  createdSalaryResources SalaryResource[]        @relation("SalaryResourceCreatedBy")
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, see
   // CustomerKyc/CustomerKycDocument/CustomerContract below.
@@ -2021,6 +2022,92 @@ model ExpenseBudgetRevision {
   revisedBy User?         @relation("ExpenseBudgetRevisedBy", fields: [revisedById], references: [id])
 
   @@map("expense_budget_revisions")
+}
+
+// ============================================================
+// SALARY ALLOCATION MATRIX
+//
+// Team salary cost allocated by percentage across internal cost lines
+// (Megha, Megha+, Megha OS, Individual Projects, Retail, AI, BPO — see
+// AllocationCategory) — answers "what fraction of our payroll cost sits
+// behind each business line", not "what did we bill/spend on a client
+// project" (that's Project/Vertical Ledger's job). Deliberately its own
+// small model set rather than reusing Vertical/Employee:
+//   - AllocationCategory is a distinct list from the client-facing Vertical
+//     master (Jewellery/Diamond/Retail/...) — these are internal cost
+//     lines, several of which (Megha, Megha+, Megha OS) aren't verticals
+//     at all, and mixing the two lists would make Vertical mean two
+//     different things depending on context.
+//   - SalaryResource is standalone, not FK'd to Employee — this is
+//     planning/allocation data entered ahead of (or independent of) a
+//     matching payroll record, e.g. "New Junior DevOps" or "Office Maid"
+//     with no Employee row of their own.
+// ============================================================
+
+// Admin-managed open picklist — same shape/rationale as Vertical/Package
+// above (a short, occasionally-edited list other rows key off by id).
+model AllocationCategory {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  code      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  splits SalaryAllocationSplit[]
+
+  @@map("allocation_categories")
+}
+
+// One row per person/role in the matrix. `resourceType` is a free-text
+// grouping label (Management, Developers, Testing Team, ...) rather than
+// its own master table — unlike Vertical/AllocationCategory, the pasted
+// source data itself uses one-off groups (e.g. "Purushoth – Employee"), so
+// this stays a plain string exactly like Expense.vendor does for the same
+// reason.
+//
+// salaryAfterIncrement is deliberately NOT a column — it is always
+// maxSalary + incrementProvision (both nullable, treated as 0 when unset),
+// computed wherever it's displayed rather than stored, so it can never
+// drift from its two inputs.
+model SalaryResource {
+  id                 Int      @id @default(autoincrement())
+  resourceType       String   @map("resource_type")
+  name               String
+  maxSalary          Decimal? @map("max_salary") @db.Decimal(15, 2)
+  incrementProvision Decimal? @map("increment_provision") @db.Decimal(15, 2)
+  remark             String?
+  isActive           Boolean  @default(true) @map("is_active")
+  sortOrder          Int      @default(0) @map("sort_order")
+  createdById        Int?     @map("created_by")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  createdBy User?                    @relation("SalaryResourceCreatedBy", fields: [createdById], references: [id])
+  splits    SalaryAllocationSplit[]
+
+  @@index([sortOrder])
+  @@map("salary_resources")
+}
+
+// A resource's percentage split into one category. Rows summing to less
+// than 100% (e.g. 0% — a fully shared/overhead cost like Office Maid) are
+// valid and distinct from a genuine data-entry gap; the UI's own "Check"
+// column (see salaryAllocation.ts) is what tells those two apart, not this
+// table.
+model SalaryAllocationSplit {
+  id         Int     @id @default(autoincrement())
+  resourceId Int     @map("resource_id")
+  categoryId Int     @map("category_id")
+  percentage Decimal @db.Decimal(5, 2)
+
+  resource SalaryResource     @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  category AllocationCategory @relation(fields: [categoryId], references: [id])
+
+  @@unique([resourceId, categoryId])
+  @@index([categoryId])
+  @@map("salary_allocation_splits")
 }
 
 // ============================================================
