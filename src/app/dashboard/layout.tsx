@@ -37,6 +37,7 @@ import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
 import { isMeetingsModuleEnabled } from '@/lib/meetings/featureFlag';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { hasAnyPermission } from '@/lib/permissions';
+import { REPORTS } from '@/lib/reports/registry';
 
 interface NavChild {
   href: string;
@@ -158,7 +159,18 @@ function getNavItems(): NavSection[] {
     {
       title: 'Reports',
       items: [
-        { href: '/dashboard/reports', label: 'Reports', icon: ChartBarSquareIcon, permission: 'view_reports' },
+        {
+          href: '/dashboard/reports', label: 'Reports', icon: ChartBarSquareIcon, permission: 'view_reports',
+          // Driven by the same registry as the hub page (src/lib/reports/
+          // registry.ts) rather than a second hardcoded list, so a report
+          // added there shows up here too with no nav edit — "All Reports"
+          // keeps the searchable hub reachable, same convention as
+          // Accounting/Payroll relisting their own root as the first child.
+          children: [
+            { href: '/dashboard/reports', label: 'All Reports' },
+            ...REPORTS.filter((r) => r.status === 'available').map((r) => ({ href: r.href, label: r.name, permission: r.permission })),
+          ],
+        },
       ],
     },
     {
