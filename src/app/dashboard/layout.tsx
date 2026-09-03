@@ -22,6 +22,7 @@ import {
   CalendarDaysIcon,
   ReceiptPercentIcon,
   ChartPieIcon,
+  ChartBarSquareIcon,
   BuildingOffice2Icon,
   CubeIcon,
   MegaphoneIcon,
@@ -145,6 +146,19 @@ function getNavItems(): NavSection[] {
               ],
             }]
           : []),
+      ],
+    },
+    // Cross-module reporting. Deliberately its own section rather than a
+    // child of Finance: reports here span Sales/Finance/People, and the
+    // module-owned report pages (Accounting → Reports, Payroll → Reports,
+    // Meetings → Reports, Audit Report) stay exactly where they are — this
+    // section only ever lists reports built under /dashboard/reports. The
+    // hub page filters its own catalog by permission, so a viewer holding
+    // view_reports but nothing else sees an empty catalog rather than a 403.
+    {
+      title: 'Reports',
+      items: [
+        { href: '/dashboard/reports', label: 'Reports', icon: ChartBarSquareIcon, permission: 'view_reports' },
       ],
     },
     {
