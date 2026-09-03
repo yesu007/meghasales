@@ -91,6 +91,9 @@ model User {
   pushSubscriptions PushSubscription[]
   employee          Employee?
 
+  passwordResetRequests         PasswordResetRequest[] @relation("PasswordResetRequester")
+  resolvedPasswordResetRequests PasswordResetRequest[] @relation("PasswordResetResolver")
+
   // Event Management
   createdEvents            Event[]                @relation("EventCreatedBy")
   uploadedEventDocuments   EventDocument[]        @relation("EventDocumentUploadedBy")
@@ -1002,6 +1005,29 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+
+// Pure audit trail for the admin-mediated password reset flow — no
+// token/code is ever generated or emailed to the requesting user; a request
+// here just notifies every ADMIN-role user (see POST
+// /api/auth/password-reset-request), and the admin resets the password
+// directly via the existing Edit User screen. That same PUT
+// (/api/users/[id]) auto-resolves any PENDING row for that user the moment
+// a new password is actually set — see the status/resolvedBy/resolvedAt
+// fields below.
+model PasswordResetRequest {
+  id           Int       @id @default(autoincrement())
+  userId       Int       @map("user_id")
+  status       String    @default("PENDING") // PENDING | RESOLVED
+  resolvedById Int?      @map("resolved_by")
+  resolvedAt   DateTime? @map("resolved_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user       User  @relation("PasswordResetRequester", fields: [userId], references: [id], onDelete: Cascade)
+  resolvedBy User? @relation("PasswordResetResolver", fields: [resolvedById], references: [id])
+
+  @@index([userId, status])
+  @@map("password_reset_requests")
 }
 
 // Dedup key for the deadline-reminder dispatcher (events, lead follow-ups,

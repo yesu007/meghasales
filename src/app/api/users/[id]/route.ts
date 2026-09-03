@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
 import prisma from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
+import { authOptions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
@@ -56,12 +58,26 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ message: 'A user must have at least one role' }, { status: 400 });
     }
 
+    const session = body.password ? await getServerSession(authOptions) : null;
+    const resolvedById = session?.user ? parseInt((session.user as any).id, 10) : null;
+
     const user = await prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id }, data });
 
       if (roleIds !== undefined) {
         await tx.userRole.deleteMany({ where: { userId: id } });
         await tx.userRole.createMany({ data: roleIds.map((roleId) => ({ userId: id, roleId })) });
+      }
+
+      // An admin setting a new password here is exactly the resolution of
+      // any outstanding self-service request (see POST
+      // /api/auth/password-reset-request) — closes the loop automatically
+      // rather than needing a separate "mark resolved" action.
+      if (body.password) {
+        await tx.passwordResetRequest.updateMany({
+          where: { userId: id, status: 'PENDING' },
+          data: { status: 'RESOLVED', resolvedById: Number.isFinite(resolvedById) ? resolvedById : null, resolvedAt: new Date() },
+        });
       }
 
       return tx.user.findUniqueOrThrow({
