@@ -4,7 +4,7 @@ import { groupSumsByCurrency } from './reportGrouping';
 
 export type ReportType = 'outstanding' | 'aging' | 'collection' | 'payment-history' | 'overdue' | 'monthly-collection';
 
-export interface ReportColumn { key: string; label: string; align?: 'left' | 'right'; type?: 'currency' | 'number' | 'text' }
+export interface ReportColumn { key: string; label: string; align?: 'left' | 'right'; type?: 'currency' | 'number' | 'text' | 'percent' }
 export interface ReportResult { title: string; columns: ReportColumn[]; rows: Record<string, any>[] }
 
 interface ReportFilters { from?: string; to?: string; leadId?: string }

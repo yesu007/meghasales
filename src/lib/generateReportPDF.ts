@@ -10,7 +10,7 @@ const SLATE_500 = [100, 116, 139] as const;
 const SLATE_200 = [226, 232, 240] as const;
 const WHITE = [255, 255, 255] as const;
 
-export interface ReportPDFColumn { key: string; label: string; align?: 'left' | 'right'; type?: 'currency' | 'number' | 'text' }
+export interface ReportPDFColumn { key: string; label: string; align?: 'left' | 'right'; type?: 'currency' | 'number' | 'text' | 'percent' }
 
 export function generateReportPDF(
   title: string,
@@ -45,6 +45,7 @@ export function generateReportPDF(
   const formatCell = (value: any, type: string | undefined, currencyCode: string): string => {
     if (typeof value !== 'number') return String(value ?? '');
     if (type === 'currency') return formatCurrency(value, currencyCode);
+    if (type === 'percent') return `${value.toFixed(1)}%`;
     return value.toLocaleString('en-IN');
   };
 

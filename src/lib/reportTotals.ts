@@ -3,7 +3,7 @@
 // with the one on screen. Two implementations would eventually drift; there
 // is deliberately only one.
 
-export interface TotalsColumn { key: string; label: string; align?: 'left' | 'right'; type?: 'currency' | 'number' | 'text' }
+export interface TotalsColumn { key: string; label: string; align?: 'left' | 'right'; type?: 'currency' | 'number' | 'text' | 'percent' }
 
 export interface CurrencyTotals {
   currencyCode: string;

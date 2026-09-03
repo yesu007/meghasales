@@ -48,6 +48,15 @@ export const REPORTS: ReportDefinition[] = [
     status: 'available',
   },
   {
+    key: 'customer-pnl',
+    name: 'Customer P&L',
+    description: 'Budget, billed revenue, expense and profit per customer, rolled up from its projects — with variance and budget-utilization status.',
+    href: '/dashboard/reports/customer-pnl',
+    group: 'Finance',
+    permission: 'view_projects',
+    status: 'available',
+  },
+  {
     key: 'vertical-ledger',
     name: 'Vertical Ledger',
     description: 'Credit and debit per business vertical, rolled up from its projects.',

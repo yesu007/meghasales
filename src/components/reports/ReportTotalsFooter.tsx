@@ -3,7 +3,7 @@
 import { formatCurrency } from '@/lib/currency';
 import { computeReportTotals } from '@/lib/reportTotals';
 
-interface ReportColumn { key: string; label: string; align?: 'left' | 'right'; type?: 'currency' | 'number' | 'text' }
+interface ReportColumn { key: string; label: string; align?: 'left' | 'right'; type?: 'currency' | 'number' | 'text' | 'percent' }
 
 export interface StatusSplit { currencyCode: string; paid: number; pending: number }
 
