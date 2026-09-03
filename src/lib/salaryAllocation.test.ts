@@ -1,17 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salaryAfterIncrement, allocationCheck, computeCategoryWeightage } from './salaryAllocation';
-
-describe('salaryAfterIncrement', () => {
-  it('sums both inputs', () => {
-    expect(salaryAfterIncrement(80000, 10000)).toBe(90000);
-  });
-  it('treats a missing max salary as 0', () => {
-    expect(salaryAfterIncrement(null, 3000)).toBe(3000);
-  });
-  it('treats a missing increment as 0', () => {
-    expect(salaryAfterIncrement(123500, null)).toBe(123500);
-  });
-});
+import { allocationCheck, computeVerticalWeightage } from './salaryAllocation';
 
 describe('allocationCheck', () => {
   it('is OK at exactly 100%', () => {
@@ -28,37 +16,34 @@ describe('allocationCheck', () => {
   });
 });
 
-describe('computeCategoryWeightage', () => {
-  const categories = [
-    { id: 1, name: 'Megha', code: 'MEGHA' },
-    { id: 2, name: 'Retail', code: 'RETAIL' },
-  ];
+describe('computeVerticalWeightage', () => {
+  const keys = ['AI', 'RETAIL'];
 
-  it('splits each resource\'s salary across categories by its own percentage', () => {
-    const result = computeCategoryWeightage(
-      [{ salaryAfterIncrement: 100000, splits: [{ categoryId: 1, percentage: 60 }, { categoryId: 2, percentage: 40 }] }],
-      categories
+  it("splits each employee's salary across verticals by their own percentage", () => {
+    const result = computeVerticalWeightage(
+      [{ monthlySalary: 100000, splits: [{ verticalKey: 'AI', percentage: 60 }, { verticalKey: 'RETAIL', percentage: 40 }] }],
+      keys
     );
-    expect(result.find((r) => r.code === 'MEGHA')?.allocatedAmount).toBe(60000);
-    expect(result.find((r) => r.code === 'RETAIL')?.allocatedAmount).toBe(40000);
-    expect(result.find((r) => r.code === 'MEGHA')?.weightagePct).toBe(60);
-    expect(result.find((r) => r.code === 'RETAIL')?.weightagePct).toBe(40);
+    expect(result.find((r) => r.verticalKey === 'AI')?.allocatedAmount).toBe(60000);
+    expect(result.find((r) => r.verticalKey === 'RETAIL')?.allocatedAmount).toBe(40000);
+    expect(result.find((r) => r.verticalKey === 'AI')?.weightagePct).toBe(60);
+    expect(result.find((r) => r.verticalKey === 'RETAIL')?.weightagePct).toBe(40);
   });
 
-  it('excludes a fully-unallocated (0%) resource from the weightage entirely', () => {
-    const result = computeCategoryWeightage(
+  it('excludes a fully-unallocated (0%) employee from the weightage entirely', () => {
+    const result = computeVerticalWeightage(
       [
-        { salaryAfterIncrement: 100000, splits: [{ categoryId: 1, percentage: 100 }] },
-        { salaryAfterIncrement: 10000, splits: [{ categoryId: 1, percentage: 0 }, { categoryId: 2, percentage: 0 }] },
+        { monthlySalary: 100000, splits: [{ verticalKey: 'AI', percentage: 100 }] },
+        { monthlySalary: 10000, splits: [{ verticalKey: 'AI', percentage: 0 }, { verticalKey: 'RETAIL', percentage: 0 }] },
       ],
-      categories
+      keys
     );
-    expect(result.find((r) => r.code === 'MEGHA')?.weightagePct).toBe(100);
-    expect(result.find((r) => r.code === 'RETAIL')?.weightagePct).toBe(0);
+    expect(result.find((r) => r.verticalKey === 'AI')?.weightagePct).toBe(100);
+    expect(result.find((r) => r.verticalKey === 'RETAIL')?.weightagePct).toBe(0);
   });
 
   it('returns 0% weightage everywhere when nothing is allocated', () => {
-    const result = computeCategoryWeightage([], categories);
+    const result = computeVerticalWeightage([], keys);
     expect(result.every((r) => r.weightagePct === 0)).toBe(true);
   });
 });
