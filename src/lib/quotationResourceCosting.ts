@@ -14,6 +14,12 @@ export interface ResourceLine {
   qty: number;
   durationDays: number;
   dayRate: number;
+  // Purely descriptive — which employee (if any) this line is staffed by,
+  // e.g. "Kousika SS (EMP-000027)". Never read by the costing math below;
+  // `role` alone (a client-facing job title) is what feeds quotation/
+  // invoice line items. Optional so a non-employee (contractor, new hire)
+  // line simply omits it.
+  employeeRef?: string | null;
 }
 
 export type CostMode = 'PCT' | 'FIXED';

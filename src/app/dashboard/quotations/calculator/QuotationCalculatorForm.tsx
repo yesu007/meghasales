@@ -23,6 +23,9 @@ interface CompanyDetailForQuotation { id: number; legalEntities: LegalEntityOpti
 interface CompanyProfileTerms { termsAndConditions: string | null; paymentTerms: string | null; warrantyTerms: string | null; defaultAdminOverheadMode: string | null; defaultAdminOverheadValue: number | string | null }
 
 const employeeLabel = (e: ResourceEmployee) => `${e.firstName} ${e.lastName} — ${e.designation || 'Employee'} (${e.employeeCode})`;
+// The Designation column's content once an employee is picked — just who
+// they are (name + code), since their job title already lives in Role.
+const employeeRefLabel = (e: ResourceEmployee) => `${e.firstName} ${e.lastName} (${e.employeeCode})`;
 
 const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
 const blankResource = (): ResourceLine => ({ role: '', qty: 1, durationDays: 10, dayRate: 5000 });
@@ -281,25 +284,38 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   // (see the datalist in the Resources table) auto-fills that row's day
   // rate from the employee's derived rate — mirrors the vertical-head and
   // existing-lead auto-fill patterns elsewhere in this form. The datalist
-  // option itself has to read "Name — Employee (EMP-code)" (that's the only
-  // way to pick one employee out of several sharing a designation), but once
-  // picked, the stored role becomes their actual designation — the "Role"
-  // column is a job role, not a person picker, so it shouldn't keep showing
-  // the person's name/employee code once it's served its purpose of
-  // resolving which employee to pull a day rate from. Free typing that
-  // doesn't match any suggestion (a contractor, a new hire not yet in the
-  // system, or just a plain role title) just sets the role text as typed —
-  // this was already fully supported for costing (see validResources below
-  // and buildResourceBasedCosting server-side, neither requires an
-  // employee match), it just wasn't obvious from this field's behavior.
+  // option itself has to read "Name — Designation (EMP-code)" (that's the
+  // only way to pick one employee out of several sharing a designation),
+  // but once picked, Role and Designation split into their own columns:
+  // Role becomes the job title (what actually prints on the quotation/
+  // invoice line item — see lineItemsFromQuotation), Designation becomes
+  // "Name (EMP-code)" for internal reference only. Free typing that doesn't
+  // match any suggestion (a contractor, a new hire not yet in the system,
+  // or just a plain role title) just sets the role text as typed, leaving
+  // Designation whatever it already was — this was already fully supported
+  // for costing (see validResources below and buildResourceBasedCosting
+  // server-side, neither requires an employee match), it just wasn't
+  // obvious from this field's behavior.
   const updateResourceRole = (idx: number, value: string) => {
     const matched = employeeByLabel.get(value);
     setResources((prev) => prev.map((r, i) => {
       if (i !== idx) return r;
-      if (matched) return { ...r, role: matched.designation || `${matched.firstName} ${matched.lastName}`, dayRate: matched.dayRate ?? r.dayRate };
+      if (matched) {
+        return {
+          ...r,
+          role: matched.designation || `${matched.firstName} ${matched.lastName}`,
+          employeeRef: employeeRefLabel(matched),
+          dayRate: matched.dayRate ?? r.dayRate,
+        };
+      }
       return { ...r, role: value };
     }));
   };
+  // Designation is otherwise a plain, independently editable field — e.g.
+  // to correct it, or clear it if a row that used to be staffed by a
+  // specific employee no longer is.
+  const updateResourceEmployeeRef = (idx: number, value: string) =>
+    setResources((prev) => prev.map((r, i) => (i === idx ? { ...r, employeeRef: value } : r)));
   const addResource = () => setResources((prev) => [...prev, blankResource()]);
   const removeResource = (idx: number) => setResources((prev) => prev.filter((_, i) => i !== idx));
 
@@ -611,7 +627,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-xs text-slate-400 uppercase tracking-wide">
-                    <th className="text-left pb-2 pr-2 min-w-[200px]">Role</th>
+                    <th className="text-left pb-2 pr-2 min-w-[180px]">Role</th>
+                    <th className="text-left pb-2 px-2 min-w-[180px]">Designation</th>
                     <th className="text-left pb-2 px-2 w-16">Qty</th>
                     <th className="text-left pb-2 px-2 w-24">Duration (days)</th>
                     <th className="text-left pb-2 px-2 w-28">Unit Cost / day</th>
@@ -622,12 +639,20 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 <tbody className="divide-y divide-slate-100">
                   {resources.map((r, idx) => (
                     <tr key={idx}>
-                      <td className="py-1.5 pr-2 min-w-[200px]">
+                      <td className="py-1.5 pr-2 min-w-[180px]">
                         <input
                           value={r.role}
                           onChange={(e) => updateResourceRole(idx, e.target.value)}
                           list="resource-employee-options"
                           placeholder="Type a role, or pick an employee"
+                          className={inputCls}
+                        />
+                      </td>
+                      <td className="py-1.5 px-2 min-w-[180px]">
+                        <input
+                          value={r.employeeRef || ''}
+                          onChange={(e) => updateResourceEmployeeRef(idx, e.target.value)}
+                          placeholder="—"
                           className={inputCls}
                         />
                       </td>
@@ -648,7 +673,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             <button type="button" onClick={addResource} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-sm font-medium text-amber-700 hover:bg-amber-50">
               <PlusIcon className="h-4 w-4" /> Add resource
             </button>
-            <p className="text-xs text-slate-400 mt-2">Picking an employee from the suggestions fills in a day rate estimated from their CTC (still editable afterward) and shows their designation as the role. Not an employee? Just type a role directly (e.g. &quot;Freelance Designer&quot;) and set the day rate — it costs into the budget the same way.</p>
+            <p className="text-xs text-slate-400 mt-2">Picking an employee from the suggestions fills in a day rate estimated from their CTC (still editable afterward), sets Role to their job title, and Designation to who they are — for internal reference only, never printed on the quotation. Not an employee? Just type a role directly (e.g. &quot;Freelance Designer&quot;) and set the day rate — it costs into the budget the same way, with Designation left blank.</p>
             <datalist id="resource-employee-options">
               {resourceEmployees.map((e) => <option key={e.id} value={employeeLabel(e)} />)}
             </datalist>

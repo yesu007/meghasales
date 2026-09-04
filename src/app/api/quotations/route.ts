@@ -25,7 +25,8 @@ function buildResourceBasedCosting(body: any) {
     if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Resource #${idx + 1} must have a quantity greater than 0`);
     if (!Number.isFinite(durationDays) || durationDays <= 0) throw new Error(`Resource #${idx + 1} must have a duration greater than 0`);
     if (!Number.isFinite(dayRate) || dayRate <= 0) throw new Error(`Resource #${idx + 1} must have a day rate greater than 0`);
-    return { role, qty, durationDays, dayRate };
+    const employeeRef = r.employeeRef ? String(r.employeeRef).trim() : null;
+    return { role, qty, durationDays, dayRate, employeeRef };
   });
 
   const adminMode: CostMode = body.adminMode === 'FIXED' ? 'FIXED' : 'PCT';
