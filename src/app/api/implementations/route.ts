@@ -60,12 +60,16 @@ export async function GET(request: NextRequest) {
         take: size,
         include: {
           // businessVerticals is Lead's own field (see the schema note on
-          // Vertical/ExpenseBudget) — no Vertical relation on Implementation
-          // itself; this just surfaces the Lead's existing value alongside
-          // the fields already selected here.
+          // Vertical/ExpenseBudget) — this list's own "Business Vertical"
+          // column/filter still reads that, unchanged; verticalId/headId
+          // below are this Implementation's own separately-picked Vertical
+          // and its derived Head, surfaced only for the edit drawer's
+          // locked, read-only display of what was saved at creation.
           lead: { select: { companyName: true, contactPerson: true, businessVerticals: true } },
           projectManager: { select: { firstName: true, lastName: true } },
           project: { select: { projectName: true } },
+          vertical: { select: { name: true } },
+          head: { select: { firstName: true, lastName: true } },
         },
       }),
       prisma.implementation.count({ where }),
@@ -81,6 +85,10 @@ export async function GET(request: NextRequest) {
       companyName: impl.lead.companyName,
       contactPerson: impl.lead.contactPerson,
       businessVerticals: impl.lead.businessVerticals,
+      verticalId: impl.verticalId,
+      verticalName: impl.vertical?.name || null,
+      headId: impl.headId,
+      headName: impl.head ? `${impl.head.firstName} ${impl.head.lastName}` : null,
       projectManagerId: impl.projectManagerId,
       projectManagerName: impl.projectManager ? `${impl.projectManager.firstName} ${impl.projectManager.lastName}` : null,
       status: impl.status,
@@ -129,12 +137,31 @@ export async function POST(request: NextRequest) {
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
     }
 
+    // Business Vertical is picked manually on this form — never auto-filled
+    // from the selected Lead/Customer or Project (see the form's own
+    // comment). Optional: the form doesn't require it. Head is derived
+    // server-side from the selected Vertical's own Head assignment, never
+    // taken from the client, same convention as Project.headId — but unlike
+    // Project, a Vertical with no Head assigned is not an error here, it
+    // just leaves headId null (the existing "Unassigned" display
+    // convention).
+    let verticalId: number | null = null;
+    let headId: number | null = null;
+    if (body.verticalId) {
+      const vertical = await prisma.vertical.findUnique({ where: { id: parseInt(body.verticalId) }, select: { id: true, headId: true } });
+      if (!vertical) return NextResponse.json({ message: 'Selected vertical not found' }, { status: 404 });
+      verticalId = vertical.id;
+      headId = vertical.headId;
+    }
+
     const impl = await prisma.implementation.create({
       data: {
         leadId,
         sourceType: body.sourceType,
         projectName: body.projectName || null,
         projectId: body.projectId ? parseInt(body.projectId) : null,
+        verticalId,
+        headId,
         projectManagerId: body.projectManagerId ? parseInt(body.projectManagerId) : null,
         status: 'PLANNING',
         startDate: body.startDate ? new Date(body.startDate) : null,

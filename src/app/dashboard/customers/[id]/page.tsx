@@ -10,6 +10,7 @@ import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIc
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
+import { formatBusinessVerticals } from '@/lib/businessVerticals';
 import EventsTab from '@/components/leads/EventsTab';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
 import FollowUpsTab from '@/components/leads/FollowUpsTab';
@@ -57,6 +58,7 @@ interface Customer {
   jewelleryBusinessType: string | null;
   numberOfBranches: number | null;
   existingErp: string | null;
+  businessVerticals: string | null;
   notes: string | null;
   createdAt: string;
   assignedBa: { firstName: string; lastName: string } | null;
@@ -258,6 +260,7 @@ export default function CustomerDetailPage() {
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{customer.assignedBa ? `${customer.assignedBa.firstName} ${customer.assignedBa.lastName}` : 'Unassigned'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[customer.addressLine1, customer.addressLine2, customer.city, customer.state, customer.country].filter(Boolean).join(', ') || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{customer.jewelleryBusinessType || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Business Vertical</p><p className="text-sm text-slate-800 mt-1">{formatBusinessVerticals(customer.businessVerticals) || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Since</p><p className="text-sm text-slate-800 mt-1">{dayjs(customer.createdAt).format('DD MMM YYYY')}</p></div>
                 {customer.notes && (
                   <div className="sm:col-span-2"><p className="text-xs font-medium text-slate-500 uppercase">Notes</p><p className="text-sm text-slate-800 mt-1 whitespace-pre-wrap">{customer.notes}</p></div>

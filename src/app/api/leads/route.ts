@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
+import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
 import { isFollowUpOverdue } from '@/lib/leadFollowUp';
 import { requirePermission, getOwnershipFilter } from '@/lib/rbac';
 import { dispatchDeadlineReminders } from '@/lib/deadlineReminders';
@@ -177,11 +178,15 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    if (!body.businessVerticals) {
-      return NextResponse.json({ message: 'Business vertical is required' }, { status: 400 });
-    }
     if (!body.countryId) {
       return NextResponse.json({ message: 'Country is required' }, { status: 400 });
+    }
+
+    let businessVerticals: string;
+    try {
+      businessVerticals = await resolveBusinessVerticals(body.businessVerticals);
+    } catch (e: any) {
+      return NextResponse.json({ message: e.message || 'Invalid business vertical' }, { status: 400 });
     }
 
     const session = await getServerSession(authOptions);
@@ -218,7 +223,7 @@ export async function POST(request: NextRequest) {
         addressLine1: body.addressLine1 || null,
         addressLine2: body.addressLine2 || null,
         leadSource: body.leadSource,
-        businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null,
+        businessVerticals,
         notes: body.notes || null,
         status: 'NEW',
       },
