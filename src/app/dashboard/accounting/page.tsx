@@ -240,7 +240,7 @@ export default function AccountingDashboardPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Link href="/dashboard/accounting/pending-invoices" className="text-sm font-medium text-white bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg px-4 py-2 transition-colors">
+          <Link href="/dashboard/accounting/invoices" className="text-sm font-medium text-white bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg px-4 py-2 transition-colors">
             Pending Invoices
           </Link>
           <Link href="/dashboard/accounting/payment-reminders" className="text-sm font-medium text-white bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg px-4 py-2 transition-colors">

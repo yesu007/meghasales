@@ -7,6 +7,7 @@ import { XMarkIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
+import { invalidateInvoiceData } from '@/lib/queryInvalidation';
 
 const PAYMENT_METHODS = [
   { value: 'CASH', label: 'Cash' },
@@ -116,6 +117,7 @@ export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoice
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
       queryClient.invalidateQueries({ queryKey: ['accounting-invoice', String(invoiceId)] });
+      invalidateInvoiceData(queryClient);
       toast.success('Payment recorded!');
       close();
     },

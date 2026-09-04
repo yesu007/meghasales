@@ -116,7 +116,6 @@ export default function LeadStatusesPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-900">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Stage</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Label</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Color</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Order</th>
@@ -128,7 +127,6 @@ export default function LeadStatusesPage() {
                   <tr key={o.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                     {editingId === o.id ? (
                       <>
-                        <td className="px-4 py-3 text-xs font-mono text-slate-400">{o.code}</td>
                         <td className="px-4 py-3">
                           <input value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} className={inputCls} />
                         </td>
@@ -151,7 +149,6 @@ export default function LeadStatusesPage() {
                       </>
                     ) : (
                       <>
-                        <td className="px-4 py-3 text-xs font-mono text-slate-400">{o.code}</td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${o.color}`}>{o.label}</span>
                         </td>

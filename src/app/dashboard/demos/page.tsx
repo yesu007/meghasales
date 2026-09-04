@@ -21,7 +21,8 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { TIMEZONES, DEFAULT_TIMEZONE, timezoneShortLabel } from '@/lib/timezones';
-import { useAllProjects } from '@/hooks/useProjectsForLead';
+import { useProjectsForLead } from '@/hooks/useProjectsForLead';
+import { invalidateDemoData } from '@/lib/queryInvalidation';
 
 const DEMO_TYPES = [
   { value: 'ONLINE', label: 'Online' },
@@ -64,6 +65,14 @@ interface Demo {
   packageName: string | null;
   projectId: number | null;
   projectName: string | null;
+  // Business Vertical + its snapshot Head — see schema.prisma's
+  // Demo.verticalId/headId comment. Older demos created before this field
+  // existed simply have both as null, which the New Demo Project form's
+  // own edit-population/display handles as "not set"/"Unassigned".
+  verticalId: number | null;
+  verticalName: string | null;
+  headId: number | null;
+  headName: string | null;
   scheduledDate: string | null;
   timezone: string | null;
   actualDate: string | null;
@@ -97,6 +106,17 @@ interface PackageOption {
   name: string;
 }
 
+// Full Vertical Master row shape — see GET /api/verticals's own response
+// mapping (headId/headName already included by default, no extra query
+// param needed). Used for the New Demo Project form's independent
+// Business Vertical dropdown (see its own comment below).
+interface VerticalOption {
+  id: number;
+  name: string;
+  headId: number | null;
+  headName: string | null;
+}
+
 async function fetchDemos(params: Record<string, string>) {
   const query = new URLSearchParams(params).toString();
   const res = await fetch(`/api/demos?${query}`);
@@ -110,11 +130,23 @@ async function fetchPackages(): Promise<PackageOption[]> {
   return res.json();
 }
 
-async function fetchLeads(): Promise<Lead[]> {
-  const res = await fetch('/api/leads?size=100&sortBy=companyName&sortDir=asc');
-  if (!res.ok) throw new Error('Failed to fetch leads');
+// Reuses the exact same Lead/Customer split query the Implementations
+// module's own Source Type picker already uses (src/app/dashboard/
+// implementations/page.tsx's fetchLeads) — LEAD = excludeDirectCustomers
+// (the Leads tab's own convention), CUSTOMER = status=CONFIRMED (the
+// Customers tab's own convention).
+async function fetchLeadsBySourceType(sourceType: 'LEAD' | 'CUSTOMER'): Promise<Lead[]> {
+  const query = sourceType === 'CUSTOMER' ? 'status=CONFIRMED' : 'excludeDirectCustomers=true';
+  const res = await fetch(`/api/leads?size=100&sortBy=companyName&sortDir=asc&${query}`);
+  if (!res.ok) throw new Error(`Failed to fetch ${sourceType === 'CUSTOMER' ? 'customers' : 'leads'}`);
   const data = await res.json();
   return data.content;
+}
+
+async function fetchVerticals(): Promise<VerticalOption[]> {
+  const res = await fetch('/api/verticals');
+  if (!res.ok) throw new Error('Failed to fetch verticals');
+  return res.json();
 }
 
 async function fetchUsers(): Promise<UserOption[]> {
@@ -159,10 +191,28 @@ export default function DemosPage() {
     placeholderData: (prev: any) => prev,
   });
 
-  // Fetch leads for the create form
+  // New Demo Project form's own Source Type (Lead | Company) — first field
+  // in the form, purely a client-side picker deciding which list backs the
+  // Lead/Company dropdown right below it (never persisted on the Demo
+  // record itself, same as the Implementations module's own Source Type
+  // doesn't need to be re-derived — Demo has no stored sourceType column,
+  // see openEdit's own re-derivation comment below).
+  const [sourceType, setSourceType] = useState<'LEAD' | 'CUSTOMER'>('LEAD');
+
+  // Fetch leads/customers for the create form — keyed on sourceType so
+  // switching Lead <-> Company refetches the right list, same convention
+  // as the Implementations module's own fetchLeads(sourceType).
   const { data: leads = [], isError: isLeadsError } = useQuery({
-    queryKey: ['leads-for-demo'],
-    queryFn: fetchLeads,
+    queryKey: ['leads-for-demo', sourceType],
+    queryFn: () => fetchLeadsBySourceType(sourceType),
+  });
+
+  // Fetch all active Verticals for the create form's independent Business
+  // Vertical dropdown — never filtered/restricted by the selected
+  // Lead/Company, per this form's own requirement (see the field below).
+  const { data: verticals = [], isError: isVerticalsError } = useQuery<VerticalOption[]>({
+    queryKey: ['verticals-for-demo'],
+    queryFn: fetchVerticals,
   });
 
   // Fetch users for the Assigned To dropdown
@@ -193,34 +243,32 @@ export default function DemosPage() {
     if (isUsersError) toast.error('Failed to load users');
   }, [isUsersError]);
 
+  useEffect(() => {
+    if (isVerticalsError) toast.error('Failed to load verticals');
+  }, [isVerticalsError]);
+
   // Create/edit demo form
-  const blankForm = { leadId: '', demoType: '', packageId: '', projectId: '', scheduledDate: '', timezone: DEFAULT_TIMEZONE, assignedToId: '', attendees: '', modulesDemonstrated: '' };
+  const blankForm = { leadId: '', verticalId: '', demoType: '', packageId: '', projectId: '', scheduledDate: '', timezone: DEFAULT_TIMEZONE, assignedToId: '', attendees: '', modulesDemonstrated: '' };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-  // Project is the entry point here — picking one auto-fills (and locks)
-  // Lead/Company below from whichever the Project belongs to (its
-  // customerId or leadId; see the Project model's own comments). Clearing
-  // Project (create mode only — Project itself is locked once editing, same
-  // as Lead was before) releases Lead/Company back to manual selection.
-  const { data: allProjects = [] } = useAllProjects();
-  const selectedProject = allProjects.find((p) => String(p.id) === form.projectId);
-  useEffect(() => {
-    if (!form.projectId) {
-      if (!editingId) setForm((f) => (f.leadId ? { ...f, leadId: '' } : f));
-      return;
-    }
-    if (!selectedProject) return;
-    const resolvedLeadId = selectedProject.customerId ? String(selectedProject.customerId) : selectedProject.leadId ? String(selectedProject.leadId) : '';
-    setForm((f) => (f.leadId === resolvedLeadId ? f : { ...f, leadId: resolvedLeadId }));
-  }, [form.projectId, selectedProject, editingId]);
+  // Project now sits among the "remaining" fields, scoped to whichever
+  // Lead/Company was already manually chosen above (same convention
+  // Quotations already uses — see useProjectsForLead's own comment) rather
+  // than the other way around: picking a Project here no longer auto-fills
+  // or overwrites Lead/Company, Vertical, or Head — those are each their
+  // own independent, manual selection per this form's own requirement.
+  const { data: projectsForLead = [] } = useProjectsForLead(form.leadId);
 
-  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
+  const selectedVertical = verticals.find((v) => String(v.id) === form.verticalId);
+
+  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setSourceType('LEAD'); setFormErrors({}); };
 
   const validateForm = (data: typeof form) => {
     const errs: Record<string, string> = {};
     if (!data.leadId) errs.leadId = 'Lead / company is required';
+    if (!data.verticalId) errs.verticalId = 'Business vertical is required';
     if (!data.demoType) errs.demoType = 'Demo type is required';
     if (!data.scheduledDate) errs.scheduledDate = 'Scheduled date & time is required';
     return errs;
@@ -236,15 +284,17 @@ export default function DemosPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['demos'] });
+      invalidateDemoData(queryClient);
       toast.success(editingId ? 'Demo updated!' : 'Demo scheduled successfully!');
       closeDrawer();
     },
     onError: () => toast.error(editingId ? 'Failed to update demo' : 'Failed to schedule demo'),
   });
 
-  const openEdit = (demo: Demo) => {
+  const openEdit = async (demo: Demo) => {
     setForm({
       leadId: String(demo.leadId),
+      verticalId: demo.verticalId ? String(demo.verticalId) : '',
       demoType: demo.demoType,
       packageId: demo.packageId ? String(demo.packageId) : '',
       projectId: demo.projectId ? String(demo.projectId) : '',
@@ -254,6 +304,17 @@ export default function DemosPage() {
       attendees: demo.attendees || '',
       modulesDemonstrated: demo.modulesDemonstrated || '',
     });
+    // Demo has no stored sourceType (see schema.prisma's own comment) —
+    // re-derive which list (Lead vs Company) this demo's lead currently
+    // belongs to, purely so the locked Lead/Company dropdown below shows
+    // the right option; a lookup failure just falls back to 'LEAD'.
+    try {
+      const res = await fetch(`/api/leads/${demo.leadId}`);
+      const lead = res.ok ? await res.json() : null;
+      setSourceType(lead?.status === 'CONFIRMED' ? 'CUSTOMER' : 'LEAD');
+    } catch {
+      setSourceType('LEAD');
+    }
     setEditingId(demo.id);
     setDrawerOpen(true);
   };
@@ -263,6 +324,7 @@ export default function DemosPage() {
     const res = await fetch(`/api/demos/${id}`, { method: 'DELETE' });
     if (!res.ok) { toast.error('Failed to delete demo'); return; }
     queryClient.invalidateQueries({ queryKey: ['demos'] });
+    invalidateDemoData(queryClient);
     toast.success('Demo deleted');
   };
 
@@ -277,6 +339,7 @@ export default function DemosPage() {
       return;
     }
     queryClient.invalidateQueries({ queryKey: ['demos'] });
+    invalidateDemoData(queryClient);
     toast.success(successMsg);
   };
 
@@ -435,6 +498,7 @@ export default function DemosPage() {
                     <th className="px-4 py-3 text-left font-semibold text-white">Contact</th>
                     <th className="px-4 py-3 text-left font-semibold text-white">Type</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Package</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Business Vertical</th>
                     <th className="px-4 py-3 text-left">
                       <button onClick={() => handleSort('scheduledDate')} className="flex items-center gap-1 font-semibold text-white">
                         Scheduled <SortIcon col="scheduledDate" />
@@ -467,6 +531,7 @@ export default function DemosPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{demo.packageName || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{demo.verticalName || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">
                         {isReschedulable(demo.status) ? (
                           <input
@@ -629,29 +694,41 @@ export default function DemosPage() {
                       className="flex-1 px-6 py-4 space-y-4"
                     >
                       <div className="space-y-4">
+                        {/* Required order: Source Type -> Lead/Company ->
+                            Business Vertical -> Head (auto) -> remaining
+                            fields. Source Type is a pure UI picker (not
+                            persisted on Demo — see schema.prisma's own
+                            comment) that only decides which list backs the
+                            Lead/Company dropdown right below it; switching
+                            it clears any already-picked Lead/Company since
+                            that record belongs to the other list. */}
                         <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Source Type *</label>
                           <select
                             disabled={!!editingId}
-                            title={editingId ? 'Project cannot be changed after creation' : undefined}
-                            value={form.projectId}
-                            onChange={(e) => setForm(f => ({ ...f, projectId: e.target.value }))}
+                            title={editingId ? 'Source Type cannot be changed after creation' : undefined}
+                            value={sourceType}
+                            onChange={(e) => {
+                              const next = e.target.value === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD';
+                              setSourceType(next);
+                              setForm(f => ({ ...f, leadId: '' }));
+                            }}
                             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
                           >
-                            <option value="">Select project</option>
-                            {allProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                            <option value="LEAD">Lead</option>
+                            <option value="CUSTOMER">Company</option>
                           </select>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Lead / Company *</label>
                           <select
-                            disabled={!!form.projectId || !!editingId}
-                            title={form.projectId ? 'Auto-filled from the selected Project' : editingId ? 'Lead cannot be changed after creation' : undefined}
+                            disabled={!!editingId}
+                            title={editingId ? 'Lead cannot be changed after creation' : undefined}
                             value={form.leadId}
                             onChange={(e) => setForm(f => ({ ...f, leadId: e.target.value }))}
                             className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.leadId ? 'border-red-400' : 'border-slate-300'}`}
                           >
-                            <option value="">Select a lead</option>
+                            <option value="">{sourceType === 'CUSTOMER' ? 'Select a company' : 'Select a lead'}</option>
                             {leads.map((lead: Lead) => (
                               <option key={lead.id} value={lead.id}>
                                 {lead.companyName} — {lead.contactPerson}
@@ -660,22 +737,51 @@ export default function DemosPage() {
                           </select>
                           {formErrors.leadId && <p className="text-xs text-red-600 mt-1">{formErrors.leadId}</p>}
                         </div>
-                        {form.projectId && (
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
-                              <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
-                                {selectedProject?.verticalName || '—'}
-                              </p>
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-slate-700 mb-1">Head</label>
-                              <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
-                                {selectedProject?.headName || 'No head assigned'}
-                              </p>
-                            </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical *</label>
+                            {/* Independent, manual pick from the full Vertical
+                                Master — deliberately never auto-filled from,
+                                or restricted by, the selected Lead/Company's
+                                own vertical (see this form's own
+                                requirement). */}
+                            <select
+                              disabled={!!editingId}
+                              title={editingId ? 'Vertical cannot be changed after creation' : undefined}
+                              value={form.verticalId}
+                              onChange={(e) => setForm(f => ({ ...f, verticalId: e.target.value }))}
+                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.verticalId ? 'border-red-400' : 'border-slate-300'}`}
+                            >
+                              <option value="">Select vertical</option>
+                              {verticals.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                            </select>
+                            {formErrors.verticalId && <p className="text-xs text-red-600 mt-1">{formErrors.verticalId}</p>}
                           </div>
-                        )}
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Head</label>
+                            {/* Read-only — auto-populated from the selected
+                                Vertical's own Head assignment, same
+                                "Unassigned" fallback convention used
+                                elsewhere (e.g. Assign To below) rather than a
+                                hard requirement, per this field's own spec. */}
+                            <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
+                              {form.verticalId ? selectedVertical?.headName || 'Unassigned' : '—'}
+                            </p>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                          <select
+                            disabled={!!editingId}
+                            title={editingId ? 'Project cannot be changed after creation' : !form.leadId ? 'Select a Lead / Company first' : undefined}
+                            value={form.projectId}
+                            onChange={(e) => setForm(f => ({ ...f, projectId: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                          >
+                            <option value="">Select project</option>
+                            {projectsForLead.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                          </select>
+                        </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Demo Type *</label>

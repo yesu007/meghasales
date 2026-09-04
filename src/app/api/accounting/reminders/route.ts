@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
         skip: page * size,
         take: size,
         include: {
-          invoice: { select: { invoiceNumber: true, balanceDue: true, dueDate: true, currencyCode: true, lead: { select: { companyName: true } } } },
+          invoice: { select: { invoiceNumber: true, balanceDue: true, dueDate: true, currencyCode: true, lead: { select: { companyName: true, financeEmail: true } } } },
           followedUpBy: { select: { firstName: true, lastName: true } },
         },
       }),
@@ -61,6 +61,10 @@ export async function GET(request: NextRequest) {
       invoiceId: r.invoiceId,
       invoiceNumber: r.invoice.invoiceNumber,
       companyName: r.invoice.lead.companyName,
+      // The customer's dedicated payment-reminder recipient (not the
+      // general contact `email`) — see schema.prisma's Lead.financeEmail
+      // comment.
+      financeEmail: r.invoice.lead.financeEmail,
       balanceDue: r.invoice.balanceDue,
       currencyCode: r.invoice.currencyCode,
       dueDate: r.invoice.dueDate,

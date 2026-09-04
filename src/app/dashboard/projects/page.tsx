@@ -13,6 +13,7 @@ import { formatCurrency } from '@/lib/currency';
 import { usePermissions } from '@/hooks/usePermissions';
 import ProjectFormDrawer, { blankProjectForm, type ProjectFormState } from '@/components/projects/ProjectFormDrawer';
 import ProjectBudgetPanel from '@/components/projects/ProjectBudgetPanel';
+import { invalidateProjectData } from '@/lib/queryInvalidation';
 
 interface RowActionItem {
   key: string;
@@ -146,7 +147,7 @@ export default function ProjectsPage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save project'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['projects-admin'] }); toast.success(editingId ? 'Project updated' : 'Project created'); closeDrawer(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['projects-admin'] }); invalidateProjectData(queryClient); toast.success(editingId ? 'Project updated' : 'Project created'); closeDrawer(); },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -160,6 +161,7 @@ export default function ProjectsPage() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['projects-admin'] });
+      invalidateProjectData(queryClient);
       toast.success(variables.isActive ? 'Project reactivated' : 'Project deleted');
     },
     onError: (err: Error) => toast.error(err.message),

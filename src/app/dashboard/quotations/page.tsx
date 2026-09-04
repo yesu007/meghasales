@@ -27,6 +27,7 @@ import CountrySelect, { type Country } from '@/components/CountrySelect';
 import dayjs from 'dayjs';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
+import { invalidateQuotationData } from '@/lib/queryInvalidation';
 
 const QUOTATION_STATUSES = [
   { value: 'DRAFT', label: 'Draft', color: 'bg-slate-100 text-slate-700' },
@@ -359,6 +360,7 @@ export default function QuotationsPage() {
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed to save');
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
+      invalidateQuotationData(queryClient);
       toast.success(editingId ? 'Quotation updated!' : 'Quotation saved!');
       resetCreateState();
       setView('list');
@@ -422,6 +424,7 @@ export default function QuotationsPage() {
     const res = await fetch(`/api/quotations/${id}`, { method: 'DELETE' });
     if (!res.ok) { toast.error('Failed to delete quotation'); return; }
     queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    invalidateQuotationData(queryClient);
     toast.success('Quotation deleted');
   };
 
@@ -438,6 +441,7 @@ export default function QuotationsPage() {
     }
     queryClient.invalidateQueries({ queryKey: ['quotations'] });
     queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
+    invalidateQuotationData(queryClient);
     const updated = await res.json();
     if (updated.generatedInvoice) {
       toast.success(`Quotation approved — Invoice ${updated.generatedInvoice.invoiceNumber} created in Pending Invoices`);
@@ -799,7 +803,7 @@ export default function QuotationsPage() {
                   <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
                   <select value={selectedLeadId} onChange={e => selectExistingLead(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.client ? 'border-red-400' : 'border-slate-300'}`}>
                     <option value="">Select a client</option>
-                    {existingLeads.map(l => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}{l.email ? ` (${l.email})` : ''}</option>)}
+                    {existingLeads.map(l => <option key={l.id} value={l.id}>{l.companyName}</option>)}
                   </select>
                   {formErrors.client && <p className="text-xs text-red-600 mt-1">{formErrors.client}</p>}
                   {existingLeads.length === 0 && <p className="text-xs text-slate-400 mt-1">No existing clients yet — switch to &ldquo;New Client&rdquo; to add one.</p>}

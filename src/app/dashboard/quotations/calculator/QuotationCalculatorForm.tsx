@@ -529,7 +529,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                   <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
                   <select value={selectedLeadId} onChange={(e) => selectExistingLead(e.target.value)} className={inputCls}>
                     <option value="">Select a client</option>
-                    {existingLeads.map((l) => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}</option>)}
+                    {existingLeads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
                   </select>
                 </div>
                 <div>

@@ -7,13 +7,13 @@ import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import { useLeadSources } from '@/hooks/useLeadSources';
-
-interface VerticalOption { id: number; name: string }
-async function fetchVerticalOptions(): Promise<VerticalOption[]> {
-  const res = await fetch('/api/verticals');
-  if (!res.ok) throw new Error('Failed to fetch verticals');
-  return res.json();
-}
+import { parseBusinessVerticals } from '@/lib/businessVerticals';
+// Business Vertical is no longer collected on this form (removed per
+// product request) — parseBusinessVerticals above is still used, only to
+// carry an existing record's value through Edit unchanged (see
+// fetchLeadForEdit below), not to render or edit it.
+import { isValidEmail } from '@/lib/email';
+import { CUSTOMER_STATUSES } from '@/lib/customerStatus';
 
 // Project master picker — replaces the old free-text Project Name input.
 // linkedLeadsCount (from GET /api/projects) is how many Lead/Customer rows
@@ -40,8 +40,12 @@ export interface LeadFormState {
   mobile: string;
   whatsapp: string;
   email: string;
+  // Dedicated recipient for payment reminders — required on every Lead,
+  // not just once it becomes a Customer. See schema.prisma's
+  // Lead.financeEmail comment.
+  financeEmail: string;
   leadSource: string;
-  businessVerticals: string;
+  businessVerticals: string[];
   countryId: number | null;
   currencyCode: string;
   currencySymbol: string;
@@ -55,7 +59,7 @@ export interface LeadFormState {
 }
 
 export const blankLeadForm: LeadFormState = {
-  companyName: '', projectId: null, contactPerson: '', designation: '', mobile: '', whatsapp: '', email: '', leadSource: '', businessVerticals: '',
+  companyName: '', projectId: null, contactPerson: '', designation: '', mobile: '', whatsapp: '', email: '', financeEmail: '', leadSource: '', businessVerticals: [],
   countryId: null, currencyCode: '', currencySymbol: '', taxType: '', taxPercentage: 0,
   state: '', city: '', addressLine1: '', addressLine2: '', notes: '',
 };
@@ -73,10 +77,7 @@ export async function fetchLeadForEdit(id: number): Promise<LeadFormState | null
   const res = await fetch(`/api/leads/${id}`);
   if (!res.ok) return null;
   const lead = await res.json();
-  let businessVerticals = '';
-  if (lead.businessVerticals) {
-    try { businessVerticals = JSON.parse(lead.businessVerticals); } catch { businessVerticals = lead.businessVerticals; }
-  }
+  const businessVerticals = parseBusinessVerticals(lead.businessVerticals);
   return {
     companyName: lead.companyName || '',
     projectId: lead.projectId ?? null,
@@ -85,6 +86,7 @@ export async function fetchLeadForEdit(id: number): Promise<LeadFormState | null
     mobile: lead.mobile || '',
     whatsapp: lead.whatsapp || '',
     email: lead.email || '',
+    financeEmail: lead.financeEmail || '',
     leadSource: lead.leadSource || '',
     businessVerticals,
     countryId: lead.countryId || null,
@@ -105,8 +107,9 @@ function validateLeadForm(data: LeadFormState): Record<string, string> {
   if (!data.companyName) errs.companyName = 'Company name is required';
   if (!data.contactPerson) errs.contactPerson = 'Contact person is required';
   if (!data.mobile) errs.mobile = 'Mobile is required';
+  if (!data.financeEmail) errs.financeEmail = 'Finance email is required';
+  else if (!isValidEmail(data.financeEmail)) errs.financeEmail = 'Enter a valid finance email address';
   if (!data.leadSource) errs.leadSource = 'Lead source is required';
-  if (!data.businessVerticals) errs.businessVerticals = 'Business vertical is required';
   if (!data.countryId) errs.countryId = 'Country is required';
   return errs;
 }
@@ -123,12 +126,20 @@ export interface LeadFormDrawerProps {
   isSaving: boolean;
   isAdmin: boolean;
   currencies: CurrencyOption[];
+  // Customer lifecycle status (Active/In-Active/Hold — see
+  // src/lib/customerStatus.ts) — a Customer-only concept, so both props
+  // are only ever passed by the Customers page's own "Edit Customer" use
+  // of this drawer (src/app/dashboard/customers/page.tsx). The Leads
+  // page's own "Edit Lead" use doesn't pass them, so the field simply
+  // doesn't render there — the Leads module is unaffected.
+  customerStatus?: string;
+  onCustomerStatusChange?: (value: string) => void;
 }
 
 export default function LeadFormDrawer({
   open, onClose, editingId, form, setForm, formErrors, setFormErrors, onSave, isSaving, isAdmin, currencies,
+  customerStatus, onCustomerStatusChange,
 }: LeadFormDrawerProps) {
-  const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
   const { data: projectOptions = [] } = useQuery({ queryKey: ['projects-for-lead-link'], queryFn: fetchProjectOptions });
   const sources = useLeadSources();
 
@@ -224,6 +235,11 @@ export default function LeadFormDrawer({
                         <input type="email" value={form.email} onChange={(e) => setForm(f => ({...f, email: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
                       <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Finance Email ID *</label>
+                        <input type="email" value={form.financeEmail} onChange={(e) => setForm(f => ({...f, financeEmail: e.target.value}))} placeholder="For payment reminders" className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.financeEmail ? 'border-red-400' : 'border-slate-300'}`} />
+                        {formErrors.financeEmail && <p className="text-xs text-red-600 mt-1">{formErrors.financeEmail}</p>}
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Lead Source *</label>
                         <select value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
                           <option value="">Select</option>
@@ -231,14 +247,14 @@ export default function LeadFormDrawer({
                         </select>
                         {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical *</label>
-                        <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.businessVerticals ? 'border-red-400' : 'border-slate-300'}`}>
-                          <option value="">Select</option>
-                          {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                        </select>
-                        {formErrors.businessVerticals && <p className="text-xs text-red-600 mt-1">{formErrors.businessVerticals}</p>}
-                      </div>
+                      {onCustomerStatusChange && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                          <select value={customerStatus} onChange={(e) => onCustomerStatusChange(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                            {CUSTOMER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                          </select>
+                        </div>
+                      )}
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Country *</label>
                         <CountrySelect value={form.countryId} onChange={handleCountryChange} />

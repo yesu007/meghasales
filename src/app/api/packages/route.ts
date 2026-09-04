@@ -5,23 +5,6 @@ import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
-// Derives a stable, unique CODE from the name — same convention as
-// src/app/api/verticals/route.ts's uniqueCodeFromName.
-async function uniqueCodeFromName(name: string): Promise<string> {
-  const base = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'PACKAGE';
-
-  let code = base;
-  let suffix = 2;
-  while (await prisma.package.findUnique({ where: { code } })) {
-    code = `${base}_${suffix}`;
-    suffix += 1;
-  }
-  return code;
-}
-
 // GET returns only active packages by default (what the Demo form's picker
 // expects); the admin screen passes includeInactive=true to also see (and
 // be able to reactivate) deactivated ones.
@@ -63,13 +46,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Package name is required' }, { status: 400 });
     }
 
+    // Code always mirrors name — no separate Code input anywhere in the
+    // admin form (Create or Edit); see PATCH /api/packages/[id] for the
+    // matching edit-time behavior.
     const name = String(body.name).trim();
-    const code = await uniqueCodeFromName(name);
 
     const pkg = await prisma.package.create({
       data: {
         name,
-        code,
+        code: name,
         sortOrder: body.sortOrder != null ? Number(body.sortOrder) : 0,
       },
     });

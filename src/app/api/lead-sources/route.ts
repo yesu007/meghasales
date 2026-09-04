@@ -5,23 +5,6 @@ import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
-// Derives a stable, unique CODE from the name — same convention as
-// src/app/api/verticals/route.ts / src/app/api/packages/route.ts.
-async function uniqueCodeFromName(name: string): Promise<string> {
-  const base = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'SOURCE';
-
-  let code = base;
-  let suffix = 2;
-  while (await prisma.leadSource.findUnique({ where: { code } })) {
-    code = `${base}_${suffix}`;
-    suffix += 1;
-  }
-  return code;
-}
-
 // GET returns only active sources by default (what the Lead/Customer form
 // pickers expect); the admin screen passes includeInactive=true to also see
 // (and be able to reactivate) deactivated ones.
@@ -63,13 +46,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Source name is required' }, { status: 400 });
     }
 
+    // Code always mirrors name — no separate Code input anywhere in the
+    // admin form (Create or Edit); see PATCH /api/lead-sources/[id] for
+    // the matching edit-time behavior.
     const name = String(body.name).trim();
-    const code = await uniqueCodeFromName(name);
 
     const source = await prisma.leadSource.create({
       data: {
         name,
-        code,
+        code: name,
         sortOrder: body.sortOrder != null ? Number(body.sortOrder) : 0,
       },
     });
