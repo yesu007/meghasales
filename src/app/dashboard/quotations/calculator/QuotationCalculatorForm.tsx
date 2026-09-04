@@ -277,16 +277,26 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     }));
   };
 
-  // Typing/selecting a role that exactly matches an autocomplete suggestion
+  // Typing/selecting a value that exactly matches an autocomplete suggestion
   // (see the datalist in the Resources table) auto-fills that row's day
   // rate from the employee's derived rate — mirrors the vertical-head and
-  // existing-lead auto-fill patterns elsewhere in this form. Free typing
-  // that doesn't match any employee just sets the role text, unchanged.
+  // existing-lead auto-fill patterns elsewhere in this form. The datalist
+  // option itself has to read "Name — Employee (EMP-code)" (that's the only
+  // way to pick one employee out of several sharing a designation), but once
+  // picked, the stored role becomes their actual designation — the "Role"
+  // column is a job role, not a person picker, so it shouldn't keep showing
+  // the person's name/employee code once it's served its purpose of
+  // resolving which employee to pull a day rate from. Free typing that
+  // doesn't match any suggestion (a contractor, a new hire not yet in the
+  // system, or just a plain role title) just sets the role text as typed —
+  // this was already fully supported for costing (see validResources below
+  // and buildResourceBasedCosting server-side, neither requires an
+  // employee match), it just wasn't obvious from this field's behavior.
   const updateResourceRole = (idx: number, value: string) => {
     const matched = employeeByLabel.get(value);
     setResources((prev) => prev.map((r, i) => {
       if (i !== idx) return r;
-      if (matched?.dayRate != null) return { ...r, role: value, dayRate: matched.dayRate };
+      if (matched) return { ...r, role: matched.designation || `${matched.firstName} ${matched.lastName}`, dayRate: matched.dayRate ?? r.dayRate };
       return { ...r, role: value };
     }));
   };
@@ -638,7 +648,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             <button type="button" onClick={addResource} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-sm font-medium text-amber-700 hover:bg-amber-50">
               <PlusIcon className="h-4 w-4" /> Add resource
             </button>
-            <p className="text-xs text-slate-400 mt-2">Picking an employee from the role suggestions fills in a day rate estimated from their CTC — still editable afterward.</p>
+            <p className="text-xs text-slate-400 mt-2">Picking an employee from the suggestions fills in a day rate estimated from their CTC (still editable afterward) and shows their designation as the role. Not an employee? Just type a role directly (e.g. "Freelance Designer") and set the day rate — it costs into the budget the same way.</p>
             <datalist id="resource-employee-options">
               {resourceEmployees.map((e) => <option key={e.id} value={employeeLabel(e)} />)}
             </datalist>
