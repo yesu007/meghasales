@@ -115,6 +115,7 @@ model User {
   revisedExpenseBudgets  ExpenseBudgetRevision[] @relation("ExpenseBudgetRevisedBy")
   headOfVerticals        Vertical[]              @relation("VerticalHead")
   headOfProjects         Project[]               @relation("ProjectHead")
+  headOfImplementations  Implementation[]        @relation("ImplementationHead")
   createdCompanies       Company[]               @relation("CompanyCreatedBy")
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, see
@@ -235,6 +236,12 @@ model Lead {
   // doing business with us. Defaults to ACTIVE for every row, but is only
   // surfaced/editable on the Customers page.
   customerStatus        String   @default("ACTIVE") @map("customer_status")
+  // JSON-encoded array of Vertical *names* (no FK to Vertical — see
+  // src/lib/businessVerticals.ts), e.g. '["Retail Jewellery","Wholesale"]',
+  // supporting multi-select. Rows written before multi-select existed still
+  // hold a JSON-encoded single name, e.g. '"Retail Jewellery"' — that
+  // helper reads both shapes as an array, so no migration was needed to add
+  // multi-select and no historical single-vertical data was lost.
   businessVerticals     String?  @map("business_verticals")
   notes                 String?
   createdById           Int?     @map("created_by")
@@ -736,6 +743,21 @@ model Implementation {
   // projectName TEXT column above is left untouched (kept in sync from the
   // selected project for display purposes) rather than removed.
   projectId        Int?      @map("project_id")
+  // Business Vertical picked manually on this implementation's own form —
+  // deliberately independent of the Lead's own (possibly multi-valued)
+  // businessVerticals and of Project.verticalId; neither auto-fills this.
+  // Nullable since existing rows created before this field existed have
+  // none, and the New Implementation Project form doesn't require it.
+  verticalId       Int?      @map("vertical_id")
+  // Derived server-side from the selected Vertical's own Head assignment at
+  // create time (Vertical.headId) — never taken from the client, and never
+  // re-derived afterward, same convention as Project.headId (see that
+  // model's own comment) so a later Head reassignment on the Vertical
+  // Master doesn't retroactively change what this implementation recorded.
+  // Null (not an error) when the selected Vertical has no Head — the
+  // existing "Unassigned" display convention, unlike Project's own stricter
+  // requirement that a Vertical have a Head before it can be used.
+  headId           Int?      @map("head_id")
   projectManagerId Int?      @map("project_manager_id")
   status           String    @default("PLANNING")
   startDate        DateTime? @map("start_date")
@@ -746,15 +768,18 @@ model Implementation {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  lead           Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  projectManager User?    @relation("ProjectManager", fields: [projectManagerId], references: [id])
-  project        Project? @relation(fields: [projectId], references: [id])
+  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  projectManager User?     @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  project        Project?  @relation(fields: [projectId], references: [id])
+  vertical       Vertical? @relation(fields: [verticalId], references: [id])
+  head           User?     @relation("ImplementationHead", fields: [headId], references: [id])
 
   // Customer Documents: an NDA/Contract can optionally reference the
   // Implementation it's tied to (its "Project Name").
   customerContracts CustomerContract[]
 
   @@index([projectId])
+  @@index([verticalId])
   @@map("implementations")
 }
 
@@ -1845,12 +1870,13 @@ model Vertical {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  head        User?                        @relation("VerticalHead", fields: [headId], references: [id])
-  budgets     ExpenseBudget[]
-  quotations  Quotation[]
-  employees   Employee[]
-  projects    Project[]
-  allocations EmployeeVerticalAllocation[]
+  head            User?                        @relation("VerticalHead", fields: [headId], references: [id])
+  budgets         ExpenseBudget[]
+  quotations      Quotation[]
+  employees       Employee[]
+  projects        Project[]
+  allocations     EmployeeVerticalAllocation[]
+  implementations Implementation[]
 
   @@map("verticals")
 }

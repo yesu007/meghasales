@@ -11,6 +11,7 @@ import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
 import { CUSTOMER_STATUSES, customerStatusColor } from '@/lib/customerStatus';
+import { formatBusinessVerticals } from '@/lib/businessVerticals';
 import EventsTab from '@/components/leads/EventsTab';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
 import LeadDocumentsTab from '@/components/leads/LeadDocumentsTab';
@@ -38,6 +39,7 @@ interface Lead {
   jewelleryBusinessType: string | null;
   numberOfBranches: number | null;
   existingErp: string | null;
+  businessVerticals: string | null;
   notes: string | null;
   createdAt: string;
   assignedBa: { firstName: string; lastName: string } | null;
@@ -241,6 +243,7 @@ export default function LeadDetailPage() {
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : 'Unassigned'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{lead.jewelleryBusinessType || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Business Vertical</p><p className="text-sm text-slate-800 mt-1">{formatBusinessVerticals(lead.businessVerticals) || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Created</p><p className="text-sm text-slate-800 mt-1">{dayjs(lead.createdAt).format('DD MMM YYYY')}</p></div>
                 {lead.notes && (
                   <div className="sm:col-span-2"><p className="text-xs font-medium text-slate-500 uppercase">Notes</p><p className="text-sm text-slate-800 mt-1 whitespace-pre-wrap">{lead.notes}</p></div>

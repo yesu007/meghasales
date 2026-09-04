@@ -5,6 +5,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import { parseBusinessVerticals } from '@/lib/businessVerticals';
 
 // Mirrors src/components/leads/LeadFormDrawer.tsx's drawer shell (width,
 // header, spacing, Cancel/Save buttons) so Add Project visually matches Add
@@ -15,15 +16,6 @@ import toast from 'react-hot-toast';
 interface CustomerOption { id: number; companyName: string; businessVerticals: string | null }
 interface LeadOption { id: number; companyName: string; contactPerson: string; businessVerticals: string | null }
 interface VerticalOption { id: number; name: string; headId: number | null; headName: string | null }
-
-// Lead.businessVerticals stores a JSON-encoded vertical name (see
-// LeadFormDrawer's own fetchLeadForEdit) — same decode as
-// src/app/dashboard/implementations/page.tsx's own parseVerticalName, since
-// this is the same value, just read from a different picker here.
-function parseVerticalName(raw: string | null): string | null {
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return raw; }
-}
 
 async function fetchCustomerOptions(): Promise<CustomerOption[]> {
   const res = await fetch('/api/leads?status=CONFIRMED&size=100&sortBy=companyName&sortDir=asc');
@@ -88,17 +80,19 @@ export default function ProjectFormDrawer({
   const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
 
   // Vertical is freely selectable — the Lead/Customer's own business
-  // vertical (Lead.businessVerticals) is only used to *suggest* an initial
-  // pick when one is first selected, matching Implementations page's read
-  // of the same field. It never overrides a vertical the user has already
-  // chosen, so switching the suggestion source (or picking a different
-  // Lead/Customer afterward) doesn't silently clobber a manual selection.
+  // vertical(s) (Lead.businessVerticals) are only used to *suggest* an
+  // initial pick when one is first selected, matching Implementations
+  // page's read of the same field. It never overrides a vertical the user
+  // has already chosen, so switching the suggestion source (or picking a
+  // different Lead/Customer afterward) doesn't silently clobber a manual
+  // selection. Project itself stays single-vertical, so a Lead/Customer
+  // with multiple selected verticals only suggests the first of them.
   const selectedLead = leads.find(l => String(l.id) === form.leadId);
   const selectedCustomer = customers.find(c => String(c.id) === form.customerId);
   const sourceVerticalName = form.leadId
-    ? parseVerticalName(selectedLead?.businessVerticals ?? null)
+    ? parseBusinessVerticals(selectedLead?.businessVerticals ?? null)[0] ?? null
     : form.customerId
-      ? parseVerticalName(selectedCustomer?.businessVerticals ?? null)
+      ? parseBusinessVerticals(selectedCustomer?.businessVerticals ?? null)[0] ?? null
       : null;
   const suggestedVertical = verticalOptions.find(v => v.name === sourceVerticalName);
 

@@ -26,6 +26,7 @@ import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
 import { useLeadSources } from '@/hooks/useLeadSources';
 import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 import { useAllProjects } from '@/hooks/useProjectsForLead';
+import { formatBusinessVerticals } from '@/lib/businessVerticals';
 
 const VIEW_TABS = [
   { value: '', label: 'All Leads' },
@@ -52,14 +53,6 @@ interface Lead {
   nextFollowUpDate: string | null;
   followUpCount: number;
   isOverdue: boolean;
-}
-
-// Lead.businessVerticals stores a JSON-encoded vertical name (see
-// LeadFormDrawer's own fetchLeadForEdit / implementations/page.tsx's
-// identical helper) — same decode here, just displayed read-only.
-function parseVerticalName(raw: string | null): string | null {
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return raw; }
 }
 
 interface LeadStats {
@@ -440,7 +433,7 @@ export default function LeadsPage() {
                       <td className="px-4 py-3 font-medium text-slate-800">
                         <Link href={`/dashboard/leads/${lead.id}`} className="hover:text-amber-600 hover:underline">{lead.companyName}</Link>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{parseVerticalName(lead.businessVerticals) || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{formatBusinessVerticals(lead.businessVerticals) || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{projectNamesForLead(lead.id)}</td>
                       <td className="px-4 py-3 text-slate-600">{lead.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.designation || '—'}</td>

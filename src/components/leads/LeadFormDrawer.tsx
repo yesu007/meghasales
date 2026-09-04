@@ -7,6 +7,7 @@ import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import { useLeadSources } from '@/hooks/useLeadSources';
+import { parseBusinessVerticals } from '@/lib/businessVerticals';
 
 interface VerticalOption { id: number; name: string }
 async function fetchVerticalOptions(): Promise<VerticalOption[]> {
@@ -41,7 +42,7 @@ export interface LeadFormState {
   whatsapp: string;
   email: string;
   leadSource: string;
-  businessVerticals: string;
+  businessVerticals: string[];
   countryId: number | null;
   currencyCode: string;
   currencySymbol: string;
@@ -55,7 +56,7 @@ export interface LeadFormState {
 }
 
 export const blankLeadForm: LeadFormState = {
-  companyName: '', projectId: null, contactPerson: '', designation: '', mobile: '', whatsapp: '', email: '', leadSource: '', businessVerticals: '',
+  companyName: '', projectId: null, contactPerson: '', designation: '', mobile: '', whatsapp: '', email: '', leadSource: '', businessVerticals: [],
   countryId: null, currencyCode: '', currencySymbol: '', taxType: '', taxPercentage: 0,
   state: '', city: '', addressLine1: '', addressLine2: '', notes: '',
 };
@@ -73,10 +74,7 @@ export async function fetchLeadForEdit(id: number): Promise<LeadFormState | null
   const res = await fetch(`/api/leads/${id}`);
   if (!res.ok) return null;
   const lead = await res.json();
-  let businessVerticals = '';
-  if (lead.businessVerticals) {
-    try { businessVerticals = JSON.parse(lead.businessVerticals); } catch { businessVerticals = lead.businessVerticals; }
-  }
+  const businessVerticals = parseBusinessVerticals(lead.businessVerticals);
   return {
     companyName: lead.companyName || '',
     projectId: lead.projectId ?? null,
@@ -106,7 +104,7 @@ function validateLeadForm(data: LeadFormState): Record<string, string> {
   if (!data.contactPerson) errs.contactPerson = 'Contact person is required';
   if (!data.mobile) errs.mobile = 'Mobile is required';
   if (!data.leadSource) errs.leadSource = 'Lead source is required';
-  if (!data.businessVerticals) errs.businessVerticals = 'Business vertical is required';
+  if (!data.businessVerticals || data.businessVerticals.length === 0) errs.businessVerticals = 'At least one business vertical is required';
   if (!data.countryId) errs.countryId = 'Country is required';
   return errs;
 }
@@ -233,10 +231,42 @@ export default function LeadFormDrawer({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical *</label>
-                        <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.businessVerticals ? 'border-red-400' : 'border-slate-300'}`}>
-                          <option value="">Select</option>
-                          {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                        </select>
+                        {form.businessVerticals.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mb-1.5">
+                            {form.businessVerticals.map((name) => (
+                              <span key={name} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">
+                                {name}
+                                <button
+                                  type="button"
+                                  onClick={() => setForm(f => ({ ...f, businessVerticals: f.businessVerticals.filter(v => v !== name) }))}
+                                  className="hover:text-amber-900"
+                                  aria-label={`Remove ${name}`}
+                                >
+                                  <XMarkIcon className="h-3 w-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className={`max-h-36 overflow-y-auto border rounded-lg p-2 space-y-1 ${formErrors.businessVerticals ? 'border-red-400' : 'border-slate-300'}`}>
+                          {verticalOptions.map(v => (
+                            <label key={v.id} className="flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={form.businessVerticals.includes(v.name)}
+                                onChange={(e) => setForm(f => ({
+                                  ...f,
+                                  businessVerticals: e.target.checked
+                                    ? [...f.businessVerticals, v.name]
+                                    : f.businessVerticals.filter(name => name !== v.name),
+                                }))}
+                                className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                              />
+                              {v.name}
+                            </label>
+                          ))}
+                          {verticalOptions.length === 0 && <p className="text-sm text-slate-400">No verticals available</p>}
+                        </div>
                         {formErrors.businessVerticals && <p className="text-xs text-red-600 mt-1">{formErrors.businessVerticals}</p>}
                       </div>
                       <div className="col-span-2">
