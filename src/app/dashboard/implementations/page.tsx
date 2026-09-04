@@ -21,25 +21,12 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
 import { formatBusinessVerticals } from '@/lib/businessVerticals';
-
-const IMPL_STATUSES = [
-  { value: 'PLANNING', label: 'Planning', color: 'bg-slate-100 text-slate-700' },
-  { value: 'IN_PROGRESS', label: 'In Progress', color: 'bg-blue-100 text-blue-700' },
-  { value: 'ON_HOLD', label: 'On Hold', color: 'bg-amber-100 text-amber-700' },
-  { value: 'COMPLETED', label: 'Completed', color: 'bg-green-100 text-green-700' },
-  { value: 'CANCELLED', label: 'Cancelled', color: 'bg-red-100 text-red-700' },
-];
-
-const STAGES = [
-  'Requirements Gathering',
-  'System Configuration',
-  'Data Migration',
-  'Customization',
-  'Testing',
-  'User Training',
-  'Go-Live',
-  'Post Go-Live Support',
-];
+// IMPL_STATUSES/STAGES moved to this shared lib (values/labels/colors
+// unchanged) so the Customer main table can reuse the exact same
+// structure — see src/lib/implementationStatus.ts's own comment.
+import { IMPLEMENTATION_STATUSES as IMPL_STATUSES } from '@/lib/implementationStatus';
+import { useStages } from '@/hooks/useStages';
+import { invalidateImplementationData } from '@/lib/queryInvalidation';
 
 interface Implementation {
   id: number;
@@ -108,6 +95,10 @@ async function fetchUsers(): Promise<UserOption[]> {
 export default function ImplementationsPage() {
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Stage master (src/app/dashboard/stages/page.tsx) replaces the old
+  // hardcoded IMPLEMENTATION_STAGES array — flattened to plain names here
+  // so every existing STAGES.map(...) render below is unchanged.
+  const STAGES = useStages().map(s => s.name);
 
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -219,6 +210,7 @@ export default function ImplementationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['implementations'] });
+      invalidateImplementationData(queryClient);
       toast.success(editingId ? 'Implementation updated!' : 'Implementation project created!');
       closeDrawer();
     },
@@ -248,6 +240,7 @@ export default function ImplementationsPage() {
     const res = await fetch(`/api/implementations/${id}`, { method: 'DELETE' });
     if (!res.ok) { toast.error('Failed to delete implementation'); return; }
     queryClient.invalidateQueries({ queryKey: ['implementations'] });
+    invalidateImplementationData(queryClient);
     toast.success('Implementation deleted');
   };
 
@@ -262,6 +255,7 @@ export default function ImplementationsPage() {
       return;
     }
     queryClient.invalidateQueries({ queryKey: ['implementations'] });
+    invalidateImplementationData(queryClient);
     toast.success(successMsg);
   };
 

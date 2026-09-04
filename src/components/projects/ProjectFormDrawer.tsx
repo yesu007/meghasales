@@ -172,7 +172,7 @@ export default function ProjectFormDrawer({
                           className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.customerId ? 'border-red-400' : 'border-slate-300'} ${form.customerId ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                         >
                           <option value="">Select Lead</option>
-                          {leads.map(l => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}</option>)}
+                          {leads.map(l => <option key={l.id} value={l.id}>{l.companyName}</option>)}
                         </select>
                       </div>
                       <div>

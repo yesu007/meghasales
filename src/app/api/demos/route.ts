@@ -74,6 +74,8 @@ export async function GET(request: NextRequest) {
           assignedTo: { select: { firstName: true, lastName: true } },
           package: { select: { name: true } },
           project: { select: { projectName: true } },
+          vertical: { select: { name: true } },
+          head: { select: { firstName: true, lastName: true } },
         },
       }),
       prisma.demo.count({ where }),
@@ -90,6 +92,12 @@ export async function GET(request: NextRequest) {
       packageName: demo.package?.name || null,
       projectId: demo.projectId,
       projectName: demo.project?.projectName || null,
+      // Business Vertical + its snapshot Head — see schema.prisma's
+      // Demo.verticalId/headId comment.
+      verticalId: demo.verticalId,
+      verticalName: demo.vertical?.name || null,
+      headId: demo.headId,
+      headName: demo.head ? `${demo.head.firstName} ${demo.head.lastName}` : null,
       scheduledDate: demo.scheduledDate,
       timezone: demo.timezone,
       actualDate: demo.actualDate,
@@ -131,6 +139,9 @@ export async function POST(request: NextRequest) {
     if (!body.leadId || !body.demoType) {
       return NextResponse.json({ message: 'leadId and demoType are required' }, { status: 400 });
     }
+    if (!body.verticalId) {
+      return NextResponse.json({ message: 'Business Vertical is required' }, { status: 400 });
+    }
 
     const leadId = parseInt(body.leadId);
 
@@ -141,6 +152,14 @@ export async function POST(request: NextRequest) {
       const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: leadId }, { leadId }] } });
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
     }
+
+    // Head is derived from the selected Vertical's own Head assignment
+    // (Vertical.headId), never taken from the client — same rationale as
+    // /api/projects's own Head derivation. Unlike Project, a Vertical with
+    // no Head assigned is not rejected here — it's just saved as null and
+    // shown as "Unassigned" in the UI, per this form's own requirement.
+    const vertical = await prisma.vertical.findUnique({ where: { id: parseInt(body.verticalId) }, select: { id: true, headId: true } });
+    if (!vertical) return NextResponse.json({ message: 'Selected vertical not found' }, { status: 404 });
 
     const demo = await prisma.demo.create({
       data: {
@@ -154,6 +173,8 @@ export async function POST(request: NextRequest) {
         attendees: body.attendees || null,
         modulesDemonstrated: body.modulesDemonstrated || null,
         status: 'SCHEDULED',
+        verticalId: vertical.id,
+        headId: vertical.headId,
       },
       include: {
         lead: { select: { companyName: true } },

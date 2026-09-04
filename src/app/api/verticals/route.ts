@@ -8,25 +8,6 @@ import { thisFinancialYearStart } from '@/lib/financialYear';
 
 export const dynamic = 'force-dynamic';
 
-// Derives a stable, unique CODE from the vertical name — the admin form
-// only asks for a name (matching what was actually requested: Vertical
-// Name, Head, Budget), so the machine-readable code other modules can key
-// off is generated here rather than typed by hand.
-async function uniqueCodeFromName(name: string): Promise<string> {
-  const base = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'VERTICAL';
-
-  let code = base;
-  let suffix = 2;
-  while (await prisma.vertical.findUnique({ where: { code } })) {
-    code = `${base}_${suffix}`;
-    suffix += 1;
-  }
-  return code;
-}
-
 // GET returns only active verticals by default (the shape every existing
 // picker — the Expense Budget form, etc. — already expects); the admin
 // screen passes includeInactive=true to also see (and be able to
@@ -169,13 +150,15 @@ export async function POST(request: NextRequest) {
       if (!head) return NextResponse.json({ message: 'Selected head not found' }, { status: 404 });
     }
 
+    // Code always mirrors name — no separate Code input anywhere in the
+    // admin form (Create or Edit); see PATCH /api/verticals/[id] for the
+    // matching edit-time behavior.
     const name = String(body.name).trim();
-    const code = await uniqueCodeFromName(name);
 
     const vertical = await prisma.vertical.create({
       data: {
         name,
-        code,
+        code: name,
         headId: body.headId ? parseInt(body.headId) : null,
         budget: body.budget !== undefined && body.budget !== null && body.budget !== '' ? Number(body.budget) : null,
         budgetCurrencyCode: body.budgetCurrencyCode || 'INR',

@@ -52,6 +52,9 @@ async function fetchCurrencies(): Promise<CurrencyOption[]> {
   return res.json();
 }
 
+// No separate `code` field anywhere in this form — code always mirrors
+// name, kept in sync server-side on both create and update (see POST/PATCH
+// /api/verticals).
 const blankForm = { name: '', headId: '', budget: '', budgetCurrencyCode: 'INR' };
 
 export default function VerticalsPage() {
@@ -280,7 +283,6 @@ export default function VerticalsPage() {
                     <tr key={v.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                       <td className="px-4 py-3">
                         <p className="font-medium text-slate-800">{v.name}</p>
-                        <p className="text-xs text-slate-400">{v.code}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{v.headName || '—'}</td>
                       <td className="px-4 py-3 text-right text-slate-700">

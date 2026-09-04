@@ -19,6 +19,7 @@ import CustomerContractsCard from '@/components/customers/CustomerContractsCard'
 import LeadDocumentsTab from '@/components/leads/LeadDocumentsTab';
 import InvoiceListPage from '@/components/accounting/InvoiceListPage';
 import ProjectsTab from '@/components/leads/ProjectsTab';
+import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
 
 // A Customer is a Lead with status = CONFIRMED (see the module note atop
 // src/app/dashboard/customers/page.tsx) — there is no separate Customer
@@ -47,6 +48,9 @@ interface Customer {
   projectName: string | null;
   contactPerson: string;
   email: string | null;
+  // Dedicated recipient for payment reminders — see schema.prisma's
+  // Lead.financeEmail comment.
+  financeEmail: string | null;
   mobile: string | null;
   status: string;
   leadSource: string;
@@ -61,6 +65,10 @@ interface Customer {
   businessVerticals: string | null;
   notes: string | null;
   createdAt: string;
+  // Conversion moment (Lead→Customer) — what "Customer Since" below
+  // actually displays. See schema.prisma's Lead.confirmedAt comment. Falls
+  // back to createdAt for any pre-existing row where it's somehow unset.
+  confirmedAt: string | null;
   assignedBa: { firstName: string; lastName: string } | null;
 }
 
@@ -127,6 +135,7 @@ export default function CustomerDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customer', id] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      invalidateLeadCustomerData(queryClient);
       toast.success('Status updated');
     },
     onError: () => toast.error('Failed to update status'),
@@ -256,12 +265,13 @@ export default function CustomerDetailPage() {
             <Tab.Panel>
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Mobile</p><p className="text-sm text-slate-800 mt-1">{customer.mobile || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Finance Email ID</p><p className="text-sm text-slate-800 mt-1">{customer.financeEmail || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-sm text-slate-800 mt-1 capitalize">{(customer.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{customer.assignedBa ? `${customer.assignedBa.firstName} ${customer.assignedBa.lastName}` : 'Unassigned'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[customer.addressLine1, customer.addressLine2, customer.city, customer.state, customer.country].filter(Boolean).join(', ') || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{customer.jewelleryBusinessType || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Business Vertical</p><p className="text-sm text-slate-800 mt-1">{formatBusinessVerticals(customer.businessVerticals) || '—'}</p></div>
-                <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Since</p><p className="text-sm text-slate-800 mt-1">{dayjs(customer.createdAt).format('DD MMM YYYY')}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Since</p><p className="text-sm text-slate-800 mt-1">{dayjs(customer.confirmedAt || customer.createdAt).format('DD MMM YYYY')}</p></div>
                 {customer.notes && (
                   <div className="sm:col-span-2"><p className="text-xs font-medium text-slate-500 uppercase">Notes</p><p className="text-sm text-slate-800 mt-1 whitespace-pre-wrap">{customer.notes}</p></div>
                 )}

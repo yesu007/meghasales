@@ -2,29 +2,12 @@
 
 import { Fragment, Dispatch, SetStateAction } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import { useLeadSources } from '@/hooks/useLeadSources';
-
-interface VerticalOption { id: number; name: string }
-async function fetchVerticalOptions(): Promise<VerticalOption[]> {
-  const res = await fetch('/api/verticals');
-  if (!res.ok) throw new Error('Failed to fetch verticals');
-  return res.json();
-}
-
-// Project master picker — replaces the old free-text Project Name input.
-// Same fetch/shape as src/components/leads/LeadFormDrawer.tsx's own copy
-// (kept duplicated rather than shared, matching this file's existing
-// standalone-copy convention — see the module comment above).
-interface ProjectOption { id: number; projectName: string; linkedLeadsCount: number }
-async function fetchProjectOptions(): Promise<ProjectOption[]> {
-  const res = await fetch('/api/projects');
-  if (!res.ok) throw new Error('Failed to fetch projects');
-  return res.json();
-}
+import { useStages } from '@/hooks/useStages';
+import { isValidEmail } from '@/lib/email';
 
 // Customer-owned create form. Mirrors the UI/UX of
 // src/components/leads/LeadFormDrawer.tsx (same layout, field set and
@@ -38,13 +21,31 @@ async function fetchProjectOptions(): Promise<ProjectOption[]> {
 
 export interface CustomerFormState {
   companyName: string;
-  projectId: number | null;
+  // Project is deliberately not collected on this form (the + Add Customer
+  // drawer) per product requirement — still fully supported everywhere
+  // else (Customer detail page, Projects tab, Lead form, DB column). A
+  // customer created here can be linked to a Project later from its detail
+  // page.
   contactPerson: string;
   designation: string;
   mobile: string;
   email: string;
+  // Dedicated recipient for payment reminders — required, unlike `email`
+  // above. See schema.prisma's Lead.financeEmail comment.
+  financeEmail: string;
   leadSource: string;
-  businessVerticals: string;
+  // Customer lifecycle status (Active/In-Active/Hold — see
+  // src/lib/customerStatus.ts). Not collected on this form (Stage is shown
+  // here instead, per product request) — always defaults to ACTIVE at
+  // creation and is edited later from the Customer main table/edit form.
+  customerStatus: string;
+  // Initial Implementation stage (see the Stage model / useStages), shown
+  // here in place of Status. Optional, same as the Customer table's own
+  // Stage dropdown. When set, /api/customers creates the customer's
+  // Implementation record up front with this as its currentStage, instead
+  // of leaving it to be created on first use from the Customer table.
+  stage: string;
+  businessVerticals: string[];
   countryId: number | null;
   currencyCode: string;
   currencySymbol: string;
@@ -68,7 +69,7 @@ export interface CustomerFormState {
 }
 
 export const blankCustomerForm: CustomerFormState = {
-  companyName: '', projectId: null, contactPerson: '', designation: '', mobile: '', email: '', leadSource: '', businessVerticals: '',
+  companyName: '', contactPerson: '', designation: '', mobile: '', email: '', financeEmail: '', leadSource: '', customerStatus: 'ACTIVE', stage: '', businessVerticals: [],
   countryId: null, currencyCode: '', currencySymbol: '', taxType: '',
   state: '', city: '', addressLine1: '', addressLine2: '', notes: '',
   legalName: '', taxRegistrationNumber: '', legalAddressLine1: '', legalAddressLine2: '', postalCode: '',
@@ -85,8 +86,9 @@ export function validateCustomerForm(data: CustomerFormState): Record<string, st
   if (!data.companyName) errs.companyName = 'Company name is required';
   if (!data.contactPerson) errs.contactPerson = 'Contact person is required';
   if (!data.mobile) errs.mobile = 'Mobile is required';
+  if (!data.financeEmail) errs.financeEmail = 'Finance email is required';
+  else if (!isValidEmail(data.financeEmail)) errs.financeEmail = 'Enter a valid finance email address';
   if (!data.leadSource) errs.leadSource = 'Source is required';
-  if (!data.businessVerticals) errs.businessVerticals = 'Business vertical is required';
   if (!data.countryId) errs.countryId = 'Country is required';
   return errs;
 }
@@ -107,9 +109,8 @@ export interface CustomerFormDrawerProps {
 export default function CustomerFormDrawer({
   open, onClose, form, setForm, formErrors, setFormErrors, onSave, isSaving, isAdmin, currencies,
 }: CustomerFormDrawerProps) {
-  const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
-  const { data: projectOptions = [] } = useQuery({ queryKey: ['projects-for-lead-link'], queryFn: fetchProjectOptions });
   const sources = useLeadSources();
+  const stages = useStages();
 
   const handleCountryChange = (country: Country) => {
     setForm((f) => ({
@@ -152,13 +153,6 @@ export default function CustomerFormDrawer({
                         {formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
-                        <select value={form.projectId ?? ''} onChange={(e) => setForm(f => ({...f, projectId: e.target.value ? Number(e.target.value) : null}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                          <option value="">Unassigned</option>
-                          {projectOptions.map(p => <option key={p.id} value={p.id}>{p.projectName} — {p.linkedLeadsCount} {p.linkedLeadsCount === 1 ? 'Project' : 'Projects'}</option>)}
-                        </select>
-                      </div>
-                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person *</label>
                         <input value={form.contactPerson} onChange={(e) => setForm(f => ({...f, contactPerson: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.contactPerson ? 'border-red-400' : 'border-slate-300'}`} />
                         {formErrors.contactPerson && <p className="text-xs text-red-600 mt-1">{formErrors.contactPerson}</p>}
@@ -177,6 +171,11 @@ export default function CustomerFormDrawer({
                         <input type="email" value={form.email} onChange={(e) => setForm(f => ({...f, email: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
                       <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Finance Email ID *</label>
+                        <input type="email" value={form.financeEmail} onChange={(e) => setForm(f => ({...f, financeEmail: e.target.value}))} placeholder="For payment reminders" className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.financeEmail ? 'border-red-400' : 'border-slate-300'}`} />
+                        {formErrors.financeEmail && <p className="text-xs text-red-600 mt-1">{formErrors.financeEmail}</p>}
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Source *</label>
                         <select value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
                           <option value="">Select</option>
@@ -185,12 +184,11 @@ export default function CustomerFormDrawer({
                         {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical *</label>
-                        <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.businessVerticals ? 'border-red-400' : 'border-slate-300'}`}>
-                          <option value="">Select</option>
-                          {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Stage</label>
+                        <select value={form.stage} onChange={(e) => setForm(f => ({...f, stage: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
+                          <option value="">Select stage</option>
+                          {stages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                         </select>
-                        {formErrors.businessVerticals && <p className="text-xs text-red-600 mt-1">{formErrors.businessVerticals}</p>}
                       </div>
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Country *</label>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, Fragment, forwardRef, useImperativeHandle } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, Transition } from '@headlessui/react';
 import Link from 'next/link';
@@ -26,6 +26,7 @@ import dayjs from 'dayjs';
 import PaymentEntryDrawer from './PaymentEntryDrawer';
 import { formatCurrency } from '@/lib/currency';
 import { usePermissions } from '@/hooks/usePermissions';
+import { invalidateInvoiceData } from '@/lib/queryInvalidation';
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-green-100 text-green-700',
@@ -113,9 +114,24 @@ function fmt(amount: string | number, currencyCode = 'INR'): string {
 // leadId is optional and only passed when this is embedded in a specific
 // customer's Invoices/Paid Invoices tab (Customer Detail page) — it pins
 // the list to that customer and hides the standalone "All Customers"
-// filter below. The two Accounting pages (pending-invoices, paid-invoices)
-// don't pass it, so their behavior is unchanged.
-export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid'; leadId?: number }) {
+// filter below. hideHeading is likewise optional, passed only by the
+// Accounting module's own Invoices page
+// (src/app/dashboard/accounting/invoices/page.tsx) — that page renders its
+// own "Invoices" title + Pending/Paid pill-tabs + Export/New Invoice
+// buttons, all on one row (Leads page style), so this component's own
+// header row (title, subtitle, AND those two buttons) would otherwise
+// duplicate/misplace it; every other caller (Customer detail page) omits
+// the prop and keeps seeing this component's own full header exactly as
+// before. When hideHeading is set, the parent instead drives those two
+// buttons itself via the forwarded ref (openCreateDrawer/exportCsv) —
+// same underlying state/handlers, just triggered from outside so they can
+// sit in the parent's own header row instead of a separate one below it.
+export interface InvoiceListPageHandle {
+  openCreateDrawer: () => void;
+  exportCsv: () => void;
+}
+
+const InvoiceListPage = forwardRef<InvoiceListPageHandle, { mode: 'open' | 'paid'; leadId?: number; hideHeading?: boolean }>(function InvoiceListPage({ mode, leadId, hideHeading }, ref) {
   const { has } = usePermissions();
   const canExport = has('export_accounting');
   const queryClient = useQueryClient();
@@ -204,6 +220,7 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
+      invalidateInvoiceData(queryClient);
       toast.success(editingId ? 'Invoice updated!' : 'Invoice created!');
       closeDrawer();
     },
@@ -228,6 +245,7 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
     const res = await fetch(`/api/accounting/invoices/${id}`, { method: 'DELETE' });
     if (!res.ok) { const err = await res.json(); toast.error(err.message || 'Failed to delete invoice'); return; }
     queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
+    invalidateInvoiceData(queryClient);
     toast.success('Invoice deleted');
   };
 
@@ -261,6 +279,15 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
     URL.revokeObjectURL(url);
   };
 
+  // Exposed so a parent rendering this with hideHeading (the Accounting
+  // module's own Invoices page) can trigger these from its own header row
+  // instead of the row below — same handlers/state, just invoked from
+  // outside. No-op for every other caller, which never attaches a ref.
+  useImperativeHandle(ref, () => ({
+    openCreateDrawer: () => { setEditingId(null); setForm(blankForm); setLineItems([]); setDrawerOpen(true); },
+    exportCsv,
+  }));
+
   const handleSort = (col: string) => {
     if (sortBy === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortBy(col); setSortDir('asc'); }
@@ -287,24 +314,26 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">{mode === 'paid' ? 'Paid Invoices' : 'Pending Invoices'}</h1>
-          <p className="text-slate-500 mt-1">{mode === 'paid' ? 'Fully settled invoices and payment history' : 'Invoices awaiting full payment'}</p>
+      {!hideHeading && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">{mode === 'paid' ? 'Paid Invoices' : 'Pending Invoices'}</h1>
+            <p className="text-slate-500 mt-1">{mode === 'paid' ? 'Fully settled invoices and payment history' : 'Invoices awaiting full payment'}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {canExport && (
+              <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
+                <ArrowDownTrayIcon className="h-4 w-4" /> Export
+              </button>
+            )}
+            {mode === 'open' && (
+              <button onClick={() => { setEditingId(null); setForm(blankForm); setLineItems([]); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+                <PlusIcon className="h-4 w-4" /> New Invoice
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {canExport && (
-            <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
-              <ArrowDownTrayIcon className="h-4 w-4" /> Export
-            </button>
-          )}
-          {mode === 'open' && (
-            <button onClick={() => { setEditingId(null); setForm(blankForm); setLineItems([]); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-              <PlusIcon className="h-4 w-4" /> New Invoice
-            </button>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Sticky Search & Filters */}
       <div className="sticky top-0 z-10 bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
@@ -626,4 +655,6 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
       )}
     </div>
   );
-}
+});
+
+export default InvoiceListPage;

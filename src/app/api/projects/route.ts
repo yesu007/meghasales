@@ -25,6 +25,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const includeInactive = searchParams.get('includeInactive') === 'true';
     const leadIdParam = searchParams.get('leadId');
+    // Opt-in, same convention as /api/leads's own includeImplementation —
+    // used by the Customer main table's Project accordion, which needs each
+    // Project's own Status/Stage (that live on its Implementation, not on
+    // Project itself — see the Project model's own comment) without making
+    // every other caller of this endpoint (Demo/Quotation/Implementation
+    // Project dropdowns) pay for the extra join.
+    const includeImplementation = searchParams.get('includeImplementation') === 'true';
 
     const where: Prisma.ProjectWhereInput = includeInactive ? {} : { isActive: true };
     if (leadIdParam) {
@@ -46,6 +53,15 @@ export async function GET(request: NextRequest) {
         // that same picker can show "<Project Name> — N Projects" without
         // the frontend having to (mis)calculate it itself.
         _count: { select: { linkedLeads: true } },
+        ...(includeImplementation && {
+          // Most-recently-created Implementation for this Project, same
+          // "latest wins" convention as /api/leads's own includeImplementation.
+          implementations: {
+            orderBy: { createdAt: 'desc' as const },
+            take: 1,
+            select: { id: true, status: true, currentStage: true },
+          },
+        }),
       },
     });
 
@@ -66,6 +82,18 @@ export async function GET(request: NextRequest) {
       linkedLeadsCount: p._count.linkedLeads,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
+      // Only present when includeImplementation=true was passed (see above)
+      // — this Project's most-recently-created Implementation, or null if it
+      // has none yet.
+      ...(includeImplementation && {
+        implementation: (p as any).implementations?.[0]
+          ? {
+              id: (p as any).implementations[0].id,
+              status: (p as any).implementations[0].status,
+              currentStage: (p as any).implementations[0].currentStage,
+            }
+          : null,
+      }),
     }));
 
     return NextResponse.json(content);

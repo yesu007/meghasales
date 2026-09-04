@@ -27,6 +27,7 @@ import {
   CubeIcon,
   MegaphoneIcon,
   FlagIcon,
+  QueueListIcon,
   IdentificationIcon,
   ChevronDownIcon,
   Bars3Icon,
@@ -88,6 +89,7 @@ function getNavItems(): NavSection[] {
         { href: '/dashboard/packages', label: 'Packages', icon: CubeIcon, permission: 'view_packages' },
         { href: '/dashboard/lead-sources', label: 'Lead Sources', icon: MegaphoneIcon, permission: 'view_lead_sources' },
         { href: '/dashboard/lead-statuses', label: 'Lead Statuses', icon: FlagIcon, permission: 'view_lead_status_options' },
+        { href: '/dashboard/stages', label: 'Stages', icon: QueueListIcon, permission: 'view_stages' },
       ],
     },
     {
@@ -121,8 +123,12 @@ function getNavItems(): NavSection[] {
           href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon, permission: 'view_accounting',
           children: [
             { href: '/dashboard/accounting', label: 'Dashboard' },
-            { href: '/dashboard/accounting/pending-invoices', label: 'Pending Invoices' },
-            { href: '/dashboard/accounting/paid-invoices', label: 'Paid Invoices' },
+            // "Invoices" module — Pending/Paid Invoices are tabs within this
+            // one page now (src/app/dashboard/accounting/invoices/page.tsx),
+            // not two separate sidebar entries. The old
+            // pending-invoices/paid-invoices routes still work — they
+            // redirect here — for any old bookmarks/links.
+            { href: '/dashboard/accounting/invoices', label: 'Invoices' },
             { href: '/dashboard/accounting/payment-reminders', label: 'Payment Reminders' },
             { href: '/dashboard/accounting/customer-ledger', label: 'Customer Ledger' },
             { href: '/dashboard/accounting/reports', label: 'Reports' },
