@@ -648,7 +648,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             <button type="button" onClick={addResource} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-sm font-medium text-amber-700 hover:bg-amber-50">
               <PlusIcon className="h-4 w-4" /> Add resource
             </button>
-            <p className="text-xs text-slate-400 mt-2">Picking an employee from the suggestions fills in a day rate estimated from their CTC (still editable afterward) and shows their designation as the role. Not an employee? Just type a role directly (e.g. "Freelance Designer") and set the day rate — it costs into the budget the same way.</p>
+            <p className="text-xs text-slate-400 mt-2">Picking an employee from the suggestions fills in a day rate estimated from their CTC (still editable afterward) and shows their designation as the role. Not an employee? Just type a role directly (e.g. &quot;Freelance Designer&quot;) and set the day rate — it costs into the budget the same way.</p>
             <datalist id="resource-employee-options">
               {resourceEmployees.map((e) => <option key={e.id} value={employeeLabel(e)} />)}
             </datalist>
