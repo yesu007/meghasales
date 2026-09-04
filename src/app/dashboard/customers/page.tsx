@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -21,11 +21,12 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { CUSTOMER_STATUSES } from '@/lib/customerStatus';
+import { CUSTOMER_STATUSES, customerStatusColor } from '@/lib/customerStatus';
 import { useLeadSources } from '@/hooks/useLeadSources';
 import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 import CustomerFormDrawer, { blankCustomerForm, type CustomerFormState } from '@/components/customers/CustomerFormDrawer';
-import { formatBusinessVerticals } from '@/lib/businessVerticals';
+import CustomerProjectsPanel from '@/components/customers/CustomerProjectsPanel';
+import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
 
 // Customers are Leads with status = CONFIRMED (labeled "Converted" — see
 // the LeadStatusOption master, GET /api/lead-status-options). There is no separate Customer
@@ -37,10 +38,14 @@ import { formatBusinessVerticals } from '@/lib/businessVerticals';
 // appearing here on next fetch, a Lead moved onto CONFIRMED starts
 // appearing — both for free, since this is a live query, not a snapshot).
 // The lead pipeline status itself isn't shown/editable here (every row is
-// always CONFIRMED by definition) — the "Status" column on this page is
-// customerStatus (Active/Inactive/On Hold), a separate field tracked only
-// for converted customers. Un-converting a customer back to an earlier lead
-// stage is done from the Lead detail page, not from this list.
+// always CONFIRMED by definition) — un-converting a customer back to an
+// earlier lead stage is done from the Lead detail page, not from this list.
+// "Status" is customerStatus (Active/In-Active/Hold — see
+// src/lib/customerStatus.ts), a separate field tracked only for converted
+// customers. Stage is no longer shown at this per-customer level (removed
+// per product request, now that each of the customer's own Projects shows
+// its own Status/Stage inside the row's own accordion — see
+// CustomerProjectsPanel).
 const CUSTOMER_STATUS = 'CONFIRMED';
 
 interface Lead {
@@ -57,6 +62,10 @@ interface Lead {
   assignedBaId: number | null;
   assignedBaName: string | null;
   createdAt: string;
+  // Conversion moment (Lead→Customer) — what the "Created" column below
+  // actually displays. See schema.prisma's Lead.confirmedAt comment. Falls
+  // back to createdAt for any pre-existing row where it's somehow unset.
+  confirmedAt: string | null;
   lastFollowUpDate: string | null;
   nextFollowUpDate: string | null;
   followUpCount: number;
@@ -89,6 +98,11 @@ export default function CustomersPage() {
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // Project accordion — same expandedId + chevron-toggle pattern as the
+  // Project module's own (src/app/dashboard/projects/page.tsx), just
+  // expanding to this Customer's own Projects (CustomerProjectsPanel)
+  // instead of Budget Estimations.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   // Search, filter, sort, pagination — same conventions as the Leads page,
   // minus the status filter (this list is inherently pre-filtered to
@@ -99,7 +113,7 @@ export default function CustomersPage() {
   const [sourceFilter, setSourceFilter] = useState('');
   const [verticalFilter, setVerticalFilter] = useState('');
   const [customerStatusFilter, setCustomerStatusFilter] = useState('');
-  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortBy, setSortBy] = useState('confirmedAt');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
@@ -158,18 +172,23 @@ export default function CustomersPage() {
   });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  // customerStatus lives outside LeadFormState (shared with the Leads
+  // module's own use of this same drawer — see LeadFormDrawer's own
+  // comment) — tracked here instead, and merged into the PUT body below.
+  const [editCustomerStatus, setEditCustomerStatus] = useState('ACTIVE');
 
-  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankLeadForm); setFormErrors({}); };
+  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankLeadForm); setEditCustomerStatus('ACTIVE'); setFormErrors({}); };
 
   const saveMutation = useMutation({
     mutationFn: async (data: LeadFormState) => {
       const url = `/api/leads/${editingId}`;
-      const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, customerStatus: editCustomerStatus }) });
       if (!res.ok) throw new Error('Failed to update customer');
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      invalidateLeadCustomerData(queryClient);
       toast.success('Customer updated!');
       closeDrawer();
     },
@@ -196,6 +215,7 @@ export default function CustomersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      invalidateLeadCustomerData(queryClient);
       toast.success('Customer created!');
       closeCreateDrawer();
     },
@@ -206,6 +226,7 @@ export default function CustomersPage() {
     const data = await fetchLeadForEdit(id);
     if (!data) { toast.error('Failed to load customer'); return; }
     setForm(data);
+    setEditCustomerStatus(customers.find(c => c.id === id)?.customerStatus || 'ACTIVE');
     setEditingId(id);
     setDrawerOpen(true);
   };
@@ -215,6 +236,7 @@ export default function CustomersPage() {
     const res = await fetch(`/api/leads/${id}`, { method: 'DELETE' });
     if (!res.ok) { toast.error('Failed to delete customer'); return; }
     queryClient.invalidateQueries({ queryKey: ['customers'] });
+    invalidateLeadCustomerData(queryClient);
     toast.success('Customer deleted');
   };
 
@@ -222,6 +244,7 @@ export default function CustomersPage() {
     const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerStatus }) });
     if (!res.ok) { toast.error('Failed to update customer status'); return; }
     queryClient.invalidateQueries({ queryKey: ['customers'] });
+    invalidateLeadCustomerData(queryClient);
     toast.success('Customer status updated');
   };
 
@@ -229,6 +252,7 @@ export default function CustomersPage() {
     const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedBaId: assignedBaId || null }) });
     if (!res.ok) { toast.error('Failed to assign owner'); return; }
     queryClient.invalidateQueries({ queryKey: ['customers'] });
+    invalidateLeadCustomerData(queryClient);
     toast.success('Owner assigned');
   };
 
@@ -328,29 +352,52 @@ export default function CustomersPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-900">
                   <tr>
+                    <th className="px-2 py-3"></th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('companyName')} className="flex items-center gap-1 font-semibold text-white">Company <SortIcon col="companyName" /></button></th>
-                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Vertical</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('contactPerson')} className="flex items-center gap-1 font-semibold text-white">Contact <SortIcon col="contactPerson" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Mobile</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Source</th>
                     <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Owner</th>
-                    <th className="px-4 py-3 text-left hidden md:table-cell"><button onClick={() => handleSort('createdAt')} className="flex items-center gap-1 font-semibold text-white">Created <SortIcon col="createdAt" /></button></th>
+                    <th className="px-4 py-3 text-left hidden md:table-cell"><button onClick={() => handleSort('confirmedAt')} className="flex items-center gap-1 font-semibold text-white">Created <SortIcon col="confirmedAt" /></button></th>
                     <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {customers.map((customer, idx) => (
-                    <tr key={customer.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                  {customers.map((customer, idx) => {
+                    const isExpanded = expandedId === customer.id;
+                    return (
+                    <Fragment key={customer.id}>
+                    <tr
+                      className={`transition-all duration-300 ${
+                        isExpanded
+                          ? 'bg-amber-50/70'
+                          : expandedId !== null
+                            ? `${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} opacity-50 blur-[1px]`
+                            : `${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60`
+                      }`}
+                    >
+                      <td className="px-2 py-3">
+                        <button
+                          onClick={() => setExpandedId(isExpanded ? null : customer.id)}
+                          className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                          title={isExpanded ? 'Hide Projects' : 'Show Projects'}
+                        >
+                          {isExpanded ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
+                        </button>
+                      </td>
                       <td className="px-4 py-3 font-medium text-slate-800">
                         <Link href={`/dashboard/customers/${customer.id}`} className="hover:text-amber-600 hover:underline">{customer.companyName}</Link>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{formatBusinessVerticals(customer.businessVerticals) || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{customer.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{customer.mobile || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell capitalize">{(customer.leadSource || '').replace(/_/g, ' ').toLowerCase()}</td>
                       <td className="px-4 py-3">
-                        <select value={customer.customerStatus} onChange={(e) => updateCustomerStatus(customer.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${CUSTOMER_STATUSES.find(s => s.value === customer.customerStatus)?.color || 'bg-slate-100'}`}>
+                        <select
+                          value={customer.customerStatus}
+                          onChange={(e) => updateCustomerStatus(customer.id, e.target.value)}
+                          className={`px-2 py-1 rounded text-xs font-medium border-0 ${customerStatusColor(customer.customerStatus)}`}
+                        >
                           {CUSTOMER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
                       </td>
@@ -364,7 +411,7 @@ export default function CustomersPage() {
                           {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
                         </select>
                       </td>
-                      <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{dayjs(customer.createdAt).format('DD MMM YYYY')}</td>
+                      <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{dayjs(customer.confirmedAt || customer.createdAt).format('DD MMM YYYY')}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
                           <Link href={`/dashboard/customers/${customer.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-block" title="View">
@@ -379,7 +426,26 @@ export default function CustomersPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    <tr className={expandedId !== null && !isExpanded ? 'opacity-50 blur-[1px] transition-all duration-300' : 'transition-all duration-300'}>
+                      <td colSpan={9} className="p-0 border-0">
+                        {/* Height-animated via CSS grid-template-rows (0fr <-> 1fr) — the
+                            standard way to transition an "auto" height, since a table
+                            cell can't transition max-height/height reliably. Always
+                            mounted (enabled=isExpanded keeps the fetch lazy, same as
+                            before) so both expand AND collapse animate smoothly instead
+                            of the row just appearing/disappearing. */}
+                        <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                          <div className="overflow-hidden">
+                            <div className={`px-6 ${isExpanded ? 'bg-amber-50/40 border-t border-amber-100' : 'bg-slate-50/60'}`}>
+                              <CustomerProjectsPanel customerId={customer.id} enabled={isExpanded} />
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -442,6 +508,8 @@ export default function CustomersPage() {
         isSaving={saveMutation.isPending}
         isAdmin={isAdmin}
         currencies={currencies}
+        customerStatus={editCustomerStatus}
+        onCustomerStatusChange={setEditCustomerStatus}
       />
 
       {/* Create Customer Drawer — Customer-owned form/endpoint */}

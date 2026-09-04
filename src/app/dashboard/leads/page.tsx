@@ -25,8 +25,7 @@ import dayjs from 'dayjs';
 import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
 import { useLeadSources } from '@/hooks/useLeadSources';
 import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
-import { useAllProjects } from '@/hooks/useProjectsForLead';
-import { formatBusinessVerticals } from '@/lib/businessVerticals';
+import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
 
 const VIEW_TABS = [
   { value: '', label: 'All Leads' },
@@ -196,20 +195,6 @@ export default function LeadsPage() {
     queryFn: async () => { const res = await fetch('/api/verticals'); if (!res.ok) throw new Error('Failed to fetch verticals'); return res.json(); },
   });
 
-  // Project Master now allows multiple Projects per Lead/Customer
-  // (Project.customerId/leadId — see that model's own comments), so the
-  // table's Project Name column reads off that relationship instead of the
-  // legacy single-value Lead.projectName. Reuses the same all-projects
-  // fetch already used by Demo/Implementation's Project-first flow, rather
-  // than a new per-lead endpoint.
-  const { data: allProjects = [] } = useAllProjects();
-  const projectNamesForLead = (leadId: number): string => {
-    const names = allProjects.filter(p => p.customerId === leadId || p.leadId === leadId).map(p => p.projectName);
-    if (names.length === 0) return '—';
-    if (names.length <= 2) return names.join(', ');
-    return `${names[0]} +${names.length - 1} more`;
-  };
-
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankLeadForm); setFormErrors({}); };
@@ -224,6 +209,7 @@ export default function LeadsPage() {
     },
     onSuccess: (lead) => {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
+      invalidateLeadCustomerData(queryClient);
       toast.success(editingId ? 'Lead updated!' : `Lead "${lead.companyName}" created!`);
       closeDrawer();
     },
@@ -243,6 +229,7 @@ export default function LeadsPage() {
     const res = await fetch(`/api/leads/${id}`, { method: 'DELETE' });
     if (!res.ok) { toast.error('Failed to delete lead'); return; }
     queryClient.invalidateQueries({ queryKey: ['leads'] });
+    invalidateLeadCustomerData(queryClient);
     toast.success('Lead deleted');
   };
 
@@ -250,6 +237,7 @@ export default function LeadsPage() {
     const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
     if (!res.ok) { toast.error('Failed to update status'); return; }
     queryClient.invalidateQueries({ queryKey: ['leads'] });
+    invalidateLeadCustomerData(queryClient);
     toast.success('Status updated');
   };
 
@@ -257,6 +245,7 @@ export default function LeadsPage() {
     const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedBaId: assignedBaId || null }) });
     if (!res.ok) { toast.error('Failed to assign BA'); return; }
     queryClient.invalidateQueries({ queryKey: ['leads'] });
+    invalidateLeadCustomerData(queryClient);
     toast.success('BA assigned');
   };
 
@@ -264,6 +253,7 @@ export default function LeadsPage() {
     const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nextFollowUpDate: nextFollowUpDate || null }) });
     if (!res.ok) { toast.error('Failed to update next follow-up'); return; }
     queryClient.invalidateQueries({ queryKey: ['leads'] });
+    invalidateLeadCustomerData(queryClient);
     toast.success('Next follow-up updated');
   };
 
@@ -412,8 +402,6 @@ export default function LeadsPage() {
                 <thead className="bg-slate-900">
                   <tr>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('companyName')} className="flex items-center gap-1 font-semibold text-white">Company <SortIcon col="companyName" /></button></th>
-                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Vertical</th>
-                    <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Project Name(s)</th>
                     <th className="px-4 py-3 text-left"><button onClick={() => handleSort('contactPerson')} className="flex items-center gap-1 font-semibold text-white">Contact <SortIcon col="contactPerson" /></button></th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Designation</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Mobile</th>
@@ -433,8 +421,6 @@ export default function LeadsPage() {
                       <td className="px-4 py-3 font-medium text-slate-800">
                         <Link href={`/dashboard/leads/${lead.id}`} className="hover:text-amber-600 hover:underline">{lead.companyName}</Link>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{formatBusinessVerticals(lead.businessVerticals) || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{projectNamesForLead(lead.id)}</td>
                       <td className="px-4 py-3 text-slate-600">{lead.contactPerson}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.designation || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lead.mobile || '—'}</td>

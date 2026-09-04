@@ -7,6 +7,7 @@ import { resolveLeadCountryFields } from '@/lib/leadCountry';
 import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
 import { CUSTOMER_STATUSES, customerStatusLabel } from '@/lib/customerStatus';
 import { requirePermission } from '@/lib/rbac';
+import { isValidEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +48,21 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
     const customerStatusChanged = !!body.customerStatus && body.customerStatus !== existing.customerStatus;
 
+    // Finance email — required on every Lead, not just once it becomes a
+    // Customer. Only checked when the caller actually touches it (same
+    // partial-update convention every other field on this endpoint
+    // follows), so e.g. the Lead detail page's own quick status-change
+    // PUT — which never sends financeEmail — is unaffected. See
+    // schema.prisma's Lead.financeEmail comment.
+    if (body.financeEmail !== undefined) {
+      if (!body.financeEmail) {
+        return NextResponse.json({ message: 'Finance email is required' }, { status: 400 });
+      }
+      if (!isValidEmail(body.financeEmail)) {
+        return NextResponse.json({ message: 'Enter a valid finance email address' }, { status: 400 });
+      }
+    }
+
     const session = await getServerSession(authOptions);
     const performedById = session?.user ? parseInt(session.user.id, 10) : null;
 
@@ -74,6 +90,18 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       }
     }
 
+    // Lead -> Customer conversion: "Customer" is this same Lead row once
+    // status reaches CONFIRMED (see src/app/api/customers/route.ts's own
+    // module note — there is no separate Customer table), so the update
+    // below already *is* Customer creation; nothing else needs to be
+    // inserted for that half of the requirement. This block additionally
+    // auto-creates the linked Implementation entry (leadId FK) the
+    // Lead->Customer->Implementation flow requires. Both writes run in one
+    // transaction so a failed Implementation create rolls back the status
+    // change too, instead of leaving a Lead marked CONFIRMED with no
+    // Implementation behind it.
+    const isConverting = !!body.status && body.status === 'CONFIRMED' && existing.status !== 'CONFIRMED';
+
     const updateData = {
       ...(body.companyName && { companyName: body.companyName }),
       ...(body.projectName !== undefined && { projectName: body.projectName || null }),
@@ -83,8 +111,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       ...(body.mobile !== undefined && { mobile: body.mobile }),
       ...(body.whatsapp !== undefined && { whatsapp: body.whatsapp }),
       ...(body.email !== undefined && { email: body.email }),
+      ...(body.financeEmail !== undefined && { financeEmail: body.financeEmail || null }),
       ...(body.leadSource && { leadSource: body.leadSource }),
       ...(body.status && { status: body.status }),
+      // Customer module's "Created"/"Customer Since" date — the moment of
+      // conversion, not the Lead's original createdAt. See schema.prisma's
+      // Lead.confirmedAt comment.
+      ...(isConverting && { confirmedAt: new Date() }),
       ...(body.customerStatus && { customerStatus: body.customerStatus }),
       ...(body.assignedBaId !== undefined && { assignedBaId: body.assignedBaId ? parseInt(body.assignedBaId) : null }),
       ...(body.notes !== undefined && { notes: body.notes }),
@@ -103,18 +136,6 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       ...(body.businessVerticals !== undefined && { businessVerticals }),
       ...(body.companyId !== undefined && { companyId: body.companyId ? parseInt(body.companyId) : null }),
     };
-
-    // Lead -> Customer conversion: "Customer" is this same Lead row once
-    // status reaches CONFIRMED (see src/app/api/customers/route.ts's own
-    // module note — there is no separate Customer table), so the update
-    // below already *is* Customer creation; nothing else needs to be
-    // inserted for that half of the requirement. This block additionally
-    // auto-creates the linked Implementation entry (leadId FK) the
-    // Lead->Customer->Implementation flow requires. Both writes run in one
-    // transaction so a failed Implementation create rolls back the status
-    // change too, instead of leaving a Lead marked CONFIRMED with no
-    // Implementation behind it.
-    const isConverting = !!body.status && body.status === 'CONFIRMED' && existing.status !== 'CONFIRMED';
 
     let lead;
     let autoImplementation: { id: number } | null = null;

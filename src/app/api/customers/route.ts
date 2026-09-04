@@ -4,7 +4,10 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { resolveCustomerCountryFields } from '@/lib/customerCountry';
+import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
 import { requirePermission } from '@/lib/rbac';
+import { isValidEmail } from '@/lib/email';
+import { CUSTOMER_STATUSES } from '@/lib/customerStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,11 +36,26 @@ export async function POST(request: NextRequest) {
     if (!body.leadSource) {
       return NextResponse.json({ message: 'Source is required' }, { status: 400 });
     }
-    if (!body.businessVerticals) {
-      return NextResponse.json({ message: 'Business vertical is required' }, { status: 400 });
+    let businessVerticals: string | null;
+    try {
+      businessVerticals = await resolveBusinessVerticals(body.businessVerticals);
+    } catch (e: any) {
+      return NextResponse.json({ message: e.message || 'Invalid business vertical' }, { status: 400 });
     }
     if (!body.countryId) {
       return NextResponse.json({ message: 'Country is required' }, { status: 400 });
+    }
+    // Dedicated recipient for payment reminders — required specifically on
+    // Customer creation (unlike the general `email` field above, which
+    // stays optional), see schema.prisma's Lead.financeEmail comment.
+    if (!body.financeEmail) {
+      return NextResponse.json({ message: 'Finance email is required' }, { status: 400 });
+    }
+    if (!isValidEmail(body.financeEmail)) {
+      return NextResponse.json({ message: 'Enter a valid finance email address' }, { status: 400 });
+    }
+    if (body.customerStatus !== undefined && !CUSTOMER_STATUSES.some((s) => s.value === body.customerStatus)) {
+      return NextResponse.json({ message: 'Invalid customer status' }, { status: 400 });
     }
 
     const session = await getServerSession(authOptions);
@@ -131,6 +149,7 @@ export async function POST(request: NextRequest) {
         designation: body.designation || null,
         mobile: body.mobile || null,
         email: body.email || null,
+        financeEmail: body.financeEmail,
         country: countryFields.country,
         countryId: countryFields.countryId,
         currencyCode: countryFields.currencyCode,
@@ -141,9 +160,13 @@ export async function POST(request: NextRequest) {
         addressLine1: body.addressLine1 || null,
         addressLine2: body.addressLine2 || null,
         leadSource: body.leadSource,
-        businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null,
+        businessVerticals,
         notes: body.notes || null,
         status: 'CONFIRMED',
+        customerStatus: body.customerStatus || 'ACTIVE',
+        // Born a Customer, so the conversion moment is this same instant —
+        // see schema.prisma's Lead.confirmedAt comment.
+        confirmedAt: new Date(),
         companyId: company.id,
         legalEntityId: legalEntity.id,
       },
@@ -158,6 +181,19 @@ export async function POST(request: NextRequest) {
     });
 
     await logAudit({ action: 'CREATE', entityType: 'CUSTOMER', entityId: customer.id, newValue: customer, description: `Customer created: ${customer.companyName}`, request });
+
+    // Optional initial Stage, picked on this form in place of Status (see
+    // CustomerFormDrawer's `stage` field). When set, create the customer's
+    // Implementation record immediately with it as currentStage — same
+    // shape POST /api/implementations and the Customer table's own
+    // ensureImplementationThenUpdate create, so this just does that create
+    // up front instead of leaving it to happen lazily on first Stage edit.
+    if (body.stage) {
+      const impl = await prisma.implementation.create({
+        data: { leadId: customer.id, sourceType: 'CUSTOMER', status: 'PLANNING', currentStage: body.stage },
+      });
+      await logAudit({ action: 'CREATE', entityType: 'IMPLEMENTATION', entityId: impl.id, newValue: impl, description: `Implementation created for ${customer.companyName}`, request });
+    }
 
     return NextResponse.json(customer, { status: 201 });
   } catch (error: any) {

@@ -35,6 +35,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ message: 'Vertical name cannot be empty' }, { status: 400 });
     }
 
+    // No separate Code field/input anywhere — code always mirrors name
+    // (see the Vertical form's own comment), so any edit that changes the
+    // name keeps code in sync automatically instead of letting the two
+    // drift apart. Same as POST's own name->code derivation below.
+    const trimmedName = body.name !== undefined ? String(body.name).trim() : undefined;
+
     if (body.headId !== undefined && body.headId !== null && body.headId !== '') {
       const head = await prisma.user.findUnique({ where: { id: parseInt(body.headId) } });
       if (!head) return NextResponse.json({ message: 'Selected head not found' }, { status: 404 });
@@ -43,7 +49,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const vertical = await prisma.vertical.update({
       where: { id },
       data: {
-        ...(body.name !== undefined && { name: String(body.name).trim() }),
+        ...(trimmedName !== undefined && { name: trimmedName, code: trimmedName }),
         ...(body.headId !== undefined && { headId: body.headId ? parseInt(body.headId) : null }),
         ...(body.budget !== undefined && { budget: body.budget === null || body.budget === '' ? null : Number(body.budget) }),
         ...(body.budgetCurrencyCode !== undefined && { budgetCurrencyCode: body.budgetCurrencyCode || 'INR' }),
@@ -58,6 +64,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json(vertical);
   } catch (error: any) {
     if (error.code === 'P2002') {
+      // code always mirrors name (see above), so a conflict on either
+      // constraint is the same underlying clash from the user's POV.
       return NextResponse.json({ message: 'A vertical with that name already exists' }, { status: 409 });
     }
     console.error('PATCH /api/verticals/[id] error:', error);

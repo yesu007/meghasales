@@ -17,6 +17,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         assignedTo: { select: { firstName: true, lastName: true } },
         package: { select: { name: true } },
         project: { select: { projectName: true } },
+        vertical: { select: { name: true } },
+        head: { select: { firstName: true, lastName: true } },
       },
     });
     if (!demo) return NextResponse.json({ message: 'Demo not found' }, { status: 404 });
@@ -45,12 +47,22 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
     }
 
+    // Same server-derived Head rule as POST — see this route's own comment
+    // there. Only looked up when the client is actually changing
+    // verticalId; a null headId is valid (Unassigned).
+    let vertical: { id: number; headId: number | null } | null = null;
+    if (body.verticalId !== undefined && body.verticalId !== null && body.verticalId !== '') {
+      vertical = await prisma.vertical.findUnique({ where: { id: parseInt(body.verticalId) }, select: { id: true, headId: true } });
+      if (!vertical) return NextResponse.json({ message: 'Selected vertical not found' }, { status: 404 });
+    }
+
     const demo = await prisma.demo.update({
       where: { id },
       data: {
         ...(body.demoType && { demoType: body.demoType }),
         ...(body.packageId !== undefined && { packageId: body.packageId ? parseInt(body.packageId) : null }),
         ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
+        ...(vertical && { verticalId: vertical.id, headId: vertical.headId }),
         ...(body.status && { status: body.status }),
         ...(body.scheduledDate !== undefined && { scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : null }),
         ...(body.timezone !== undefined && { timezone: body.timezone || null }),

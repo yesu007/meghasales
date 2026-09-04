@@ -32,10 +32,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ message: 'Package name cannot be empty' }, { status: 400 });
     }
 
+    // No separate Code field/input anywhere — code always mirrors name
+    // (see the Package form's own comment), so an edit that changes the
+    // name keeps code in sync automatically. Same as POST's own
+    // name->code derivation.
+    const trimmedName = body.name !== undefined ? String(body.name).trim() : undefined;
+
     const pkg = await prisma.package.update({
       where: { id },
       data: {
-        ...(body.name !== undefined && { name: String(body.name).trim() }),
+        ...(trimmedName !== undefined && { name: trimmedName, code: trimmedName }),
         ...(body.sortOrder !== undefined && { sortOrder: Number(body.sortOrder) }),
         ...(body.isActive !== undefined && { isActive: !!body.isActive }),
       },
@@ -46,6 +52,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json(pkg);
   } catch (error: any) {
     if (error.code === 'P2002') {
+      // code always mirrors name, so a conflict on either constraint is
+      // the same underlying clash from the user's POV.
       return NextResponse.json({ message: 'A package with that name already exists' }, { status: 409 });
     }
     console.error('PATCH /api/packages/[id] error:', error);

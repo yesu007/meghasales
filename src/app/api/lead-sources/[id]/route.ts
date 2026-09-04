@@ -32,10 +32,22 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ message: 'Source name cannot be empty' }, { status: 400 });
     }
 
+    // No separate Code field/input anywhere — code always mirrors name
+    // (see the Lead Sources form's own comment), so an edit that changes
+    // the name keeps code in sync automatically. Same as POST's own
+    // name->code derivation.
+    // NOTE: unlike Vertical/Package, `code` here is literally what
+    // Lead.leadSource stores (see the LeadSource model's own comment) —
+    // renaming an existing, already-in-use source does not update
+    // historical Lead rows, which will keep the old code value and no
+    // longer resolve to any LeadSource row. Accepted tradeoff of syncing
+    // code to name at all; doesn't apply to a brand-new/never-used source.
+    const trimmedName = body.name !== undefined ? String(body.name).trim() : undefined;
+
     const source = await prisma.leadSource.update({
       where: { id },
       data: {
-        ...(body.name !== undefined && { name: String(body.name).trim() }),
+        ...(trimmedName !== undefined && { name: trimmedName, code: trimmedName }),
         ...(body.sortOrder !== undefined && { sortOrder: Number(body.sortOrder) }),
         ...(body.isActive !== undefined && { isActive: !!body.isActive }),
       },
@@ -46,6 +58,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json(source);
   } catch (error: any) {
     if (error.code === 'P2002') {
+      // code always mirrors name, so a conflict on either constraint is
+      // the same underlying clash from the user's POV.
       return NextResponse.json({ message: 'A source with that name already exists' }, { status: 409 });
     }
     console.error('PATCH /api/lead-sources/[id] error:', error);

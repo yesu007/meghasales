@@ -116,6 +116,7 @@ model User {
   headOfVerticals        Vertical[]              @relation("VerticalHead")
   headOfProjects         Project[]               @relation("ProjectHead")
   headOfImplementations  Implementation[]        @relation("ImplementationHead")
+  headOfDemos            Demo[]                  @relation("DemoHead")
   createdCompanies       Company[]               @relation("CompanyCreatedBy")
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, see
@@ -202,6 +203,14 @@ model Lead {
   mobile                String?
   whatsapp              String? // WhatsApp contact number — separate from `mobile` since they often differ
   email                 String?
+  // Dedicated recipient for payment/invoice reminders — required on the
+  // Customer module's create/edit forms (validated in POST /api/customers
+  // and PUT /api/leads/[id]) once a Lead is/becomes a Customer
+  // (status=CONFIRMED), but left nullable here since plain (non-customer)
+  // Leads never collect it. Deliberately separate from `email` above:
+  // that's the contact person's general email, this is specifically who
+  // should receive payment reminders — see dispatchDeadlineReminders.
+  financeEmail          String?  @map("finance_email")
   country               String?
   state                 String?
   city                  String?
@@ -236,6 +245,15 @@ model Lead {
   // doing business with us. Defaults to ACTIVE for every row, but is only
   // surfaced/editable on the Customers page.
   customerStatus        String   @default("ACTIVE") @map("customer_status")
+  // The moment this Lead's status actually transitioned to CONFIRMED (i.e.
+  // became a Customer) — set alongside the LEAD_CONFIRMED LeadActivity in
+  // PUT /api/leads/[id], and at creation time for customers created
+  // directly via POST /api/customers (born CONFIRMED, so "confirmed" and
+  // "created" are the same instant there). This is what the Customer
+  // module's "Created"/"Customer Since" date displays instead of
+  // `createdAt`, which for a pipeline-converted lead is the date the LEAD
+  // was first created, not the date it became a customer.
+  confirmedAt           DateTime? @map("confirmed_at")
   // JSON-encoded array of Vertical *names* (no FK to Vertical — see
   // src/lib/businessVerticals.ts), e.g. '["Retail Jewellery","Wholesale"]',
   // supporting multi-select. Rows written before multi-select existed still
@@ -293,6 +311,7 @@ model Lead {
   // this model had zero indexes beyond its primary key despite all of that,
   // forcing a full table scan on every one of those queries.
   @@index([createdAt])
+  @@index([confirmedAt])
   @@index([status])
   @@index([leadSource])
   @@index([assignedBaId])
@@ -365,16 +384,28 @@ model Demo {
   // Same "Next Follow-up" field/behavior as Lead.nextFollowUpDate — directly
   // editable from the Demos list table, same convention.
   nextFollowUpDate      DateTime? @map("next_follow_up_date")
+  // Business Vertical this demo is for — a manual, independent pick from
+  // the Vertical Master (never inferred from the selected Lead/Customer's
+  // own businessVerticals, and never restricted by it — see the New Demo
+  // Project form's own comment). headId is a snapshot of Vertical.headId
+  // taken at the moment verticalId is set, same convention as
+  // Project.headId above — never taken from the client, and left null
+  // (handled as "Unassigned" in the UI) when the vertical has no head.
+  verticalId            Int?      @map("vertical_id")
+  headId                Int?      @map("head_id")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  assignedTo User?    @relation(fields: [assignedToId], references: [id])
-  package    Package? @relation(fields: [packageId], references: [id])
-  project    Project? @relation(fields: [projectId], references: [id])
+  lead       Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedTo User?     @relation(fields: [assignedToId], references: [id])
+  package    Package?  @relation(fields: [packageId], references: [id])
+  project    Project?  @relation(fields: [projectId], references: [id])
+  vertical   Vertical? @relation(fields: [verticalId], references: [id])
+  head       User?     @relation("DemoHead", fields: [headId], references: [id])
 
   @@index([projectId])
   @@index([nextFollowUpDate])
+  @@index([verticalId])
   @@map("demos")
 }
 
@@ -1877,6 +1908,7 @@ model Vertical {
   projects        Project[]
   allocations     EmployeeVerticalAllocation[]
   implementations Implementation[]
+  demos           Demo[]
 
   @@map("verticals")
 }
@@ -1984,6 +2016,30 @@ model LeadStatusOption {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("lead_status_options")
+}
+
+// Stage master — open picklist, same rationale/shape as LeadSource above,
+// replacing the hardcoded IMPLEMENTATION_STAGES array previously in
+// src/lib/implementationStatus.ts. Unlike LeadSource, the dropdowns built
+// from this (Customer module's Stage column, Implementation module's
+// Stage field/filter — both key off Implementation.currentStage) store
+// `name` rather than `code`: currentStage is a free-text field that
+// already held human-readable strings like "Go-Live" before this master
+// existed, so storing `name` keeps existing data compatible with zero
+// migration. `code` still exists for parity with every other open-picklist
+// master in this schema (Vertical/Package/LeadSource) and as a stable
+// admin-facing identifier, it's just not what gets written to
+// Implementation.currentStage.
+model Stage {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  code      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("stages")
 }
 
 model ExpenseBudget {

@@ -20,6 +20,9 @@ async function fetchPackages(): Promise<PackageRow[]> {
   return res.json();
 }
 
+// No separate `code` field anywhere in this form — code always mirrors
+// name, kept in sync server-side on both create and update (see POST/PATCH
+// /api/packages).
 const blankForm = { name: '' };
 
 export default function PackagesPage() {
@@ -168,7 +171,6 @@ export default function PackagesPage() {
                   <tr key={p.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800">{p.name}</p>
-                      <p className="text-xs text-slate-400">{p.code}</p>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>

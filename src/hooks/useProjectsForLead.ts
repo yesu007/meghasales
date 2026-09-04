@@ -54,10 +54,11 @@ async function fetchAllProjects(): Promise<ProjectSummary[]> {
 }
 
 // Full active Project list (same GET /api/projects the Project Master admin
-// screen itself uses, just without its leadId filter) — for Demo/
+// screen itself uses, just without its leadId filter) — for
 // Implementation's Project-first flow, where the Project picked drives
 // which Lead/Customer/Vertical/Head auto-populate, rather than the other
-// way around (see useProjectsForLead above, still used by Quotations).
+// way around (see useProjectsForLead above, used by Quotations and, as of
+// the New Demo Project form's own Lead-first reordering, Demos too).
 export function useAllProjects() {
   return useQuery<ProjectSummary[]>({ queryKey: ['all-projects'], queryFn: fetchAllProjects });
 }

@@ -9,17 +9,20 @@ import { serializeBusinessVerticals } from '@/lib/businessVerticals';
 // Enforces the business rule that each selected Vertical must be an
 // existing Vertical (matching the same master list /api/verticals already
 // offers the picker) before writing serializeBusinessVerticals's JSON.
-// Throws on an empty selection or any name that doesn't match a real
-// Vertical row — callers catch and turn this into a 400, same pattern as
-// resolveLeadCountryFields.
-export async function resolveBusinessVerticals(names: unknown): Promise<string> {
+// Business Vertical is no longer collected on the Lead/Customer Add/Edit
+// forms (removed per product request — see CustomerFormDrawer/
+// LeadFormDrawer), so an empty/missing selection is accepted and resolves
+// to null rather than erroring; a name that doesn't match a real Vertical
+// row still throws — callers catch and turn this into a 400, same pattern
+// as resolveLeadCountryFields.
+export async function resolveBusinessVerticals(names: unknown): Promise<string | null> {
   if (!Array.isArray(names) || names.length === 0) {
-    throw new Error('Business vertical is required');
+    return null;
   }
 
   const cleaned = Array.from(new Set(names.map((n) => String(n).trim()).filter(Boolean)));
   if (cleaned.length === 0) {
-    throw new Error('Business vertical is required');
+    return null;
   }
 
   const existing = await prisma.vertical.findMany({ where: { name: { in: cleaned } }, select: { name: true } });
@@ -29,5 +32,5 @@ export async function resolveBusinessVerticals(names: unknown): Promise<string> 
     throw new Error(`Unknown business vertical: ${unknownNames.join(', ')}`);
   }
 
-  return serializeBusinessVerticals(cleaned) as string;
+  return serializeBusinessVerticals(cleaned);
 }

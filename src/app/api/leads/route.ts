@@ -9,6 +9,7 @@ import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
 import { isFollowUpOverdue } from '@/lib/leadFollowUp';
 import { requirePermission, getOwnershipFilter } from '@/lib/rbac';
 import { dispatchDeadlineReminders } from '@/lib/deadlineReminders';
+import { isValidEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +57,13 @@ export async function GET(request: NextRequest) {
     // is excluded here — a genuinely-converted Lead (status reached
     // CONFIRMED via the pipeline) is not.
     const excludeDirectCustomers = searchParams.get('excludeDirectCustomers') === 'true';
+    // Opt-in, passed only by the Customers page's own listing — joins each
+    // row's most-recently-created Implementation (Stage/Status shown/edited
+    // inline there, reusing the exact same values/UI as the Implementations
+    // module — see src/lib/implementationStatus.ts) without adding an
+    // unnecessary extra join to every other caller of this endpoint.
+    const includeImplementation = searchParams.get('includeImplementation') === 'true';
+    const implementationStatus = searchParams.get('implementationStatus') || '';
 
     // Build where clause
     const where: Prisma.LeadWhereInput = {};
@@ -103,6 +111,11 @@ export async function GET(request: NextRequest) {
       // own recording origin.
       AND.push({ activities: { none: { activityType: 'CREATED', description: { startsWith: 'Customer created for company:' } } } });
     }
+    if (implementationStatus) {
+      // Matches the Implementations module's own filter semantics
+      // (status.toUpperCase(), exact match) — see src/app/api/implementations/route.ts.
+      AND.push({ implementations: { some: { status: implementationStatus.toUpperCase() } } });
+    }
 
     // Ownership data-scope boundary — a Business Analyst / Sales rep sees
     // only leads assigned to them (plus unassigned ones); see
@@ -114,7 +127,7 @@ export async function GET(request: NextRequest) {
     if (AND.length > 0) where.AND = AND;
 
     // Validate sort field
-    const validSortFields = ['companyName', 'contactPerson', 'email', 'status', 'leadSource', 'createdAt', 'updatedAt', 'lastFollowUpDate', 'nextFollowUpDate'];
+    const validSortFields = ['companyName', 'contactPerson', 'email', 'status', 'leadSource', 'createdAt', 'confirmedAt', 'updatedAt', 'lastFollowUpDate', 'nextFollowUpDate'];
     const orderField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const orderDir = sortDir === 'asc' ? 'asc' : 'desc';
 
@@ -127,6 +140,13 @@ export async function GET(request: NextRequest) {
         include: {
           assignedBa: { select: { firstName: true, lastName: true } },
           countryRef: { select: { isoCode: true, countryName: true, flagEmoji: true } },
+          ...(includeImplementation && {
+            implementations: {
+              orderBy: { createdAt: 'desc' as const },
+              take: 1,
+              select: { id: true, status: true, currentStage: true },
+            },
+          }),
         },
       }),
       prisma.lead.count({ where }),
@@ -139,6 +159,7 @@ export async function GET(request: NextRequest) {
       contactPerson: lead.contactPerson,
       designation: lead.designation,
       email: lead.email,
+      financeEmail: lead.financeEmail,
       mobile: lead.mobile,
       whatsapp: lead.whatsapp,
       status: lead.status,
@@ -150,11 +171,29 @@ export async function GET(request: NextRequest) {
       country: lead.countryRef,
       state: lead.state,
       createdAt: lead.createdAt,
+      // Customer module's "Created"/"Customer Since" date — see
+      // schema.prisma's Lead.confirmedAt comment. Additive alongside
+      // createdAt (left untouched) so the Leads module's own "Created"
+      // column, which must keep showing the Lead's original creation date,
+      // is unaffected.
+      confirmedAt: lead.confirmedAt,
       updatedAt: lead.updatedAt,
       lastFollowUpDate: lead.lastFollowUpDate,
       nextFollowUpDate: lead.nextFollowUpDate,
       followUpCount: lead.followUpCount,
       isOverdue: isFollowUpOverdue(lead.nextFollowUpDate, lead.status),
+      // Only present when includeImplementation=true was passed (see above)
+      // — this row's most-recently-created Implementation, or null if it
+      // has none yet. `as any` since the include is conditional at runtime.
+      ...(includeImplementation && {
+        implementation: (lead as any).implementations?.[0]
+          ? {
+              id: (lead as any).implementations[0].id,
+              status: (lead as any).implementations[0].status,
+              currentStage: (lead as any).implementations[0].currentStage,
+            }
+          : null,
+      }),
     }));
 
     return NextResponse.json({
@@ -181,8 +220,17 @@ export async function POST(request: NextRequest) {
     if (!body.countryId) {
       return NextResponse.json({ message: 'Country is required' }, { status: 400 });
     }
+    // Dedicated recipient for payment reminders — required on every Lead,
+    // not just once it becomes a Customer. See schema.prisma's
+    // Lead.financeEmail comment.
+    if (!body.financeEmail) {
+      return NextResponse.json({ message: 'Finance email is required' }, { status: 400 });
+    }
+    if (!isValidEmail(body.financeEmail)) {
+      return NextResponse.json({ message: 'Enter a valid finance email address' }, { status: 400 });
+    }
 
-    let businessVerticals: string;
+    let businessVerticals: string | null;
     try {
       businessVerticals = await resolveBusinessVerticals(body.businessVerticals);
     } catch (e: any) {
@@ -213,6 +261,7 @@ export async function POST(request: NextRequest) {
         mobile: body.mobile || null,
         whatsapp: body.whatsapp || null,
         email: body.email || null,
+        financeEmail: body.financeEmail,
         country: countryFields.country,
         countryId: countryFields.countryId,
         currencyCode: countryFields.currencyCode,

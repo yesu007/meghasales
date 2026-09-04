@@ -20,6 +20,9 @@ async function fetchLeadSources(): Promise<LeadSourceRow[]> {
   return res.json();
 }
 
+// No separate `code` field anywhere in this form — code always mirrors
+// name, kept in sync server-side on both create and update (see POST/PATCH
+// /api/lead-sources).
 const blankForm = { name: '' };
 
 export default function LeadSourcesPage() {
@@ -168,7 +171,6 @@ export default function LeadSourcesPage() {
                   <tr key={s.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800">{s.name}</p>
-                      <p className="text-xs text-slate-400">{s.code}</p>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
