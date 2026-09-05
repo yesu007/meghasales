@@ -17,6 +17,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         assignedTo: { select: { firstName: true, lastName: true } },
         package: { select: { name: true } },
         project: { select: { projectName: true } },
+        product: { select: { productName: true } },
         vertical: { select: { name: true } },
         head: { select: { firstName: true, lastName: true } },
       },
@@ -39,12 +40,23 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.demo.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Demo not found' }, { status: 404 });
 
+    // A demo is for a Project or a Product, never both — only trips when
+    // this request's own body carries both as truthy (the form's own
+    // disabled fields keep it from ever happening once created anyway).
+    if (body.projectId && body.productId) {
+      return NextResponse.json({ message: 'Select either a Project or a Product, not both' }, { status: 400 });
+    }
     // A picked Project must actually belong to this demo's lead (leadId
     // can't change from here — see the form's own disabled Lead field) —
     // same check as POST.
     if (body.projectId) {
       const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+    // Same check for a picked Product.
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: parseInt(body.productId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
+      if (!product) return NextResponse.json({ message: 'Selected product does not belong to this lead' }, { status: 400 });
     }
 
     // Same server-derived Head rule as POST — see this route's own comment
@@ -62,6 +74,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.demoType && { demoType: body.demoType }),
         ...(body.packageId !== undefined && { packageId: body.packageId ? parseInt(body.packageId) : null }),
         ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
+        ...(body.productId !== undefined && { productId: body.productId ? parseInt(body.productId) : null }),
         ...(vertical && { verticalId: vertical.id, headId: vertical.headId }),
         ...(body.status && { status: body.status }),
         ...(body.scheduledDate !== undefined && { scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : null }),

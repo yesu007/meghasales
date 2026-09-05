@@ -221,6 +221,11 @@ export default function LeadsPage() {
     if (!data) { toast.error('Failed to load lead'); return; }
     setForm(data);
     setEditingId(id);
+    // Guards against a still-open drawer's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeDrawer
+    // already clears this on the normal Cancel/X path, this is just defense
+    // in depth.
+    setFormErrors({});
     setDrawerOpen(true);
   };
 

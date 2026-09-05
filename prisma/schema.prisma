@@ -115,6 +115,7 @@ model User {
   revisedExpenseBudgets  ExpenseBudgetRevision[] @relation("ExpenseBudgetRevisedBy")
   headOfVerticals        Vertical[]              @relation("VerticalHead")
   headOfProjects         Project[]               @relation("ProjectHead")
+  headOfProducts         Product[]               @relation("ProductHead")
   headOfImplementations  Implementation[]        @relation("ImplementationHead")
   headOfDemos            Demo[]                  @relation("DemoHead")
   createdCompanies       Company[]               @relation("CompanyCreatedBy")
@@ -195,10 +196,10 @@ model CompanyLegalEntity {
 // ============================================================
 
 model Lead {
-  id                    Int      @id @default(autoincrement())
-  companyName           String   @map("company_name")
-  projectName           String?  @map("project_name")
-  contactPerson         String   @map("contact_person")
+  id                    Int       @id @default(autoincrement())
+  companyName           String    @map("company_name")
+  projectName           String?   @map("project_name")
+  contactPerson         String    @map("contact_person")
   designation           String? // contact person's role/title
   mobile                String?
   whatsapp              String? // WhatsApp contact number — separate from `mobile` since they often differ
@@ -210,7 +211,7 @@ model Lead {
   // Leads never collect it. Deliberately separate from `email` above:
   // that's the contact person's general email, this is specifically who
   // should receive payment reminders — see dispatchDeadlineReminders.
-  financeEmail          String?  @map("finance_email")
+  financeEmail          String?   @map("finance_email")
   country               String?
   state                 String?
   city                  String?
@@ -218,25 +219,25 @@ model Lead {
   // address/tax fields (see companyId/legalEntityId below): this is a plain
   // optional detail on the Lead/Customer itself, not tied to any specific
   // country's legal entity registration.
-  addressLine1          String?  @map("address_line1")
-  addressLine2          String?  @map("address_line2")
-  countryId             Int?     @map("country_id")
-  currencyCode          String?  @map("currency_code")
-  currencySymbol        String?  @map("currency_symbol")
-  taxType               String?  @map("tax_type")
+  addressLine1          String?   @map("address_line1")
+  addressLine2          String?   @map("address_line2")
+  countryId             Int?      @map("country_id")
+  currencyCode          String?   @map("currency_code")
+  currencySymbol        String?   @map("currency_symbol")
+  taxType               String?   @map("tax_type")
   // Optional link to the Customer Company Master — which real-world company
   // this deal belongs to, and (if set) which of that company's per-country
   // legal entities it's specifically with. Both stay optional: existing
   // Leads/Customers keep working exactly as before via their own
   // companyName/country/state/city fields when neither is set.
-  companyId             Int?     @map("company_id")
-  legalEntityId         Int?     @map("legal_entity_id")
-  jewelleryBusinessType String?  @map("jewellery_business_type")
-  numberOfBranches      Int?     @map("number_of_branches")
-  existingErp           String?  @map("existing_erp")
-  leadSource            String   @map("lead_source")
-  assignedBaId          Int?     @map("assigned_ba_id")
-  status                String   @default("NEW")
+  companyId             Int?      @map("company_id")
+  legalEntityId         Int?      @map("legal_entity_id")
+  jewelleryBusinessType String?   @map("jewellery_business_type")
+  numberOfBranches      Int?      @map("number_of_branches")
+  existingErp           String?   @map("existing_erp")
+  leadSource            String    @map("lead_source")
+  assignedBaId          Int?      @map("assigned_ba_id")
+  status                String    @default("NEW")
   // Lifecycle status once a Lead has become a Customer (status=CONFIRMED) —
   // ACTIVE | INACTIVE | ON_HOLD (see src/lib/customerStatus.ts). Deliberately
   // a separate field from `status` above: `status` is the lead pipeline
@@ -244,7 +245,7 @@ model Lead {
   // while this tracks whether an already-converted customer is currently
   // doing business with us. Defaults to ACTIVE for every row, but is only
   // surfaced/editable on the Customers page.
-  customerStatus        String   @default("ACTIVE") @map("customer_status")
+  customerStatus        String    @default("ACTIVE") @map("customer_status")
   // The moment this Lead's status actually transitioned to CONFIRMED (i.e.
   // became a Customer) — set alongside the LEAD_CONFIRMED LeadActivity in
   // PUT /api/leads/[id], and at creation time for customers created
@@ -260,11 +261,11 @@ model Lead {
   // hold a JSON-encoded single name, e.g. '"Retail Jewellery"' — that
   // helper reads both shapes as an array, so no migration was needed to add
   // multi-select and no historical single-vertical data was lost.
-  businessVerticals     String?  @map("business_verticals")
+  businessVerticals     String?   @map("business_verticals")
   notes                 String?
-  createdById           Int?     @map("created_by")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  createdById           Int?      @map("created_by")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
   // Denormalized follow-up tracking (kept in sync whenever a LeadFollowUp is
   // logged) so the leads list can filter/sort on "last contacted" and flag
@@ -298,6 +299,11 @@ model Lead {
   projectsAsLead     Project[]           @relation("ProjectLead")
   projectId          Int?                @map("project_id")
   linkedProject      Project?            @relation("LeadProjectLink", fields: [projectId], references: [id])
+  // Same shape as the Project relations directly above, for Product Master
+  // (see the Product model's own comment) — a separate master, not a
+  // sub-type of Project, so it gets its own customer/lead relation pair.
+  productsAsCustomer Product[]           @relation("ProductCustomer")
+  productsAsLead     Product[]           @relation("ProductLead")
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, not
   // read/written by any Lead-owned page or API.
@@ -367,6 +373,11 @@ model Demo {
   // projects related to the selected Lead/Customer, same convention as
   // Quotation.projectId/Implementation.projectId below.
   projectId             Int?      @map("project_id")
+  // Same shape/convention as projectId above, but for Product Master's own
+  // "Product" picker next to Project — mutually exclusive with projectId
+  // (enforced in the API, not here — see POST/PUT /api/demos), same
+  // convention as Quotation/Implementation's own projectId/productId pair.
+  productId             Int?      @map("product_id")
   assignedToId          Int?      @map("assigned_to")
   scheduledDate         DateTime? @map("scheduled_date")
   timezone              String?   @default("Asia/Kolkata") @map("timezone")
@@ -384,13 +395,13 @@ model Demo {
   // Same "Next Follow-up" field/behavior as Lead.nextFollowUpDate — directly
   // editable from the Demos list table, same convention.
   nextFollowUpDate      DateTime? @map("next_follow_up_date")
-  // Business Vertical this demo is for — a manual, independent pick from
-  // the Vertical Master (never inferred from the selected Lead/Customer's
-  // own businessVerticals, and never restricted by it — see the New Demo
-  // Project form's own comment). headId is a snapshot of Vertical.headId
-  // taken at the moment verticalId is set, same convention as
-  // Project.headId above — never taken from the client, and left null
-  // (handled as "Unassigned" in the UI) when the vertical has no head.
+  // Business Vertical this demo is for — auto-derived client-side from
+  // whichever of Project/Product is selected (see the New Demo Project
+  // form's own effect), same convention as Implementation.verticalId.
+  // headId is a snapshot of Vertical.headId taken at the moment verticalId
+  // is set, same convention as Project.headId above — never taken from the
+  // client, and left null (handled as "Unassigned" in the UI) when the
+  // vertical has no head.
   verticalId            Int?      @map("vertical_id")
   headId                Int?      @map("head_id")
   createdAt             DateTime  @default(now()) @map("created_at")
@@ -400,10 +411,12 @@ model Demo {
   assignedTo User?     @relation(fields: [assignedToId], references: [id])
   package    Package?  @relation(fields: [packageId], references: [id])
   project    Project?  @relation(fields: [projectId], references: [id])
+  product    Product?  @relation(fields: [productId], references: [id])
   vertical   Vertical? @relation(fields: [verticalId], references: [id])
   head       User?     @relation("DemoHead", fields: [headId], references: [id])
 
   @@index([projectId])
+  @@index([productId])
   @@index([nextFollowUpDate])
   @@index([verticalId])
   @@map("demos")
@@ -678,17 +691,27 @@ model Quotation {
   marginPercent         Decimal? @map("margin_percent") @db.Decimal(5, 2)
   calculatedTotalAmount Decimal? @map("calculated_total_amount") @db.Decimal(15, 2)
   totalAmountOverridden Boolean  @default(false) @map("total_amount_overridden")
+  // Which Product master row this quotation is a Budget Estimation for —
+  // same shape/convention as projectId above, just for Product Master's own
+  // "Budget Estimation"/"+ New Estimation" actions (which open this same
+  // Quotation form, not the Calculator — see ProductBudgetPanel's own
+  // comment for why). Independent of projectId; a quotation is never
+  // required to have either, and in practice only one of the two is set
+  // per quotation depending on which module's accordion created it.
+  productId             Int?     @map("product_id")
 
   lead              Lead                        @relation(fields: [leadId], references: [id], onDelete: Cascade)
   vertical          Vertical?                   @relation(fields: [verticalId], references: [id])
   legalEntity       CompanyLegalEntity?         @relation(fields: [legalEntityId], references: [id])
   project           Project?                    @relation(fields: [projectId], references: [id])
+  product           Product?                    @relation(fields: [productId], references: [id])
   invoices          Invoice[]
   revisions         QuotationRevision[]
   paymentMilestones QuotationPaymentMilestone[]
 
   @@index([legalEntityId])
   @@index([projectId])
+  @@index([productId])
   @@map("quotations")
 }
 
@@ -774,6 +797,11 @@ model Implementation {
   // projectName TEXT column above is left untouched (kept in sync from the
   // selected project for display purposes) rather than removed.
   projectId        Int?      @map("project_id")
+  // Same shape as projectId above, for Product Master's own Status/Stage
+  // columns (see the Customer main table's CustomerProductsPanel) — a
+  // Product has no other linked record to read/write these through, same
+  // as Project relies on this Implementation relation for the same thing.
+  productId        Int?      @map("product_id")
   // Business Vertical picked manually on this implementation's own form —
   // deliberately independent of the Lead's own (possibly multi-valued)
   // businessVerticals and of Project.verticalId; neither auto-fills this.
@@ -802,6 +830,7 @@ model Implementation {
   lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
   projectManager User?     @relation("ProjectManager", fields: [projectManagerId], references: [id])
   project        Project?  @relation(fields: [projectId], references: [id])
+  product        Product?  @relation(fields: [productId], references: [id])
   vertical       Vertical? @relation(fields: [verticalId], references: [id])
   head           User?     @relation("ImplementationHead", fields: [headId], references: [id])
 
@@ -810,6 +839,7 @@ model Implementation {
   customerContracts CustomerContract[]
 
   @@index([projectId])
+  @@index([productId])
   @@index([verticalId])
   @@map("implementations")
 }
@@ -1191,15 +1221,15 @@ model Employee {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  user              User?                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  manager           Employee?                   @relation("EmployeeManager", fields: [managerId], references: [id])
-  directReports     Employee[]                  @relation("EmployeeManager")
-  vertical          Vertical?                   @relation(fields: [verticalId], references: [id])
-  salaryAssignments SalaryStructureAssignment[]
-  payslips          Payslip[]
-  leaveRequests     LeaveRequest[]
-  loans             Loan[]
-  timesheetEntries  TimesheetEntry[]
+  user                User?                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manager             Employee?                    @relation("EmployeeManager", fields: [managerId], references: [id])
+  directReports       Employee[]                   @relation("EmployeeManager")
+  vertical            Vertical?                    @relation(fields: [verticalId], references: [id])
+  salaryAssignments   SalaryStructureAssignment[]
+  payslips            Payslip[]
+  leaveRequests       LeaveRequest[]
+  loans               Loan[]
+  timesheetEntries    TimesheetEntry[]
   verticalAllocations EmployeeVerticalAllocation[]
 
   @@map("employees")
@@ -1841,6 +1871,10 @@ model Expense {
   // "optional FK, null when not applicable" convention as Demo.projectId /
   // Implementation.projectId.
   projectId       Int?      @map("project_id")
+  // Same shape as projectId above, for a Product Expense (the create
+  // form's own Overall / Project / Product Expense toggle) — null means
+  // not a Product Expense, same convention.
+  productId       Int?      @map("product_id")
   expenseDate     DateTime  @map("expense_date")
   amount          Decimal   @db.Decimal(14, 2)
   currencyCode    String    @default("INR") @map("currency_code")
@@ -1865,6 +1899,7 @@ model Expense {
   recordedBy  User?               @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
   vendorLead  Lead?               @relation("ExpenseVendor", fields: [vendorLeadId], references: [id])
   project     Project?            @relation(fields: [projectId], references: [id])
+  product     Product?            @relation(fields: [productId], references: [id])
 
   @@index([status])
   @@index([categoryId])
@@ -1872,6 +1907,7 @@ model Expense {
   @@index([expenseDate])
   @@index([vendorLeadId])
   @@index([projectId])
+  @@index([productId])
   @@map("expenses")
 }
 
@@ -1906,6 +1942,7 @@ model Vertical {
   quotations      Quotation[]
   employees       Employee[]
   projects        Project[]
+  products        Product[]
   allocations     EmployeeVerticalAllocation[]
   implementations Implementation[]
   demos           Demo[]
@@ -1957,6 +1994,55 @@ model Project {
   @@index([leadId])
   @@index([verticalId])
   @@map("projects")
+}
+
+// Product master — under Masters alongside Project, same shape and same
+// admin-managed-list convention: a Customer (Lead) + Vertical pairing with
+// a responsible Head and Budget. A separate master from Project (its own
+// table, own relations), not a sub-type of it, even though the fields
+// mirror it exactly — kept independent so a later Product-specific need
+// (e.g. its own linked Quotations/Demos) doesn't have to retrofit onto
+// Project's own relations. Soft-deleted (isActive) rather than
+// hard-deleted, same convention as Project/Vertical.
+model Product {
+  id                 Int      @id @default(autoincrement())
+  productName        String   @map("product_name")
+  // Exactly one of customerId/leadId is set — enforced in the API, not here
+  // (see POST/PATCH /api/products), same convention as Project.
+  customerId         Int?     @map("customer_id")
+  // Optional, independent reference to a Lead row — same rationale as
+  // Project.leadId.
+  leadId             Int?     @map("lead_id")
+  verticalId         Int      @map("vertical_id")
+  headId             Int?     @map("head_id")
+  budget             Decimal? @db.Decimal(15, 2)
+  budgetCurrencyCode String?  @default("INR") @map("budget_currency_code")
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  customer        Lead?            @relation("ProductCustomer", fields: [customerId], references: [id])
+  lead            Lead?            @relation("ProductLead", fields: [leadId], references: [id])
+  vertical        Vertical         @relation(fields: [verticalId], references: [id])
+  head            User?            @relation("ProductHead", fields: [headId], references: [id])
+  // Reverse side of Quotation.productId — Product Master's own "Budget
+  // Estimation" panel (see ProductBudgetPanel).
+  quotations      Quotation[]
+  // Reverse side of Implementation.productId — the Customer main table's
+  // own Status/Stage columns (CustomerProductsPanel), same convention as
+  // Project's own implementations relation.
+  implementations Implementation[]
+  // Reverse side of Expense.productId — the Expenses module's own Product
+  // Expenses tab, same convention as Project's own expenses relation.
+  expenses        Expense[]
+  // Reverse side of Demo.productId — the Demo module's own Project/Product
+  // picker, same convention as Project's own demos relation.
+  demos           Demo[]
+
+  @@index([customerId])
+  @@index([leadId])
+  @@index([verticalId])
+  @@map("products")
 }
 
 // The package/offering being demoed — Trading, Jewellery Manufacturing,

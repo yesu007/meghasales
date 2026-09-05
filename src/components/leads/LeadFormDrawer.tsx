@@ -143,6 +143,12 @@ export default function LeadFormDrawer({
   const { data: projectOptions = [] } = useQuery({ queryKey: ['projects-for-lead-link'], queryFn: fetchProjectOptions });
   const sources = useLeadSources();
 
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — validateLeadForm only runs again on the next
+  // submit, so without this a message set by a failed submit attempt would
+  // otherwise keep showing even after the field now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
   const handleCountryChange = (country: Country) => {
     setForm((f) => ({
       ...f,
@@ -152,6 +158,7 @@ export default function LeadFormDrawer({
       taxType: country.defaultTaxType,
       taxPercentage: country.defaultTaxPercentage,
     }));
+    clearFieldError('countryId');
   };
 
   const handleClose = () => { setFormErrors({}); onClose(); };
@@ -181,7 +188,7 @@ export default function LeadFormDrawer({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Company Name *</label>
-                        <input value={form.companyName} onChange={(e) => setForm(f => ({...f, companyName: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />
+                        <input value={form.companyName} onChange={(e) => { setForm(f => ({...f, companyName: e.target.value})); clearFieldError('companyName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />
                         {formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}
                       </div>
                       <div>
@@ -193,7 +200,7 @@ export default function LeadFormDrawer({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person *</label>
-                        <input value={form.contactPerson} onChange={(e) => setForm(f => ({...f, contactPerson: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.contactPerson ? 'border-red-400' : 'border-slate-300'}`} />
+                        <input value={form.contactPerson} onChange={(e) => { setForm(f => ({...f, contactPerson: e.target.value})); clearFieldError('contactPerson'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.contactPerson ? 'border-red-400' : 'border-slate-300'}`} />
                         {formErrors.contactPerson && <p className="text-xs text-red-600 mt-1">{formErrors.contactPerson}</p>}
                       </div>
                       <div>
@@ -207,16 +214,19 @@ export default function LeadFormDrawer({
                         <label className="block text-sm font-medium text-slate-700 mb-1">Mobile *</label>
                         <input
                           value={form.mobile}
-                          onChange={(e) => setForm(f => {
+                          onChange={(e) => {
                             const mobile = e.target.value;
                             // WhatsApp defaults from Mobile as you type, same as the
                             // BRD's "may default from Contact Number" — but only while
                             // it hasn't diverged (still empty, or still tracking the old
                             // Mobile value). The moment someone edits WhatsApp directly,
                             // it's a deliberate override and Mobile edits stop touching it.
-                            const whatsappTracksMobile = f.whatsapp === '' || f.whatsapp === f.mobile;
-                            return { ...f, mobile, ...(whatsappTracksMobile && { whatsapp: mobile }) };
-                          })}
+                            setForm(f => {
+                              const whatsappTracksMobile = f.whatsapp === '' || f.whatsapp === f.mobile;
+                              return { ...f, mobile, ...(whatsappTracksMobile && { whatsapp: mobile }) };
+                            });
+                            clearFieldError('mobile');
+                          }}
                           className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.mobile ? 'border-red-400' : 'border-slate-300'}`}
                         />
                         {formErrors.mobile && <p className="text-xs text-red-600 mt-1">{formErrors.mobile}</p>}
@@ -236,12 +246,12 @@ export default function LeadFormDrawer({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Finance Email ID *</label>
-                        <input type="email" value={form.financeEmail} onChange={(e) => setForm(f => ({...f, financeEmail: e.target.value}))} placeholder="For payment reminders" className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.financeEmail ? 'border-red-400' : 'border-slate-300'}`} />
+                        <input type="email" value={form.financeEmail} onChange={(e) => { setForm(f => ({...f, financeEmail: e.target.value})); clearFieldError('financeEmail'); }} placeholder="For payment reminders" className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.financeEmail ? 'border-red-400' : 'border-slate-300'}`} />
                         {formErrors.financeEmail && <p className="text-xs text-red-600 mt-1">{formErrors.financeEmail}</p>}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Lead Source *</label>
-                        <select value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
+                        <select value={form.leadSource} onChange={(e) => { setForm(f => ({...f, leadSource: e.target.value})); clearFieldError('leadSource'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
                           <option value="">Select</option>
                           {sources.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
                         </select>

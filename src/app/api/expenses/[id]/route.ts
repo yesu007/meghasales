@@ -81,6 +81,17 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       }
     }
 
+    let productId: number | null | undefined = undefined;
+    if (body.productId !== undefined) {
+      if (body.productId === null || body.productId === '') {
+        productId = null;
+      } else {
+        const product = await prisma.product.findUnique({ where: { id: parseInt(body.productId) } });
+        if (!product) return NextResponse.json({ message: 'Selected product not found' }, { status: 404 });
+        productId = product.id;
+      }
+    }
+
     const nextStatus = body.status !== undefined ? body.status : existing.status;
     const expense = await prisma.expense.update({
       where: { id },
@@ -89,6 +100,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(subCategoryId !== undefined && { subCategoryId }),
         ...(vendorUpdate !== undefined && vendorUpdate),
         ...(projectId !== undefined && { projectId }),
+        ...(productId !== undefined && { productId }),
         ...(body.expenseDate !== undefined && { expenseDate: new Date(body.expenseDate) }),
         ...(body.amount !== undefined && { amount: Number(body.amount) }),
         ...(body.currencyCode !== undefined && { currencyCode: body.currencyCode }),

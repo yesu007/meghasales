@@ -7,6 +7,7 @@ import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, EyeIcon, 
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
+import { invalidateExpenseData } from '@/lib/queryInvalidation';
 
 interface ExpenseSubCategory { id: number; categoryId: number; name: string; isActive: boolean }
 interface ExpenseCategory { id: number; name: string; description: string | null; isActive: boolean; subCategories: ExpenseSubCategory[] }
@@ -23,6 +24,9 @@ interface CustomerOption { id: number; companyName: string; contactPerson: strin
 // selected — same GET /api/projects (default isActive: true) used by the
 // Lead/Demo project pickers.
 interface ProjectOption { id: number; projectName: string }
+// Same, for the "Product Expense" toggle — GET /api/products (default
+// isActive: true).
+interface ProductOption { id: number; productName: string }
 interface ExpenseRow {
   id: number;
   expenseNumber: string;
@@ -33,6 +37,7 @@ interface ExpenseRow {
   vendor: string | null;
   vendorLeadId: number | null;
   projectId: number | null;
+  productId: number | null;
   expenseDate: string;
   amount: string;
   currencyCode: string;
@@ -141,11 +146,12 @@ function AddableSelect({
   );
 }
 
-async function fetchExpenses(status: string, expenseType: string, projectId: string, page: number, size: number): Promise<ExpenseListResponse> {
+async function fetchExpenses(status: string, expenseType: string, projectId: string, productId: string, page: number, size: number): Promise<ExpenseListResponse> {
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (status) params.set('status', status);
   if (expenseType) params.set('expenseType', expenseType);
   if (projectId) params.set('projectId', projectId);
+  if (productId) params.set('productId', productId);
   const res = await fetch(`/api/expenses?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch expenses');
   return res.json();
@@ -174,6 +180,11 @@ async function fetchProjects(): Promise<ProjectOption[]> {
   if (!res.ok) throw new Error('Failed to fetch projects');
   return res.json();
 }
+async function fetchProducts(): Promise<ProductOption[]> {
+  const res = await fetch('/api/products');
+  if (!res.ok) throw new Error('Failed to fetch products');
+  return res.json();
+}
 async function fetchCategoryLinks(): Promise<CategoryLink[]> {
   const res = await fetch('/api/expenses/category-links');
   if (!res.ok) throw new Error('Failed to fetch category links');
@@ -184,7 +195,7 @@ async function fetchCategoryLinks(): Promise<CategoryLink[]> {
 }
 
 const blankForm = {
-  categoryId: '', subCategoryId: '', vendorLeadId: '', expenseType: 'OVERALL' as 'OVERALL' | 'PROJECT', projectId: '',
+  categoryId: '', subCategoryId: '', vendorLeadId: '', expenseType: 'OVERALL' as 'OVERALL' | 'PROJECT' | 'PRODUCT', projectId: '', productId: '',
   expenseDate: dayjs().format('YYYY-MM-DD'), amount: '', currencyCode: 'INR',
   exchangeRate: '', paymentMethod: '', referenceNumber: '', notes: '', status: 'PENDING',
 };
@@ -192,12 +203,12 @@ const blankForm = {
 export default function ExpensesPage() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('');
-  // Top-level Overall Expenses / Project Expenses tabs — independent of the
-  // status filter below (payment status vs. whether the expense has a
-  // Project), same split as the create form's own Expense Type toggle.
-  // Defaults to Overall, same "first tab is the default" convention as the
-  // Leads/Implementations modules' own tabs.
-  const [expenseTypeFilter, setExpenseTypeFilter] = useState<'OVERALL' | 'PROJECT'>('OVERALL');
+  // Top-level Overall Expenses / Project Expenses / Product Expenses tabs —
+  // independent of the status filter below (payment status vs. whether the
+  // expense has a Project or Product), same split as the create form's own
+  // Expense Type toggle. Defaults to Overall, same "first tab is the
+  // default" convention as the Leads/Implementations modules' own tabs.
+  const [expenseTypeFilter, setExpenseTypeFilter] = useState<'OVERALL' | 'PROJECT' | 'PRODUCT'>('OVERALL');
   // Narrows the Project Expenses tab to one Project via the project tabs
   // rendered below the status tabs — '' means "All Projects" (still scoped
   // to expenseTypeFilter=PROJECT, so still no Overall Expenses mixed in).
@@ -205,6 +216,8 @@ export default function ExpensesPage() {
   // projectId param), never by project name. Meaningless for the Overall
   // tab, so cleared whenever that tab is picked.
   const [projectFilter, setProjectFilter] = useState('');
+  // Same, for the Product Expenses tab.
+  const [productFilter, setProductFilter] = useState('');
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [showForm, setShowForm] = useState(false);
@@ -244,7 +257,16 @@ export default function ExpensesPage() {
     return () => clearTimeout(t);
   }, [projectSearchInput]);
 
-  const { data, isLoading } = useQuery({ queryKey: ['expenses', statusFilter, expenseTypeFilter, projectFilter, page, size], queryFn: () => fetchExpenses(statusFilter, expenseTypeFilter, projectFilter, page, size) });
+  // Product tabs search — same convention as the Project tabs search above,
+  // for the Product Expenses tab.
+  const [productSearchInput, setProductSearchInput] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setProductSearch(productSearchInput), 400);
+    return () => clearTimeout(t);
+  }, [productSearchInput]);
+
+  const { data, isLoading } = useQuery({ queryKey: ['expenses', statusFilter, expenseTypeFilter, projectFilter, productFilter, page, size], queryFn: () => fetchExpenses(statusFilter, expenseTypeFilter, projectFilter, productFilter, page, size) });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
   const { data: categoryLinks = [] } = useQuery({ queryKey: ['expense-category-links'], queryFn: fetchCategoryLinks });
@@ -259,6 +281,10 @@ export default function ExpensesPage() {
   const filteredProjects = projectSearch
     ? projects.filter((p) => p.projectName.toLowerCase().includes(projectSearch.trim().toLowerCase()))
     : projects;
+  const { data: products = [] } = useQuery({ queryKey: ['products-for-expense'], queryFn: fetchProducts });
+  const filteredProducts = productSearch
+    ? products.filter((p) => p.productName.toLowerCase().includes(productSearch.trim().toLowerCase()))
+    : products;
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
 
@@ -268,8 +294,9 @@ export default function ExpensesPage() {
       categoryId: String(row.categoryId),
       subCategoryId: row.subCategoryId ? String(row.subCategoryId) : '',
       vendorLeadId: row.vendorLeadId ? String(row.vendorLeadId) : '',
-      expenseType: row.projectId ? 'PROJECT' : 'OVERALL',
+      expenseType: row.projectId ? 'PROJECT' : row.productId ? 'PRODUCT' : 'OVERALL',
       projectId: row.projectId ? String(row.projectId) : '',
+      productId: row.productId ? String(row.productId) : '',
       expenseDate: dayjs(row.expenseDate).format('YYYY-MM-DD'),
       amount: row.amount,
       currencyCode: row.currencyCode,
@@ -286,17 +313,21 @@ export default function ExpensesPage() {
     mutationFn: async () => {
       const url = editingId ? `/api/expenses/${editingId}` : '/api/expenses';
       const method = editingId ? 'PUT' : 'POST';
-      // expenseType is a client-only toggle (not a stored field) — when
-      // Overall is selected, projectId is force-cleared here regardless of
-      // whatever it was left at, so switching away from Project Expense
-      // can't leak a stale selection into the saved record.
+      // expenseType is a client-only toggle (not a stored field) — when a
+      // type isn't selected, its own FK is force-cleared here regardless of
+      // whatever it was left at, so switching away from Project/Product
+      // Expense can't leak a stale selection into the saved record.
       const { expenseType, ...rest } = form;
-      const payload = { ...rest, projectId: expenseType === 'PROJECT' ? form.projectId : '' };
+      const payload = {
+        ...rest,
+        projectId: expenseType === 'PROJECT' ? form.projectId : '',
+        productId: expenseType === 'PRODUCT' ? form.productId : '',
+      };
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save expense'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expenses'] }); toast.success(editingId ? 'Expense updated' : 'Expense recorded'); closeForm(); },
+    onSuccess: () => { invalidateExpenseData(queryClient); toast.success(editingId ? 'Expense updated' : 'Expense recorded'); closeForm(); },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -306,7 +337,7 @@ export default function ExpensesPage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to mark paid'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expenses'] }); toast.success('Marked as paid'); },
+    onSuccess: () => { invalidateExpenseData(queryClient); toast.success('Marked as paid'); },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -316,7 +347,7 @@ export default function ExpensesPage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to delete expense'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['expenses'] }); toast.success('Expense deleted'); },
+    onSuccess: () => { invalidateExpenseData(queryClient); toast.success('Expense deleted'); },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -446,13 +477,13 @@ export default function ExpensesPage() {
             <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Expenses</h1>
             <div className="overflow-x-auto">
               <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
-                {(['OVERALL', 'PROJECT'] as const).map((t) => (
+                {(['OVERALL', 'PROJECT', 'PRODUCT'] as const).map((t) => (
                   <button
                     key={t}
-                    onClick={() => { setExpenseTypeFilter(t); setProjectFilter(''); setPage(0); }}
+                    onClick={() => { setExpenseTypeFilter(t); setProjectFilter(''); setProductFilter(''); setPage(0); }}
                     className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${expenseTypeFilter === t ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
                   >
-                    {t === 'OVERALL' ? 'Overall Expenses' : 'Project Expenses'}
+                    {t === 'OVERALL' ? 'Overall Expenses' : t === 'PROJECT' ? 'Project Expenses' : 'Product Expenses'}
                   </button>
                 ))}
               </div>
@@ -484,6 +515,10 @@ export default function ExpensesPage() {
               toast.error('Select a project, or switch to Overall Expense');
               return;
             }
+            if (form.expenseType === 'PRODUCT' && !form.productId) {
+              toast.error('Select a product, or switch to Overall Expense');
+              return;
+            }
             save.mutate();
           }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
@@ -494,7 +529,7 @@ export default function ExpensesPage() {
             <div className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-1">
               <button
                 type="button"
-                onClick={() => setForm((f) => ({ ...f, expenseType: 'OVERALL', projectId: '' }))}
+                onClick={() => setForm((f) => ({ ...f, expenseType: 'OVERALL', projectId: '', productId: '' }))}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   form.expenseType === 'OVERALL' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
@@ -503,12 +538,21 @@ export default function ExpensesPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setForm((f) => ({ ...f, expenseType: 'PROJECT' }))}
+                onClick={() => setForm((f) => ({ ...f, expenseType: 'PROJECT', productId: '' }))}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   form.expenseType === 'PROJECT' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 Project Expense
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, expenseType: 'PRODUCT', projectId: '' }))}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  form.expenseType === 'PRODUCT' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Product Expense
               </button>
             </div>
           </div>
@@ -542,6 +586,15 @@ export default function ExpensesPage() {
                 <select value={form.projectId} onChange={(e) => setForm((f) => ({ ...f, projectId: e.target.value }))} className={inputCls}>
                   <option value="">Select project</option>
                   {projects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                </select>
+              </div>
+            )}
+            {form.expenseType === 'PRODUCT' && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                <select value={form.productId} onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value }))} className={inputCls}>
+                  <option value="">Select product</option>
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.productName}</option>)}
                 </select>
               </div>
             )}
@@ -599,7 +652,7 @@ export default function ExpensesPage() {
       )}
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-       <div className={expenseTypeFilter === 'PROJECT' ? 'flex flex-col md:flex-row' : ''}>
+       <div className={expenseTypeFilter !== 'OVERALL' ? 'flex flex-col md:flex-row' : ''}>
         {/* Project tabs — one section/tab per Project, sourced dynamically
             from the same fetchProjects() list the create form's Project
             dropdown uses, laid out as a vertical list (there are typically
@@ -653,6 +706,50 @@ export default function ExpensesPage() {
               ))}
               {projectSearch && filteredProjects.length === 0 && (
                 <p className="px-3 py-2 text-sm text-slate-400">No projects found</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Product tabs — same convention as the Project tabs above, for
+            the Product Expenses tab (fetchProducts() → GET /api/products,
+            same list the create form's Product dropdown uses). */}
+        {expenseTypeFilter === 'PRODUCT' && (
+          <div className="md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-slate-200 p-3 md:max-h-[600px] md:overflow-y-auto">
+            <p className="px-2 pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wide">Products</p>
+            <div className="relative mb-2">
+              <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search products..."
+                value={productSearchInput}
+                onChange={(e) => setProductSearchInput(e.target.value)}
+                className="w-full pl-8 pr-7 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              />
+              {productSearchInput && (
+                <button onClick={() => { setProductSearchInput(''); setProductSearch(''); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <XMarkIcon className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="flex flex-col gap-1 bg-slate-100 rounded-lg p-1">
+              <button
+                onClick={() => { setProductFilter(''); setPage(0); }}
+                className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium text-left whitespace-nowrap transition-colors ${productFilter === '' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+              >
+                All Products
+              </button>
+              {filteredProducts.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => { setProductFilter(String(p.id)); setPage(0); }}
+                  className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium text-left whitespace-nowrap transition-colors ${productFilter === String(p.id) ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+                >
+                  {p.productName}
+                </button>
+              ))}
+              {productSearch && filteredProducts.length === 0 && (
+                <p className="px-3 py-2 text-sm text-slate-400">No products found</p>
               )}
             </div>
           </div>

@@ -26,6 +26,7 @@ import { useLeadSources } from '@/hooks/useLeadSources';
 import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 import CustomerFormDrawer, { blankCustomerForm, type CustomerFormState } from '@/components/customers/CustomerFormDrawer';
 import CustomerProjectsPanel from '@/components/customers/CustomerProjectsPanel';
+import CustomerProductsPanel from '@/components/customers/CustomerProductsPanel';
 import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
 
 // Customers are Leads with status = CONFIRMED (labeled "Converted" — see
@@ -228,6 +229,11 @@ export default function CustomersPage() {
     setForm(data);
     setEditCustomerStatus(customers.find(c => c.id === id)?.customerStatus || 'ACTIVE');
     setEditingId(id);
+    // Guards against a still-open drawer's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeDrawer
+    // already clears this on the normal Cancel/X path, this is just defense
+    // in depth.
+    setFormErrors({});
     setDrawerOpen(true);
   };
 
@@ -438,6 +444,7 @@ export default function CustomersPage() {
                           <div className="overflow-hidden">
                             <div className={`px-6 ${isExpanded ? 'bg-amber-50/40 border-t border-amber-100' : 'bg-slate-50/60'}`}>
                               <CustomerProjectsPanel customerId={customer.id} enabled={isExpanded} />
+                              <CustomerProductsPanel customerId={customer.id} enabled={isExpanded} />
                             </div>
                           </div>
                         </div>

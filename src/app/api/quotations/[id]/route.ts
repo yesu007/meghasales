@@ -93,12 +93,27 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.quotation.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
 
+    // A quotation is for a Project or a Product, never both — same
+    // mutual-exclusion convention as Project/Product's own
+    // customerId/leadId check (see /api/projects, /api/products). Only
+    // trips when this request's own body carries both as truthy — a partial
+    // PUT that omits one entirely (e.g. updateStatus's {status}-only body)
+    // leaves it undefined here and is unaffected.
+    if (body.projectId && body.productId) {
+      return NextResponse.json({ message: 'Select either a Project or a Product, not both' }, { status: 400 });
+    }
     // A picked Project must actually belong to this quotation's lead (leadId
     // can't change from here — see the form's own locked client section) —
     // same check as /api/demos and /api/implementations.
     if (body.projectId) {
       const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+    // Same check for a picked Product (Product Master's own Budget
+    // Estimation flow — see ProductBudgetPanel).
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: parseInt(body.productId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
+      if (!product) return NextResponse.json({ message: 'Selected product does not belong to this lead' }, { status: 400 });
     }
 
     // Overriding the system-calculated total is a distinct, more sensitive
@@ -180,6 +195,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           ...(body.costingMode !== undefined && { costingMode: body.costingMode }),
           ...(body.projectName !== undefined && { projectName: body.projectName }),
           ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
+          ...(body.productId !== undefined && { productId: body.productId ? parseInt(body.productId) : null }),
           ...(body.verticalId !== undefined && { verticalId: body.verticalId ? parseInt(body.verticalId) : null }),
           ...(body.legalEntityId !== undefined && { legalEntityId: body.legalEntityId ? parseInt(body.legalEntityId) : null }),
           ...(body.resourceCostTotal !== undefined && { resourceCostTotal: body.resourceCostTotal }),

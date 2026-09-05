@@ -36,6 +36,12 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.implementation.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Implementation not found' }, { status: 404 });
 
+    // An implementation is for a Project or a Product, never both — only
+    // trips when this request's own body carries both as truthy (the form's
+    // own disabled fields keep it from ever happening once created anyway).
+    if (body.projectId && body.productId) {
+      return NextResponse.json({ message: 'Select either a Project or a Product, not both' }, { status: 400 });
+    }
     // A picked Project must actually belong to this implementation's lead
     // (leadId can't change from here — see the form's own disabled Lead
     // field) — same check as POST.
@@ -43,15 +49,22 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
     }
+    // Same check for a picked Product (CustomerProductsPanel).
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: parseInt(body.productId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
+      if (!product) return NextResponse.json({ message: 'Selected product does not belong to this lead' }, { status: 400 });
+    }
 
-    // Business Vertical can be changed post-creation (Source Type/Lead/
-    // Project still can't — see their own disabled form fields), same
-    // "pick a Vertical, derive Head server-side from it" rule as POST.
-    // This is distinct from the Head *staying* fixed when the Vertical
-    // Master's own Head assignment is later reassigned (see headId's own
-    // schema comment) — here the Vertical itself is what's changing, so
-    // re-deriving Head for the newly picked Vertical is the correct
-    // behavior, not a violation of that rule.
+    // Business Vertical has no reachable edit control on the form anymore
+    // (Source Type/Lead/Project/Product all lock once created, and Vertical
+    // is now just a read-only value derived from Project — see the form's
+    // own effect), but this route still accepts an explicit verticalId
+    // update generically, same "pick a Vertical, derive Head server-side
+    // from it" rule as POST. This is distinct from the Head *staying* fixed
+    // when the Vertical Master's own Head assignment is later reassigned
+    // (see headId's own schema comment) — here the Vertical itself is what's
+    // changing, so re-deriving Head for the newly picked Vertical is the
+    // correct behavior, not a violation of that rule.
     let verticalUpdate: { verticalId?: number | null; headId?: number | null } = {};
     if (body.verticalId !== undefined) {
       if (body.verticalId) {
@@ -68,6 +81,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       data: {
         ...(body.projectName !== undefined && { projectName: body.projectName }),
         ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
+        ...(body.productId !== undefined && { productId: body.productId ? parseInt(body.productId) : null }),
         ...(body.status && { status: body.status }),
         ...(body.projectManagerId !== undefined && { projectManagerId: body.projectManagerId ? parseInt(body.projectManagerId) : null }),
         ...(body.startDate !== undefined && { startDate: body.startDate ? new Date(body.startDate) : null }),

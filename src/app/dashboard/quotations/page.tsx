@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PlusIcon,
@@ -20,14 +20,16 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { generateInvoicePDF } from '@/lib/generateInvoicePDF';
 import { formatCurrency } from '@/lib/currency';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import dayjs from 'dayjs';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
+import { useProductsForLead } from '@/hooks/useProductsForLead';
 import { invalidateQuotationData } from '@/lib/queryInvalidation';
+import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
 
 const QUOTATION_STATUSES = [
   { value: 'DRAFT', label: 'Draft', color: 'bg-slate-100 text-slate-700' },
@@ -75,6 +77,21 @@ export default function QuotationsPage() {
   const canExport = has('export_quotations');
   const queryClient = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Deep-link from Product Master's "Budget Estimation"/"+ New Estimation"
+  // actions (/dashboard/quotations?productId=..&leadId=..) — this is the
+  // Product-side equivalent of the Calculator's own ?projectId=/?leadId=
+  // prefill (see QuotationCalculatorForm's comment), just landing on this
+  // page instead since Product Master uses this catalog-based form rather
+  // than the Calculator (see ProductBudgetPanel's own comment for why).
+  // leadId is whichever of Product.customerId/leadId is set. `?edit=<id>`
+  // is this page's own deep-link for opening an existing quotation straight
+  // into edit mode (used by ProductBudgetPanel's Edit action, since a
+  // Product-linked quotation is always CATALOG-mode and must stay on this
+  // form rather than the Calculator).
+  const prefillProductId = searchParams.get('productId');
+  const prefillLeadId = searchParams.get('leadId');
+  const editParam = searchParams.get('edit');
   const [view, setView] = useState<'list' | 'create'>('list');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingQuotationNumber, setEditingQuotationNumber] = useState('');
@@ -93,6 +110,18 @@ export default function QuotationsPage() {
   // lead yet, so it keeps its own free-text field instead of a dropdown).
   const [projectId, setProjectId] = useState('');
   const [projectName, setProjectName] = useState('');
+  // Which Product master row this quotation is for — same convention as
+  // projectId above (a real dropdown next to Project, scoped the same way).
+  // Also still set via the ?productId= deep-link from Product Master (see
+  // ProductBudgetPanel) — that just pre-selects this same dropdown instead
+  // of a separate read-only display.
+  const [productId, setProductId] = useState('');
+  // New Client mode's free-text Product Name — mirrors newClientProjectName
+  // below. Unlike Project, there's no legacy productName column on
+  // Quotation (a Product always needs an existing lead, which a brand-new
+  // client doesn't have yet), so this is carried only inside
+  // pricingSnapshot.productName once saved — informational only.
+  const [newClientProductName, setNewClientProductName] = useState('');
   const [editingLeadId, setEditingLeadId] = useState('');
   const [newClientProjectName, setNewClientProjectName] = useState('');
   const [clientName, setClientName] = useState('');
@@ -111,12 +140,72 @@ export default function QuotationsPage() {
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [additionalTerms, setAdditionalTerms] = useState('');
+  // Payment Milestones — same shape/behavior as
+  // QuotationCalculatorForm.tsx's own `milestones` state (an editable,
+  // not-yet-approved plan of {percentage, gapDays} rows), reused byte-for-
+  // byte here so a quotation created from this form (Product Master's own
+  // flow, and any other catalog-based quotation) supports the exact same
+  // milestone/invoice-generation behavior as a Calculator one — see
+  // src/lib/quotationMilestones.ts / quotationMilestoneInvoicing.ts, both
+  // already costingMode-agnostic.
+  const [milestones, setMilestones] = useState<{ percentage: string; gapDays: string }[]>([]);
+  // Already-materialized QuotationPaymentMilestone rows (dated, with their
+  // own invoice + status) — only populated once editing an APPROVED
+  // quotation; read-only display, same as the Calculator's own
+  // `existing.paymentMilestones`.
+  const [existingMilestones, setExistingMilestones] = useState<any[]>([]);
+  // The quotation's own stored status, once editing one — needed to decide
+  // whether to show the editable plan or the already-materialized rows
+  // (same role as the Calculator's own local `status` state).
+  const [editingStatus, setEditingStatus] = useState('DRAFT');
 
   const resetCreateState = () => {
     setEditingId(null); setEditingQuotationNumber('');
-    setSelectedModules([]); setModuleOverrides({}); setServiceOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setProjectName(''); setNewClientProjectName(''); setProjectId(''); setEditingLeadId('');
+    setSelectedModules([]); setModuleOverrides({}); setServiceOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setProjectName(''); setNewClientProjectName(''); setProjectId(''); setProductId(''); setNewClientProductName(''); setEditingLeadId('');
     setClientCountry('IN'); setClientState(''); setDiscountPercentage(0); setTaxInclusive(false); setSelectedAddons([]); setPricing(null);
     setClientMode('existing'); setSelectedLeadId(''); setFormErrors({}); setAdditionalTerms('');
+    setMilestones([]); setExistingMilestones([]); setEditingStatus('DRAFT');
+  };
+
+  const addMilestone = () => setMilestones((prev) => [...prev, { percentage: '', gapDays: prev.length === 0 ? '0' : '15' }]);
+  const removeMilestone = (idx: number) => setMilestones((prev) => prev.filter((_, i) => i !== idx));
+  const updateMilestone = (idx: number, field: 'percentage' | 'gapDays', value: string) =>
+    setMilestones((prev) => prev.map((m, i) => (i === idx ? { ...m, [field]: value } : m)));
+
+  const milestonePlan: MilestonePlanInput[] = useMemo(
+    () => milestones.map((m, idx) => ({ percentage: Number(m.percentage) || 0, gapDays: idx === 0 ? 0 : Number(m.gapDays) || 0 })),
+    [milestones]
+  );
+  const milestonesTotalPct = useMemo(() => Math.round(milestonePlan.reduce((sum, m) => sum + m.percentage, 0) * 100) / 100, [milestonePlan]);
+  const milestoneError = useMemo(() => validateMilestonePlan(milestonePlan), [milestonePlan]);
+
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ milestoneId, newScheduledDate, reason }: { milestoneId: number; newScheduledDate: string; reason?: string }) => {
+      const res = await fetch(`/api/quotations/${editingId}/milestones/${milestoneId}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newScheduledDate, reason }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || 'Failed to reschedule milestone'); }
+      return res.json();
+    },
+    onSuccess: () => { if (editingId) openEdit(editingId); toast.success('Milestone rescheduled'); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  // A milestone whose invoice has already been partially paid needs a reason
+  // on record (enforced again server-side — see the reschedule route) since
+  // money has already moved against the date being changed; one that's
+  // unpaid or not yet invoiced needs no such friction. Same rule as the
+  // Calculator's own handleRescheduleMilestone.
+  const handleRescheduleMilestone = (milestone: any, newDateStr: string) => {
+    let reason: string | undefined;
+    if (milestone.invoice?.status === 'PARTIALLY_PAID') {
+      const entered = window.prompt('This milestone has already been partially paid — enter a reason for rescheduling it:');
+      if (!entered || !entered.trim()) { toast.error('A reason is required to reschedule a partially paid milestone'); return; }
+      reason = entered.trim();
+    }
+    rescheduleMutation.mutate({ milestoneId: milestone.id, newScheduledDate: newDateStr, reason });
   };
 
   // Project dropdown, scoped to whichever Lead/Customer is active — create
@@ -126,18 +215,20 @@ export default function QuotationsPage() {
   // this filters on.
   const activeLeadIdForProjects = editingId ? editingLeadId : (clientMode === 'existing' ? selectedLeadId : '');
   const { data: leadProjects = [], isLoading: projectsLoading } = useProjectsForLead(activeLeadIdForProjects);
-  useEffect(() => {
-    if (!activeLeadIdForProjects) return;
-    if (leadProjects.length === 1 && String(leadProjects[0].id) !== projectId) {
-      setProjectId(String(leadProjects[0].id));
-    }
-  }, [activeLeadIdForProjects, leadProjects]);
   // Keeps the legacy free-text projectName column (still used for
   // display/PDF/search) in sync with whichever project is selected.
   useEffect(() => {
     const p = leadProjects.find((x) => String(x.id) === projectId);
     if (p) setProjectName(p.projectName);
   }, [projectId, leadProjects]);
+  // Product dropdown, scoped the same way as Project above — same
+  // activeLeadIdForProjects, just against Product Master instead.
+  const { data: leadProducts = [], isLoading: productsLoading } = useProductsForLead(activeLeadIdForProjects);
+  // Project and Product are mutually exclusive on a quotation — a customer
+  // picks one or the other, never both (enforced again server-side, see
+  // POST/PUT /api/quotations); neither is auto-selected, even when a
+  // customer has only one Project or Product — the user always picks
+  // explicitly (see the disabled/placeholder logic on each <select> below).
 
   // Search + Status filter — same debounced searchInput/search pattern and
   // Filters-toggle-reveals-a-panel behavior as the Customer module
@@ -251,11 +342,11 @@ export default function QuotationsPage() {
     setCompanyName(lead?.companyName || '');
     setClientEmail(lead?.email || '');
     setClientPhone(lead?.mobile || '');
-    // Reset the Project selection — the previous pick belonged to whichever
-    // lead was selected before, and must not carry over. The Project
-    // dropdown (scoped to this new leadId) auto-selects/repopulates via the
-    // effects above.
+    // Reset the Project/Product selections — the previous picks belonged to
+    // whichever lead was selected before, and must not carry over. Both
+    // dropdowns (scoped to this new leadId) repopulate via the queries above.
     setProjectId(''); setProjectName('');
+    setProductId('');
     // Currency/tax must follow the lead — country isn't independently
     // re-picked once an existing client is selected (see countryLocked).
     setClientCountry(lead?.country?.isoCode || 'IN');
@@ -316,6 +407,7 @@ export default function QuotationsPage() {
       toast.error(clientMode === 'existing' && !editingId ? 'Select a client and at least one module' : 'Fill required fields and select at least one module');
       return;
     }
+    if (milestoneError) { toast.error(milestoneError); return; }
     try {
       // Existing-client mode (and editing) use `projectName`; a brand-new
       // client being created here uses its own, separate state — never mix
@@ -324,11 +416,21 @@ export default function QuotationsPage() {
       // New-client mode has no lead yet to scope a Project dropdown to, so
       // it never sets projectId — only the free-text projectName above.
       const effectiveProjectId = (!editingId && clientMode === 'new') ? null : (projectId ? parseInt(projectId) : null);
+      // Same reasoning for productId — New Client mode has no lead yet to
+      // scope a Product dropdown to (same as Project above), so it never
+      // sets productId — only the free-text newClientProductName below.
+      const effectiveProductId = (!editingId && clientMode === 'new') ? null : (productId ? parseInt(productId) : null);
+      // Preserves whatever New Client-mode free text this quotation was
+      // originally created with once editing (there's no UI to edit it once
+      // a real lead/productId exists — see the Client Information card
+      // below), same convention as projectName vs. newClientProjectName.
+      const effectiveProductName = (editingId || (!editingId && clientMode === 'new')) ? (newClientProductName || null) : null;
       const sharedFields = {
         softwareModules: [...selectedModules, ...customModules.filter(c => c.name).map(c => ({ name: c.name, cost: c.cost, quantity: c.quantity }))],
         businessModule: selectedModules[0] || null,
         projectName: effectiveProjectName || null,
         projectId: effectiveProjectId,
+        productId: effectiveProductId,
         clientCountry,
         clientState: clientState || null,
         currencyCode: pricing.currencyCode,
@@ -344,7 +446,12 @@ export default function QuotationsPage() {
         taxInclusive: pricing.taxInclusive,
         taxBreakdown: pricing.taxBreakdown,
         addons: selectedAddons,
-        pricingSnapshot: pricing,
+        // Same nested-under-pricingSnapshot placement PUT already expects
+        // (see /api/quotations/[id]/route.ts's own paymentMilestones
+        // check) and POST's CATALOG branch now validates identically — an
+        // empty array is a valid "no milestones, one lump-sum invoice on
+        // approval" plan, same as the Calculator sending one.
+        pricingSnapshot: { ...pricing, paymentMilestones: milestonePlan, productName: effectiveProductName },
         additionalTerms: additionalTerms || null,
       };
       // On create: existing-client mode links to the picked lead via leadId;
@@ -362,6 +469,13 @@ export default function QuotationsPage() {
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
       invalidateQuotationData(queryClient);
       toast.success(editingId ? 'Quotation updated!' : 'Quotation saved!');
+      // Arrived here from Product Master's Budget Estimation / "+ New
+      // Estimation" (this quotation carries a productId either way — via
+      // the deep-link prefill on create, or because openEdit loaded one on
+      // edit) — send the user back to that product's own accordion so the
+      // saved quotation is immediately visible, same convention as the
+      // Calculator's own post-save redirect to /dashboard/projects?expand=.
+      if (effectiveProductId) { router.push(`/dashboard/products?expand=${effectiveProductId}`); return; }
       resetCreateState();
       setView('list');
     } catch {
@@ -407,6 +521,8 @@ export default function QuotationsPage() {
     // projectId (a no-op unless the two have drifted).
     setProjectName(q.projectName || '');
     setProjectId(q.projectId ? String(q.projectId) : '');
+    setProductId(q.productId ? String(q.productId) : '');
+    setNewClientProductName(q.pricingSnapshot?.productName || '');
     setEditingLeadId(q.leadId ? String(q.leadId) : '');
     setClientCountry(q.clientCountry || 'IN');
     setClientState(q.clientState || '');
@@ -414,10 +530,61 @@ export default function QuotationsPage() {
     setTaxInclusive(!!q.taxInclusive);
     setSelectedAddons(Array.isArray(q.addons) ? q.addons : []);
     setAdditionalTerms(q.additionalTerms || '');
+    // Same two-branch read as QuotationCalculatorForm.tsx's own populate
+    // effect: the still-editable plan lives in pricingSnapshot.paymentMilestones
+    // (rehydrated into the editable `milestones` state); once APPROVED, the
+    // real materialized QuotationPaymentMilestone rows (with their own
+    // invoice + status) are what GET /api/quotations/[id] already returns
+    // under q.paymentMilestones — both are always present in this same
+    // response, this form just wasn't reading either one until now.
+    const snapMilestones = q.pricingSnapshot?.paymentMilestones;
+    setMilestones(
+      Array.isArray(snapMilestones)
+        ? snapMilestones.map((m: any) => ({ percentage: String(m.percentage ?? ''), gapDays: String(m.gapDays ?? '') }))
+        : []
+    );
+    setExistingMilestones(Array.isArray(q.paymentMilestones) ? q.paymentMilestones : []);
+    setEditingStatus(q.status || 'DRAFT');
     setEditingId(q.id);
     setEditingQuotationNumber(q.quotationNumber);
     setView('create');
   };
+
+  // ?edit=<id> deep-link — ProductBudgetPanel's Edit action (see its own
+  // comment for why a Product-linked quotation must land here rather than
+  // the Calculator). A ref, not state, so a later navigation with the same
+  // param (or a manual "Back to List" then re-edit) isn't silently ignored.
+  const editDeepLinkHandled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editParam || editDeepLinkHandled.current === editParam) return;
+    editDeepLinkHandled.current = editParam;
+    openEdit(parseInt(editParam));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openEdit is
+    // stable enough for this one-shot deep-link effect; re-running it on
+    // every openEdit identity change would re-fetch/reset the form mid-edit.
+  }, [editParam]);
+
+  // ?productId=<id>&leadId=<id> deep-link — Product Master's own "Budget
+  // Estimation"/"+ New Estimation" actions (see ProductBudgetPanel). Waits
+  // for existingLeads to load so selectExistingLead (which reads from it)
+  // has something to find; a ref guards against re-running the moment
+  // existingLeads finishes loading a second time (e.g. a background
+  // refetch) after the user has already started editing the form.
+  const productDeepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (productDeepLinkHandled.current || !prefillProductId || !prefillLeadId) return;
+    if (existingLeads.length === 0) return;
+    if (!existingLeads.some((l) => String(l.id) === prefillLeadId)) return;
+    productDeepLinkHandled.current = true;
+    resetCreateState();
+    setView('create');
+    setClientMode('existing');
+    selectExistingLead(prefillLeadId);
+    setProductId(prefillProductId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately
+    // omits resetCreateState/selectExistingLead (stable enough here, and
+    // including them would re-fire this on every render).
+  }, [prefillProductId, prefillLeadId, existingLeads]);
 
   const deleteQuotation = async (id: number, quotationNumber: string) => {
     if (!window.confirm(`Delete quotation "${quotationNumber}"? This cannot be undone.`)) return;
@@ -668,6 +835,7 @@ export default function QuotationsPage() {
               <th className="px-4 py-3 text-left font-semibold text-white">Quote No</th>
               <th className="px-4 py-3 text-left font-semibold text-white">Client</th>
               <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Project Name</th>
+              <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Product Name</th>
               <th className="px-4 py-3 text-left font-semibold text-white">Modules</th>
               <th className="px-4 py-3 text-right font-semibold text-white">Amount</th>
               <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
@@ -690,6 +858,7 @@ export default function QuotationsPage() {
                   </td>
                   <td className="px-4 py-3"><p className="font-medium text-slate-800">{q.contactPerson}</p><p className="text-xs text-slate-500">{q.companyName}</p></td>
                   <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{q.projectName || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{q.productName || '—'}</td>
                   <td className="px-4 py-3">
                     {isResourceBased ? (
                       <span className="text-xs text-slate-500">{q.projectName || 'Resource-based'}</span>
@@ -793,12 +962,12 @@ export default function QuotationsPage() {
               <p className="text-xs text-slate-400 mb-3">Client details are tied to the lead and cannot be changed from here.</p>
             ) : (
               <div className="flex gap-2 mb-4">
-                <button onClick={() => { setClientMode('existing'); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setNewClientProjectName(''); setProjectId(''); setProjectName(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'existing' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>Existing Client</button>
-                <button onClick={() => { setClientMode('new'); setSelectedLeadId(''); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setNewClientProjectName(''); setProjectId(''); setProjectName(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'new' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>New Client</button>
+                <button onClick={() => { setClientMode('existing'); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setNewClientProjectName(''); setProjectId(''); setProjectName(''); setProductId(''); setNewClientProductName(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'existing' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>Existing Client</button>
+                <button onClick={() => { setClientMode('new'); setSelectedLeadId(''); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setNewClientProjectName(''); setProjectId(''); setProjectName(''); setProductId(''); setNewClientProductName(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'new' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>New Client</button>
               </div>
             )}
             {!editingId && clientMode === 'existing' ? (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
                   <select value={selectedLeadId} onChange={e => selectExistingLead(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.client ? 'border-red-400' : 'border-slate-300'}`}>
@@ -813,13 +982,27 @@ export default function QuotationsPage() {
                   <select
                     value={projectId}
                     onChange={e => setProjectId(e.target.value)}
-                    disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0}
+                    disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0 || !!productId}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
                   >
                     <option value="">
-                      {!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select project'}
+                      {!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
                     </option>
                     {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                  <select
+                    value={productId}
+                    onChange={e => setProductId(e.target.value)}
+                    disabled={!selectedLeadId || productsLoading || leadProducts.length === 0 || !!projectId}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                  >
+                    <option value="">
+                      {!selectedLeadId ? 'Select a client first' : productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
+                    </option>
+                    {leadProducts.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
                   </select>
                 </div>
               </div>
@@ -830,20 +1013,37 @@ export default function QuotationsPage() {
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input disabled={!!editingId} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input disabled={!!editingId} value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
                 {editingId ? (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
-                    <select
-                      value={projectId}
-                      onChange={e => setProjectId(e.target.value)}
-                      disabled={projectsLoading || leadProjects.length === 0}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
-                    >
-                      <option value="">{projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select project'}</option>
-                      {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
-                    </select>
-                  </div>
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                      <select
+                        value={projectId}
+                        onChange={e => setProjectId(e.target.value)}
+                        disabled={projectsLoading || leadProjects.length === 0 || !!productId}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                      >
+                        <option value="">{projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}</option>
+                        {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                      <select
+                        value={productId}
+                        onChange={e => setProductId(e.target.value)}
+                        disabled={productsLoading || leadProducts.length === 0 || !!projectId}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                      >
+                        <option value="">{productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}</option>
+                        {leadProducts.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
+                      </select>
+                    </div>
+                  </>
                 ) : (
-                  <div><label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label><input value={newClientProjectName} onChange={e => setNewClientProjectName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
+                  <>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label><input value={newClientProjectName} onChange={e => setNewClientProjectName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Product Name</label><input value={newClientProductName} onChange={e => setNewClientProductName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
+                  </>
                 )}
               </div>
             )}
@@ -917,6 +1117,81 @@ export default function QuotationsPage() {
                   <div><label className="text-xs font-medium text-slate-600">Description *</label><textarea rows={2} value={cm.description} onChange={e => updateCustomModule(cm.id, 'description', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 mt-1" /></div>
                 </div>
               ))}<button onClick={addCustomModule} className="w-full py-2 border border-dashed border-orange-300 rounded-lg text-sm text-orange-600 hover:bg-orange-50">+ Add Another</button></div>
+            )}
+          </div>
+
+          {/* Payment Milestones — same UI/fields/validation/calculation as
+              QuotationCalculatorForm.tsx's own "Payment Milestones" card, so
+              a quotation created from this form (Product Master's own flow
+              included) supports the identical milestone → invoice-generation
+              behavior. Split the same way: an editable {percentage, gapDays}
+              plan before approval, the real materialized (dated, invoiced)
+              rows once APPROVED — see openEdit's own comment for where each
+              comes from. */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Payment Milestones</h2>
+            {editingStatus === 'APPROVED' && existingMilestones.length > 0 ? (
+              <div className="space-y-2">
+                {existingMilestones.map((m: any) => (
+                  <div key={m.id} className="flex items-center justify-between gap-3 py-2 border-b border-dashed border-slate-100 last:border-0">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">
+                        Milestone {m.sequence} — {Number(m.percentage)}% ({fmt(Number(m.amount), pricing?.currencySymbol || '₹', pricing?.currencyCode || 'INR')})
+                      </p>
+                      {m.invoice && (
+                        <p className="text-xs text-slate-400">
+                          <Link href={`/dashboard/accounting/invoices/${m.invoice.id}`} className="text-amber-700 hover:underline">{m.invoice.invoiceNumber}</Link> — {m.invoice.status}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        key={`${m.id}-${m.scheduledDate}`}
+                        type="date"
+                        defaultValue={dayjs(m.scheduledDate).format('YYYY-MM-DD')}
+                        disabled={m.invoice?.status === 'PAID'}
+                        onBlur={(e) => {
+                          if (e.target.value && e.target.value !== dayjs(m.scheduledDate).format('YYYY-MM-DD')) handleRescheduleMilestone(m, e.target.value);
+                        }}
+                        className="px-2 py-1 border border-slate-300 rounded text-xs text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                        title={m.invoice?.status === 'PAID' ? 'Fully paid — date is locked' : 'Reschedule this milestone'}
+                      />
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${m.status === 'INVOICED' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{m.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : editingStatus === 'APPROVED' ? (
+              <p className="text-xs text-slate-400">No payment milestones were configured — the full amount was invoiced on approval.</p>
+            ) : (
+              <>
+                <p className="text-xs text-slate-400 mb-3">Optional — split the quoted amount into staged invoices instead of one lump sum on approval. Leave empty to invoice the full amount once approved.</p>
+                <div className="space-y-2">
+                  {milestones.map((m, idx) => (
+                    <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-0.5">Milestone {idx + 1} — % of total</label>
+                        <input type="number" min="0" step="0.01" value={m.percentage} onChange={(e) => updateMilestone(idx, 'percentage', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" placeholder="e.g. 50" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-0.5">{idx === 0 ? 'Invoiced on approval' : 'Days after previous milestone'}</label>
+                        <input type="number" min="0" value={idx === 0 ? '0' : m.gapDays} disabled={idx === 0} onChange={(e) => updateMilestone(idx, 'gapDays', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-50 disabled:text-slate-400" placeholder="e.g. 15" />
+                      </div>
+                      <button type="button" onClick={() => removeMilestone(idx)} className="p-2 text-slate-400 hover:text-red-600" title="Remove milestone">
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={addMilestone} className="mt-2 flex items-center gap-1 text-sm text-amber-700 hover:text-amber-800 font-medium">
+                  <PlusIcon className="h-4 w-4" /> Add Milestone
+                </button>
+                {milestones.length > 0 && (
+                  <p className={`text-xs mt-2 ${milestoneError ? 'text-red-600' : 'text-green-600'}`}>
+                    Total: {milestonesTotalPct}% {milestoneError ? `— ${milestoneError}` : '— OK'}
+                  </p>
+                )}
+              </>
             )}
           </div>
 

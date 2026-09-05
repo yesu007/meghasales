@@ -99,7 +99,21 @@ export default function CustomerProjectsPanel({ customerId, enabled = true }: { 
         <div className="py-6 text-center text-sm text-slate-400">No projects found</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          {/* table-fixed + explicit per-column widths — without this, each
+              table auto-sizes its own columns off its own widest cell (e.g.
+              "Individual Project" vs. a shorter Vertical name), so the same
+              column drifts to a different width/x-position between this
+              table and CustomerProductsPanel's. Column widths here must
+              stay identical to that file's own <th> widths (same 4 columns:
+              Name/Vertical/Status/Stage) so the two tables' columns line up
+              when both are open under the same Customer row. */}
+          <table className="w-full text-sm table-fixed">
+            <colgroup>
+              <col className="w-[30%]" />
+              <col className="w-[26%]" />
+              <col className="w-[22%]" />
+              <col className="w-[22%]" />
+            </colgroup>
             <thead>
               <tr className="bg-slate-50/60 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
                 <th className="px-4 py-2">Project Name</th>
@@ -113,9 +127,9 @@ export default function CustomerProjectsPanel({ customerId, enabled = true }: { 
                 const status = project.implementation?.status || 'PLANNING';
                 return (
                   <tr key={project.id} className="hover:bg-amber-50/40 transition-colors">
-                    <td className="px-4 py-2.5 font-medium text-slate-800">{project.projectName}</td>
+                    <td className="px-4 py-2.5 font-medium text-slate-800 truncate">{project.projectName}</td>
                     <td className="px-4 py-2.5">
-                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                      <span className="inline-block max-w-full truncate px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
                         {project.verticalName || 'Not assigned'}
                       </span>
                     </td>
@@ -123,7 +137,7 @@ export default function CustomerProjectsPanel({ customerId, enabled = true }: { 
                       <select
                         value={status}
                         onChange={(e) => updateStatus(project, e.target.value)}
-                        className={`px-2 py-1 rounded text-xs font-medium border-0 ${IMPLEMENTATION_STATUSES.find(s => s.value === status)?.color || 'bg-slate-100 text-slate-700'}`}
+                        className={`w-full px-2 py-1 rounded text-xs font-medium border-0 ${IMPLEMENTATION_STATUSES.find(s => s.value === status)?.color || 'bg-slate-100 text-slate-700'}`}
                       >
                         {IMPLEMENTATION_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                       </select>
@@ -132,7 +146,7 @@ export default function CustomerProjectsPanel({ customerId, enabled = true }: { 
                       <select
                         value={project.implementation?.currentStage || ''}
                         onChange={(e) => updateStage(project, e.target.value)}
-                        className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
+                        className="w-full px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
                       >
                         <option value="">Select stage</option>
                         {stages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}

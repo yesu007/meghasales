@@ -12,6 +12,7 @@ import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/
 import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
+import { useProductsForLead } from '@/hooks/useProductsForLead';
 
 interface ExistingLead { id: number; companyName: string; projectName: string | null; contactPerson: string; email: string | null; mobile: string | null }
 interface Vertical { id: number; name: string; headName?: string | null }
@@ -71,6 +72,15 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [projectId, setProjectId] = useState('');
   const [projectName, setProjectName] = useState('');
   const [newClientProjectName, setNewClientProjectName] = useState('');
+  // Which product (Product Master) this quotation is for — same convention
+  // as projectId/leadProjects just above, next to it in the Opportunity
+  // Details section, scoped to the same activeLeadIdForProjects. Unlike
+  // Project, there's no legacy free-text column on Quotation for this, so
+  // in New Client mode (no lead to scope a dropdown to yet) newClientProductName
+  // is carried only inside pricingSnapshot.productName — informational only,
+  // same convention as packageName/projectManagerName below.
+  const [productId, setProductId] = useState('');
+  const [newClientProductName, setNewClientProductName] = useState('');
   const [verticalId, setVerticalId] = useState('');
   const [projectManagerName, setProjectManagerName] = useState('');
   const [packageName, setPackageName] = useState('');
@@ -153,12 +163,15 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   // useProjectsForLead's own comment for the relation this filters on.
   const activeLeadIdForProjects = quotationId ? (existing?.leadId ? String(existing.leadId) : '') : (clientMode === 'existing' ? selectedLeadId : '');
   const { data: leadProjects = [], isLoading: projectsLoading } = useProjectsForLead(activeLeadIdForProjects);
-  useEffect(() => {
-    if (!activeLeadIdForProjects) return;
-    if (leadProjects.length === 1 && String(leadProjects[0].id) !== projectId) {
-      setProjectId(String(leadProjects[0].id));
-    }
-  }, [activeLeadIdForProjects, leadProjects]);
+  // Product dropdown, scoped the same way — same activeLeadIdForProjects
+  // (create uses selectedLeadId, editing uses the loaded quotation's own
+  // leadId), just against Product Master instead of Project Master.
+  const { data: leadProducts = [], isLoading: productsLoading } = useProductsForLead(activeLeadIdForProjects);
+  // Project and Product are mutually exclusive on a quotation — a customer
+  // picks one or the other, never both (enforced again server-side, see
+  // POST/PUT /api/quotations); neither is auto-selected, even when a
+  // customer has only one Project or Product — the user always picks
+  // explicitly (see the disabled/placeholder logic on each <select> below).
   // Keeps the legacy free-text projectName column (still used for
   // display/PDF/search) in sync with whichever project is selected.
   useEffect(() => {
@@ -208,6 +221,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     if (!existing) return;
     setProjectName(existing.projectName || '');
     setProjectId(existing.projectId ? String(existing.projectId) : '');
+    setProductId(existing.productId ? String(existing.productId) : '');
     setVerticalId(existing.verticalId ? String(existing.verticalId) : '');
     setCurrencyCode(existing.currencyCode || 'INR');
     setOutsourcingCost(String(Number(existing.outsourcingCost) || 0));
@@ -232,6 +246,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setDiscountValue(String(Number(snap.discountValue) || 0));
     setProjectManagerName(snap.projectManagerName || '');
     setPackageName(snap.packageName || '');
+    setNewClientProductName(snap.productName || '');
     setValidityDays(String(Number(snap.validityDays) || 30));
     setMilestones(
       Array.isArray(snap.paymentMilestones)
@@ -263,11 +278,11 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setCompanyName(lead?.companyName || '');
     setClientEmail(lead?.email || '');
     setClientPhone(lead?.mobile || '');
-    // Reset the Project selection — the previous pick belonged to whichever
-    // lead was selected before, and must not carry over. The Project
-    // dropdown (scoped to this new leadId) auto-selects/repopulates via the
-    // effects above.
+    // Reset the Project/Product selections — the previous picks belonged to
+    // whichever lead was selected before, and must not carry over. Both
+    // dropdowns (scoped to this new leadId) repopulate via the query above.
     setProjectId(''); setProjectName('');
+    setProductId('');
   };
 
   const selectBillingCompany = (id: string) => { setBillingCompanyId(id); setLegalEntityId(''); };
@@ -369,10 +384,18 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
       // New-client mode has no lead yet to scope a Project dropdown to, so
       // it never sets projectId — only the free-text projectName above.
       const effectiveProjectId = (!quotationId && clientMode === 'new') ? null : (projectId ? parseInt(projectId) : null);
+      // Same reasoning for productId/productName — New Client mode has no
+      // lead to scope a Product dropdown to either, so it only ever carries
+      // the free-text newClientProductName (into pricingSnapshot below, not
+      // a dedicated column — see its own state comment).
+      const effectiveProductId = (!quotationId && clientMode === 'new') ? null : (productId ? parseInt(productId) : null);
+      const effectiveProductName = (!quotationId && clientMode === 'new') ? (newClientProductName || null) : null;
       const body: Record<string, unknown> = {
         costingMode: 'RESOURCE_BASED',
         projectName: effectiveProjectName || null,
         projectId: effectiveProjectId,
+        productId: effectiveProductId,
+        productName: effectiveProductName,
         verticalId: verticalId || null,
         legalEntityId: legalEntityId || null,
         currencyCode,
@@ -424,6 +447,11 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             discountValue: Number(discountValue) || 0,
             projectManagerName: projectManagerName || null,
             packageName: packageName || null,
+            // Preserves whatever New Client-mode free text this quotation
+            // was originally created with (restored into state on load,
+            // above) — there's no UI to edit it once a real lead/productId
+            // exists, so it just carries through unchanged.
+            productName: newClientProductName || null,
             validityDays: Number(validityDays) || 30,
             paymentMilestones: milestonePlan,
           },
@@ -524,7 +552,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               </div>
             )}
             {!quotationId && clientMode === 'existing' ? (
-              <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="grid grid-cols-3 gap-3 mb-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
                   <select value={selectedLeadId} onChange={(e) => selectExistingLead(e.target.value)} className={inputCls}>
@@ -537,13 +565,27 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                   <select
                     value={projectId}
                     onChange={(e) => setProjectId(e.target.value)}
-                    disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0}
+                    disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0 || !!productId}
                     className={inputCls}
                   >
                     <option value="">
-                      {!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select project'}
+                      {!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
                     </option>
                     {leadProjects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                  <select
+                    value={productId}
+                    onChange={(e) => setProductId(e.target.value)}
+                    disabled={!selectedLeadId || productsLoading || leadProducts.length === 0 || !!projectId}
+                    className={inputCls}
+                  >
+                    <option value="">
+                      {!selectedLeadId ? 'Select a client first' : productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
+                    </option>
+                    {leadProducts.map((p) => <option key={p.id} value={p.id}>{p.productName}</option>)}
                   </select>
                 </div>
               </div>
@@ -554,20 +596,33 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} className={inputCls} /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className={inputCls} /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label><input value={newClientProjectName} onChange={(e) => setNewClientProjectName(e.target.value)} className={inputCls} /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Product Name</label><input value={newClientProductName} onChange={(e) => setNewClientProductName(e.target.value)} className={inputCls} /></div>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="grid grid-cols-3 gap-3 mb-3">
                 <div className="flex items-end pb-2 text-sm text-slate-700 font-medium">{companyName} — {clientName}</div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
                   <select
                     value={projectId}
                     onChange={(e) => setProjectId(e.target.value)}
-                    disabled={projectsLoading || leadProjects.length === 0}
+                    disabled={projectsLoading || leadProjects.length === 0 || !!productId}
                     className={inputCls}
                   >
-                    <option value="">{projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select project'}</option>
+                    <option value="">{projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}</option>
                     {leadProjects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                  <select
+                    value={productId}
+                    onChange={(e) => setProductId(e.target.value)}
+                    disabled={productsLoading || leadProducts.length === 0 || !!projectId}
+                    className={inputCls}
+                  >
+                    <option value="">{productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}</option>
+                    {leadProducts.map((p) => <option key={p.id} value={p.id}>{p.productName}</option>)}
                   </select>
                 </div>
               </div>
