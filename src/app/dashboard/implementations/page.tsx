@@ -20,13 +20,19 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
-import { formatBusinessVerticals } from '@/lib/businessVerticals';
+import { formatBusinessVerticals, parseBusinessVerticals } from '@/lib/businessVerticals';
 // IMPL_STATUSES/STAGES moved to this shared lib (values/labels/colors
 // unchanged) so the Customer main table can reuse the exact same
-// structure — see src/lib/implementationStatus.ts's own comment.
+// structure — see src/lib/implementationStatus.ts's own comment. STAGES
+// itself now comes live from the Stage master via useStages() below (see
+// its own comment), not a hardcoded list.
 import { IMPLEMENTATION_STATUSES as IMPL_STATUSES } from '@/lib/implementationStatus';
 import { useStages } from '@/hooks/useStages';
 import { invalidateImplementationData } from '@/lib/queryInvalidation';
+// Go Live / Post Go Live tab labels + the state type — the tabs' own stage
+// categorization (GO_LIVE_STAGES/POST_GO_LIVE_STAGES) is applied server-side
+// in /api/implementations, not here.
+import { IMPLEMENTATION_STAGE_TABS, type ImplementationStageCategory } from '@/lib/implementationStages';
 
 interface Implementation {
   id: number;
@@ -100,6 +106,11 @@ export default function ImplementationsPage() {
   // so every existing STAGES.map(...) render below is unchanged.
   const STAGES = useStages().map(s => s.name);
 
+  // Top-level Go Live / Post Go Live tabs, same role as the Leads module's
+  // own view tabs — opens on Go Live by default (per the module's spec).
+  const [stageCategory, setStageCategory] = useState<ImplementationStageCategory>('GO_LIVE');
+  const changeStageCategory = (cat: ImplementationStageCategory) => { setStageCategory(cat); setPage(0); };
+
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -117,7 +128,7 @@ export default function ImplementationsPage() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const params: Record<string, string> = { page: String(page), size: String(size), sortBy, sortDir };
+  const params: Record<string, string> = { page: String(page), size: String(size), sortBy, sortDir, stageCategory };
   if (search) params.search = search;
   if (statusFilter) params.status = statusFilter;
   if (stageFilter) params.currentStage = stageFilter;
@@ -173,7 +184,42 @@ export default function ImplementationsPage() {
     if (selectedProject) setForm((f) => (f.projectName === selectedProject.projectName ? f : { ...f, projectName: selectedProject.projectName }));
   }, [selectedProject]);
 
-  const selectedVertical = verticalOptions.find((v) => String(v.id) === form.verticalId);
+  // Business Vertical is scoped to whichever Lead/Company is selected above
+  // (same "reuse the existing mapping, don't invent a new one" convention as
+  // Project's own useProjectsForLead) — Lead.businessVerticals is the
+  // existing JSON-encoded list of Vertical *names* set on that Lead/Company
+  // (see parseBusinessVerticals's own comment and the Lead form's own
+  // vertical checklist, which writes v.name from this exact /api/verticals
+  // list), matched here against the Vertical Master's own name. Not shown at
+  // all until a Lead/Company is picked, and never auto-selected.
+  const selectedLead = leads.find((l: Lead) => String(l.id) === form.leadId);
+  const mappedVerticalNames = parseBusinessVerticals(selectedLead?.businessVerticals);
+  const availableVerticalOptions = form.leadId ? verticalOptions.filter((v) => mappedVerticalNames.includes(v.name)) : [];
+
+  // When editing, the Vertical actually saved on this record may no longer
+  // be in availableVerticalOptions above (deactivated since, or the Lead's
+  // own mapped Verticals changed) — same edge case editingVerticalInfo's own
+  // comment already handles for read-only display. Injected here as an
+  // extra option (not editingVerticalInfo's own separate branch) now that
+  // Vertical is an actual, changeable <select> in edit mode too, so the
+  // saved value still loads and shows correctly until the user picks a
+  // different (necessarily still-mapped, still-active) one.
+  const verticalStillAvailable = availableVerticalOptions.some((v) => String(v.id) === form.verticalId);
+  const verticalSelectOptions = editingId && form.verticalId && !verticalStillAvailable
+    ? [{ id: Number(form.verticalId), name: editingVerticalInfo.verticalName || `Vertical #${form.verticalId}`, headId: null, headName: editingVerticalInfo.headName }, ...availableVerticalOptions]
+    : availableVerticalOptions;
+
+  const selectedVertical = verticalSelectOptions.find((v) => String(v.id) === form.verticalId);
+
+  // Project is further scoped to the selected Vertical, once one is picked —
+  // each Project already carries exactly one Vertical (LeadProjectOption's
+  // own verticalId), so this reuses that existing data rather than a new
+  // lookup. Still just Lead/Company-scoped (leadProjects itself) until a
+  // Vertical is chosen, matching the required Source Type -> Lead/Company ->
+  // Vertical -> Head -> Project cascade order.
+  const verticalFilteredProjects = form.verticalId
+    ? leadProjects.filter((p) => String(p.verticalId) === form.verticalId)
+    : leadProjects;
 
   const { data: users = [], isError: isUsersError } = useQuery<UserOption[]>({
     queryKey: ['users-for-impl'],
@@ -292,14 +338,29 @@ export default function ImplementationsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Implementations</h1>
-          <p className="text-slate-500 mt-1">Track project implementations and delivery</p>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <h1 className="text-2xl font-bold text-slate-800">Implementations</h1>
+            <div className="overflow-x-auto">
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+                {IMPLEMENTATION_STAGE_TABS.map((t) => (
+                  <button
+                    key={t.value}
+                    onClick={() => changeStageCategory(t.value)}
+                    className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${stageCategory === t.value ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+            <PlusIcon className="h-4 w-4" /> New Project
+          </button>
         </div>
-        <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-          <PlusIcon className="h-4 w-4" /> New Project
-        </button>
+        <p className="text-slate-500">Track project implementations and delivery</p>
       </div>
 
       {/* Search & Filters */}
@@ -417,7 +478,7 @@ export default function ImplementationsPage() {
                 <tbody>
                   {implementations.map((impl, idx) => (
                     <tr key={impl.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                      <td className="px-4 py-3 font-medium text-slate-800">{impl.projectName || `Project #${impl.id}`}</td>
+                      <td className="px-4 py-3 font-medium text-slate-800">{impl.linkedProjectName || '-'}</td>
                       <td className="px-4 py-3 text-slate-600">{impl.companyName}</td>
                       <td className="px-4 py-3 text-slate-600 hidden sm:table-cell">{formatBusinessVerticals(impl.businessVerticals) || 'Not assigned'}</td>
                       <td className="px-4 py-3">
@@ -562,11 +623,11 @@ export default function ImplementationsPage() {
                             value={form.sourceType}
                             onChange={(e) => {
                               const sourceType = e.target.value === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD';
-                              // Clearing leadId (and any Project already
-                              // picked, since it's scoped to the old
-                              // leadId) on switch — the previously selected
-                              // record belongs to the other list.
-                              setForm(f => ({ ...f, sourceType, leadId: '', projectId: '', projectName: '' }));
+                              // Clearing leadId (and any Project/Vertical
+                              // already picked, since both are scoped to the
+                              // old leadId) on switch — the previously
+                              // selected record belongs to the other list.
+                              setForm(f => ({ ...f, sourceType, leadId: '', projectId: '', projectName: '', verticalId: '' }));
                             }}
                             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
                           >
@@ -580,7 +641,15 @@ export default function ImplementationsPage() {
                             disabled={!!editingId}
                             title={editingId ? 'Lead cannot be changed after creation' : undefined}
                             value={form.leadId}
-                            onChange={(e) => setForm(f => ({ ...f, leadId: e.target.value, projectId: '', projectName: '' }))}
+                            onChange={(e) => {
+                              const leadId = e.target.value;
+                              const newLead = leads.find((l: Lead) => String(l.id) === leadId);
+                              const newMappedNames = parseBusinessVerticals(newLead?.businessVerticals);
+                              setForm(f => {
+                                const stillValid = f.verticalId && verticalOptions.some((v) => String(v.id) === f.verticalId && newMappedNames.includes(v.name));
+                                return { ...f, leadId, projectId: '', projectName: '', verticalId: stillValid ? f.verticalId : '' };
+                              });
+                            }}
                             className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.leadId ? 'border-red-400' : 'border-slate-300'}`}
                           >
                             <option value="">{form.sourceType === 'CUSTOMER' ? 'Select a customer' : 'Select a lead'}</option>
@@ -595,34 +664,38 @@ export default function ImplementationsPage() {
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
-                            {editingId ? (
-                              <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
-                                {editingVerticalInfo.verticalName || '—'}
-                              </p>
-                            ) : (
-                              // Always the full Vertical Master list, regardless
-                              // of the selected Lead/Company — never filtered
-                              // or auto-picked from it (see the field's own
-                              // requirement: Vertical is a fully independent,
-                              // manual selection here).
-                              <select
-                                value={form.verticalId}
-                                onChange={(e) => setForm(f => ({ ...f, verticalId: e.target.value }))}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                              >
-                                <option value="">Select vertical</option>
-                                {verticalOptions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                              </select>
-                            )}
+                            {/* Scoped to the selected Lead/Company's own
+                                mapped Verticals (see availableVerticalOptions's
+                                own comment) — never the full Vertical Master
+                                list, and never auto-picked; still a fully
+                                manual selection, just a filtered one. Source
+                                Type/Lead/Project stay locked once created (see
+                                their own disabled fields), but Vertical (and
+                                the Head derived from it) remains editable —
+                                verticalSelectOptions's own comment covers the
+                                edit-mode case where the saved value has since
+                                fallen out of that live mapped/active list. */}
+                            <select
+                              disabled={!form.leadId}
+                              title={!form.leadId ? 'Select a Lead / Company first' : undefined}
+                              value={form.verticalId}
+                              onChange={(e) => {
+                                const verticalId = e.target.value;
+                                setForm(f => {
+                                  const projectStillValid = f.projectId && leadProjects.some((p) => String(p.id) === f.projectId && (!verticalId || String(p.verticalId) === verticalId));
+                                  return projectStillValid ? { ...f, verticalId } : { ...f, verticalId, projectId: '', projectName: '' };
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                            >
+                              <option value="">{form.leadId ? 'Select vertical' : 'Select a Lead / Company first'}</option>
+                              {verticalSelectOptions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                            </select>
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Head</label>
                             <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
-                              {editingId
-                                ? editingVerticalInfo.headName || 'No head assigned'
-                                : form.verticalId
-                                  ? selectedVertical?.headName || 'No head assigned'
-                                  : '—'}
+                              {form.verticalId ? (selectedVertical?.headName || 'No head assigned') : '—'}
                             </p>
                           </div>
                         </div>
@@ -636,7 +709,7 @@ export default function ImplementationsPage() {
                             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
                           >
                             <option value="">{form.leadId ? 'Select project' : 'Select a Lead / Company first'}</option>
-                            {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                            {verticalFilteredProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
                           </select>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
