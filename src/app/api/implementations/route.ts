@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
+import { GO_LIVE_STAGES, POST_GO_LIVE_STAGES } from '@/lib/implementationStages';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
     const currentStage = searchParams.get('currentStage') || '';
+    const stageCategory = searchParams.get('stageCategory') || '';
     const projectManagerId = searchParams.get('projectManagerId') || '';
     const businessVertical = searchParams.get('businessVertical') || '';
     const sortBy = searchParams.get('sortBy') || 'createdAt';
@@ -40,6 +42,11 @@ export async function GET(request: NextRequest) {
 
     if (status) AND.push({ status: status.toUpperCase() });
     if (currentStage) AND.push({ currentStage });
+    // Top-level Go Live / Post Go Live tabs — a record with no stage set yet
+    // counts as Go Live (see GO_LIVE_STAGES's own comment), so that bucket
+    // also matches a null currentStage.
+    if (stageCategory === 'POST_GO_LIVE') AND.push({ currentStage: { in: POST_GO_LIVE_STAGES } });
+    else if (stageCategory === 'GO_LIVE') AND.push({ OR: [{ currentStage: { in: GO_LIVE_STAGES } }, { currentStage: null }] });
     if (projectManagerId) AND.push({ projectManagerId: parseInt(projectManagerId) });
     // Same relation-filter approach as /api/leads's own businessVertical
     // filter — businessVerticals is a JSON-encoded name on Lead, matched

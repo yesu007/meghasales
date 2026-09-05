@@ -54,6 +54,13 @@ export async function GET(request: NextRequest) {
     // project's actual expenses.
     const projectId = searchParams.get('projectId') || '';
     if (projectId) AND.push({ projectId: parseInt(projectId) });
+    // Overall Expenses / Project Expenses list tabs — same "has a Project or
+    // not" split as the create form's own Expense Type toggle
+    // (projectId null = Overall, set = Project) and the Expense Report's own
+    // projectOnly filter (see expenseReports.ts).
+    const expenseType = searchParams.get('expenseType') || '';
+    if (expenseType === 'PROJECT') AND.push({ projectId: { not: null } });
+    else if (expenseType === 'OVERALL') AND.push({ projectId: null });
 
     if (AND.length > 0) where.AND = AND;
 

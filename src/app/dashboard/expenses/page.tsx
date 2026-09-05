@@ -141,9 +141,11 @@ function AddableSelect({
   );
 }
 
-async function fetchExpenses(status: string, page: number, size: number): Promise<ExpenseListResponse> {
+async function fetchExpenses(status: string, expenseType: string, projectId: string, page: number, size: number): Promise<ExpenseListResponse> {
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (status) params.set('status', status);
+  if (expenseType) params.set('expenseType', expenseType);
+  if (projectId) params.set('projectId', projectId);
   const res = await fetch(`/api/expenses?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch expenses');
   return res.json();
@@ -190,6 +192,19 @@ const blankForm = {
 export default function ExpensesPage() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('');
+  // Top-level Overall Expenses / Project Expenses tabs — independent of the
+  // status filter below (payment status vs. whether the expense has a
+  // Project), same split as the create form's own Expense Type toggle.
+  // Defaults to Overall, same "first tab is the default" convention as the
+  // Leads/Implementations modules' own tabs.
+  const [expenseTypeFilter, setExpenseTypeFilter] = useState<'OVERALL' | 'PROJECT'>('OVERALL');
+  // Narrows the Project Expenses tab to one Project via the project tabs
+  // rendered below the status tabs — '' means "All Projects" (still scoped
+  // to expenseTypeFilter=PROJECT, so still no Overall Expenses mixed in).
+  // Filters by the actual projectId FK (see fetchExpenses/API's own
+  // projectId param), never by project name. Meaningless for the Overall
+  // tab, so cleared whenever that tab is picked.
+  const [projectFilter, setProjectFilter] = useState('');
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [showForm, setShowForm] = useState(false);
@@ -217,7 +232,19 @@ export default function ExpensesPage() {
     return () => clearTimeout(t);
   }, [categorySearchInput]);
 
-  const { data, isLoading } = useQuery({ queryKey: ['expenses', statusFilter, page, size], queryFn: () => fetchExpenses(statusFilter, page, size) });
+  // Project tabs search — narrows the vertical Project Expenses tab list by
+  // name, client-side (the full project list is already loaded for the
+  // tabs/create-form dropdown, same as the Expense Categories search above).
+  // "All Projects" always stays visible regardless of the search term, since
+  // it isn't a project name to match against.
+  const [projectSearchInput, setProjectSearchInput] = useState('');
+  const [projectSearch, setProjectSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setProjectSearch(projectSearchInput), 400);
+    return () => clearTimeout(t);
+  }, [projectSearchInput]);
+
+  const { data, isLoading } = useQuery({ queryKey: ['expenses', statusFilter, expenseTypeFilter, projectFilter, page, size], queryFn: () => fetchExpenses(statusFilter, expenseTypeFilter, projectFilter, page, size) });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-categories'], queryFn: fetchCategories });
   const { data: currencies = [] } = useQuery({ queryKey: ['currencies'], queryFn: fetchCurrencies });
   const { data: categoryLinks = [] } = useQuery({ queryKey: ['expense-category-links'], queryFn: fetchCategoryLinks });
@@ -229,6 +256,9 @@ export default function ExpensesPage() {
     : categoryLinks;
   const { data: customers = [] } = useQuery({ queryKey: ['customers-for-expense-vendor'], queryFn: fetchCustomers });
   const { data: projects = [] } = useQuery({ queryKey: ['projects-for-expense'], queryFn: fetchProjects });
+  const filteredProjects = projectSearch
+    ? projects.filter((p) => p.projectName.toLowerCase().includes(projectSearch.trim().toLowerCase()))
+    : projects;
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
 
@@ -410,17 +440,32 @@ export default function ExpensesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Expenses</h1>
-          <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Track business/operational spend — rent, vendors, subscriptions, and more</p>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Expenses</h1>
+            <div className="overflow-x-auto">
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+                {(['OVERALL', 'PROJECT'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => { setExpenseTypeFilter(t); setProjectFilter(''); setPage(0); }}
+                    className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium whitespace-nowrap transition-colors ${expenseTypeFilter === t ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+                  >
+                    {t === 'OVERALL' ? 'Overall Expenses' : 'Project Expenses'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => (showForm ? closeForm() : setShowForm(true))}
+            className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+          >
+            <PlusIcon className="h-4 w-4" /> New Expense
+          </button>
         </div>
-        <button
-          onClick={() => (showForm ? closeForm() : setShowForm(true))}
-          className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-        >
-          <PlusIcon className="h-4 w-4" /> New Expense
-        </button>
+        <p className="text-slate-500 text-sm sm:text-base">Track business/operational spend — rent, vendors, subscriptions, and more</p>
       </div>
 
       {showForm && (
@@ -554,7 +599,67 @@ export default function ExpensesPage() {
       )}
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 flex gap-2">
+       <div className={expenseTypeFilter === 'PROJECT' ? 'flex flex-col md:flex-row' : ''}>
+        {/* Project tabs — one section/tab per Project, sourced dynamically
+            from the same fetchProjects() list the create form's Project
+            dropdown uses, laid out as a vertical list (there are typically
+            too many projects for a single horizontal row to stay readable).
+            Styled as the same segmented-pill control as VIEW_TABS on the
+            Leads page and the Overall/Project Expenses toggle above (a
+            bg-slate-100 track, rounded-md buttons, active = bg-white +
+            text-amber-700 + shadow-sm, transition-colors only — no new
+            animation style introduced). "All Projects" clears projectFilter;
+            picking a project narrows to its projectId, same as the status
+            tabs to the right narrow to a payment status. Only relevant to
+            the Project Expenses tab, since Overall Expenses never carry a
+            projectId. */}
+        {expenseTypeFilter === 'PROJECT' && (
+          <div className="md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-slate-200 p-3 md:max-h-[600px] md:overflow-y-auto">
+            <p className="px-2 pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wide">Projects</p>
+            {/* Same search-with-clear-button styling as the Expense
+                Categories search below, sized for the sidebar. Filters the
+                tab list only — "All Projects" stays outside the search
+                results since it isn't itself a project name. */}
+            <div className="relative mb-2">
+              <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search projects..."
+                value={projectSearchInput}
+                onChange={(e) => setProjectSearchInput(e.target.value)}
+                className="w-full pl-8 pr-7 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              />
+              {projectSearchInput && (
+                <button onClick={() => { setProjectSearchInput(''); setProjectSearch(''); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <XMarkIcon className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="flex flex-col gap-1 bg-slate-100 rounded-lg p-1">
+              <button
+                onClick={() => { setProjectFilter(''); setPage(0); }}
+                className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium text-left whitespace-nowrap transition-colors ${projectFilter === '' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+              >
+                All Projects
+              </button>
+              {filteredProjects.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => { setProjectFilter(String(p.id)); setPage(0); }}
+                  className={`px-3 py-1.5 min-h-[40px] rounded-md text-sm font-medium text-left whitespace-nowrap transition-colors ${projectFilter === String(p.id) ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+                >
+                  {p.projectName}
+                </button>
+              ))}
+              {projectSearch && filteredProjects.length === 0 && (
+                <p className="px-3 py-2 text-sm text-slate-400">No projects found</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 min-w-0">
+        <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center gap-2">
           {['', 'PENDING', 'PAID'].map((s) => (
             <button
               key={s}
@@ -664,6 +769,8 @@ export default function ExpensesPage() {
             <p className="text-sm text-slate-500">Showing {page * size + 1}–{Math.min((page + 1) * size, totalElements)} of {totalElements}</p>
           </div>
         )}
+        </div>
+       </div>
       </div>
 
       {/* Expense Categories — only the Category/Sub Category mapping table

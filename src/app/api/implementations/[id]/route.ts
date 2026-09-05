@@ -44,6 +44,25 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
     }
 
+    // Business Vertical can be changed post-creation (Source Type/Lead/
+    // Project still can't — see their own disabled form fields), same
+    // "pick a Vertical, derive Head server-side from it" rule as POST.
+    // This is distinct from the Head *staying* fixed when the Vertical
+    // Master's own Head assignment is later reassigned (see headId's own
+    // schema comment) — here the Vertical itself is what's changing, so
+    // re-deriving Head for the newly picked Vertical is the correct
+    // behavior, not a violation of that rule.
+    let verticalUpdate: { verticalId?: number | null; headId?: number | null } = {};
+    if (body.verticalId !== undefined) {
+      if (body.verticalId) {
+        const vertical = await prisma.vertical.findUnique({ where: { id: parseInt(body.verticalId) }, select: { id: true, headId: true } });
+        if (!vertical) return NextResponse.json({ message: 'Selected vertical not found' }, { status: 404 });
+        verticalUpdate = { verticalId: vertical.id, headId: vertical.headId };
+      } else {
+        verticalUpdate = { verticalId: null, headId: null };
+      }
+    }
+
     const impl = await prisma.implementation.update({
       where: { id },
       data: {
@@ -56,6 +75,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.actualEndDate !== undefined && { actualEndDate: body.actualEndDate ? new Date(body.actualEndDate) : null }),
         ...(body.currentStage !== undefined && { currentStage: body.currentStage }),
         ...(body.notes !== undefined && { notes: body.notes }),
+        ...verticalUpdate,
       },
     });
 
