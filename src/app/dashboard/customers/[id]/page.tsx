@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
-import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, DocumentTextIcon, BanknotesIcon, PhoneIcon, Squares2X2Icon, RectangleStackIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, DocumentTextIcon, BanknotesIcon, PhoneIcon, Squares2X2Icon, RectangleStackIcon, TagIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
@@ -19,6 +19,7 @@ import CustomerContractsCard from '@/components/customers/CustomerContractsCard'
 import LeadDocumentsTab from '@/components/leads/LeadDocumentsTab';
 import InvoiceListPage from '@/components/accounting/InvoiceListPage';
 import ProjectsTab from '@/components/leads/ProjectsTab';
+import ProductsTab from '@/components/leads/ProductsTab';
 import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
 
 // A Customer is a Lead with status = CONFIRMED (see the module note atop
@@ -86,7 +87,7 @@ function classNames(...classes: (string | boolean)[]) {
 // query param, so a refresh (or a shared link) lands back on the same tab —
 // the Lead detail page doesn't need this (it's never deep-linked to a
 // specific tab), but the Customer detail page is expected to preserve it.
-const TAB_KEYS = ['overview', 'projects', 'events', 'documents', 'follow-up', 'activity', 'invoices', 'paid-invoices'] as const;
+const TAB_KEYS = ['overview', 'projects', 'products', 'events', 'documents', 'follow-up', 'activity', 'invoices', 'paid-invoices'] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 export default function CustomerDetailPage() {
@@ -216,6 +217,12 @@ export default function CustomerDetailPage() {
             )}>
               <RectangleStackIcon className="h-4 w-4" /> Projects
             </Tab>
+            <Tab className={({ selected }) => classNames(
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+              selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}>
+              <TagIcon className="h-4 w-4" /> Products
+            </Tab>
             <Tab
               disabled={!isConfirmed}
               className={({ selected }) => classNames(
@@ -279,6 +286,9 @@ export default function CustomerDetailPage() {
             </Tab.Panel>
             <Tab.Panel>
               <ProjectsTab leadId={customer.id} />
+            </Tab.Panel>
+            <Tab.Panel>
+              <ProductsTab leadId={customer.id} />
             </Tab.Panel>
             <Tab.Panel>
               {isConfirmed && canView ? (

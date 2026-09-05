@@ -54,13 +54,19 @@ export async function GET(request: NextRequest) {
     // project's actual expenses.
     const projectId = searchParams.get('projectId') || '';
     if (projectId) AND.push({ projectId: parseInt(projectId) });
-    // Overall Expenses / Project Expenses list tabs — same "has a Project or
-    // not" split as the create form's own Expense Type toggle
-    // (projectId null = Overall, set = Project) and the Expense Report's own
-    // projectOnly filter (see expenseReports.ts).
+    // Same, for a single Product's Product Expenses tab.
+    const productId = searchParams.get('productId') || '';
+    if (productId) AND.push({ productId: parseInt(productId) });
+    // Overall / Project / Product Expenses list tabs — same three-way split
+    // as the create form's own Expense Type toggle (both FKs null = Overall,
+    // projectId set = Project, productId set = Product) and the Expense
+    // Report's own projectOnly filter (see expenseReports.ts). OVERALL must
+    // exclude Product Expenses too, or a Product-linked row (which has no
+    // projectId) would wrongly count as Overall spend.
     const expenseType = searchParams.get('expenseType') || '';
     if (expenseType === 'PROJECT') AND.push({ projectId: { not: null } });
-    else if (expenseType === 'OVERALL') AND.push({ projectId: null });
+    else if (expenseType === 'PRODUCT') AND.push({ productId: { not: null } });
+    else if (expenseType === 'OVERALL') AND.push({ projectId: null, productId: null });
 
     if (AND.length > 0) where.AND = AND;
 
@@ -93,6 +99,7 @@ export async function GET(request: NextRequest) {
       vendor: e.vendor,
       vendorLeadId: e.vendorLeadId,
       projectId: e.projectId,
+      productId: e.productId,
       expenseDate: e.expenseDate,
       amount: e.amount,
       currencyCode: e.currencyCode,
@@ -201,6 +208,14 @@ export async function POST(request: NextRequest) {
       projectId = project.id;
     }
 
+    // Same, for a Product Expense.
+    let productId: number | null = null;
+    if (body.productId !== undefined && body.productId !== null && body.productId !== '') {
+      const product = await prisma.product.findUnique({ where: { id: parseInt(body.productId) } });
+      if (!product) return NextResponse.json({ message: 'Selected product not found' }, { status: 404 });
+      productId = product.id;
+    }
+
     const session = await getServerSession(authOptions);
     const recordedById = session?.user ? parseInt((session.user as any).id, 10) : null;
 
@@ -214,6 +229,7 @@ export async function POST(request: NextRequest) {
         vendorLeadId,
         vendor: vendorName,
         projectId,
+        productId,
         expenseDate,
         amount: Number(body.amount),
         currencyCode,

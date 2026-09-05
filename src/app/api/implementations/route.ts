@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     const stageCategory = searchParams.get('stageCategory') || '';
     const projectManagerId = searchParams.get('projectManagerId') || '';
     const businessVertical = searchParams.get('businessVertical') || '';
+    const productId = searchParams.get('productId') || '';
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortDir = searchParams.get('sortDir') || 'desc';
 
@@ -52,6 +53,10 @@ export async function GET(request: NextRequest) {
     // filter — businessVerticals is a JSON-encoded name on Lead, matched
     // via `contains` through the existing lead relation, not a new field.
     if (businessVertical) AND.push({ lead: { businessVerticals: { contains: businessVertical, mode: 'insensitive' } } });
+    // Filters to this Implementation's own linked Product (its productId),
+    // not any Lead-level mapping — same distinction as the Business Vertical
+    // column fix (see the table's own comment).
+    if (productId) AND.push({ productId: parseInt(productId) });
 
     if (AND.length > 0) where.AND = AND;
 
@@ -75,6 +80,7 @@ export async function GET(request: NextRequest) {
           lead: { select: { companyName: true, contactPerson: true, businessVerticals: true } },
           projectManager: { select: { firstName: true, lastName: true } },
           project: { select: { projectName: true } },
+          product: { select: { productName: true } },
           vertical: { select: { name: true } },
           head: { select: { firstName: true, lastName: true } },
         },
@@ -89,6 +95,8 @@ export async function GET(request: NextRequest) {
       projectName: impl.projectName,
       projectId: impl.projectId,
       linkedProjectName: impl.project?.projectName || null,
+      productId: impl.productId,
+      linkedProductName: impl.product?.productName || null,
       companyName: impl.lead.companyName,
       contactPerson: impl.lead.contactPerson,
       businessVerticals: impl.lead.businessVerticals,
@@ -137,16 +145,28 @@ export async function POST(request: NextRequest) {
 
     const leadId = parseInt(body.leadId);
 
+    // An implementation is for a Project or a Product, never both — same
+    // mutual-exclusion convention as the Quotation module's own
+    // projectId/productId check (see /api/quotations).
+    if (body.projectId && body.productId) {
+      return NextResponse.json({ message: 'Select either a Project or a Product, not both' }, { status: 400 });
+    }
     // A picked Project must actually belong to the selected Lead/Customer —
     // same check as /api/demos.
     if (body.projectId) {
       const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: leadId }, { leadId }] } });
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
     }
+    // Same check for a picked Product (the Customer main table's own
+    // CustomerProductsPanel).
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: parseInt(body.productId), OR: [{ customerId: leadId }, { leadId }] } });
+      if (!product) return NextResponse.json({ message: 'Selected product does not belong to this lead' }, { status: 400 });
+    }
 
-    // Business Vertical is picked manually on this form — never auto-filled
-    // from the selected Lead/Customer or Project (see the form's own
-    // comment). Optional: the form doesn't require it. Head is derived
+    // Business Vertical is auto-derived client-side from whichever of
+    // Project/Product is selected (see the form's own effect) — optional
+    // here too (an implementation with neither sends none). Head is derived
     // server-side from the selected Vertical's own Head assignment, never
     // taken from the client, same convention as Project.headId — but unlike
     // Project, a Vertical with no Head assigned is not an error here, it
@@ -167,6 +187,7 @@ export async function POST(request: NextRequest) {
         sourceType: body.sourceType,
         projectName: body.projectName || null,
         projectId: body.projectId ? parseInt(body.projectId) : null,
+        productId: body.productId ? parseInt(body.productId) : null,
         verticalId,
         headId,
         projectManagerId: body.projectManagerId ? parseInt(body.projectManagerId) : null,

@@ -74,6 +74,7 @@ export async function GET(request: NextRequest) {
           assignedTo: { select: { firstName: true, lastName: true } },
           package: { select: { name: true } },
           project: { select: { projectName: true } },
+          product: { select: { productName: true } },
           vertical: { select: { name: true } },
           head: { select: { firstName: true, lastName: true } },
         },
@@ -92,6 +93,8 @@ export async function GET(request: NextRequest) {
       packageName: demo.package?.name || null,
       projectId: demo.projectId,
       projectName: demo.project?.projectName || null,
+      productId: demo.productId,
+      productName: demo.product?.productName || null,
       // Business Vertical + its snapshot Head — see schema.prisma's
       // Demo.verticalId/headId comment.
       verticalId: demo.verticalId,
@@ -145,12 +148,23 @@ export async function POST(request: NextRequest) {
 
     const leadId = parseInt(body.leadId);
 
+    // A demo is for a Project or a Product, never both — same
+    // mutual-exclusion convention as the Quotation/Implementation modules'
+    // own projectId/productId check.
+    if (body.projectId && body.productId) {
+      return NextResponse.json({ message: 'Select either a Project or a Product, not both' }, { status: 400 });
+    }
     // A picked Project must actually belong to the selected Lead/Customer —
     // never trust the id verbatim from the client (same rationale as
     // /api/projects's own leadId filter: customerId OR leadId match).
     if (body.projectId) {
       const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: leadId }, { leadId }] } });
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+    // Same check for a picked Product.
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: parseInt(body.productId), OR: [{ customerId: leadId }, { leadId }] } });
+      if (!product) return NextResponse.json({ message: 'Selected product does not belong to this lead' }, { status: 400 });
     }
 
     // Head is derived from the selected Vertical's own Head assignment
@@ -167,6 +181,7 @@ export async function POST(request: NextRequest) {
         demoType: body.demoType,
         packageId: body.packageId ? parseInt(body.packageId) : null,
         projectId: body.projectId ? parseInt(body.projectId) : null,
+        productId: body.productId ? parseInt(body.productId) : null,
         assignedToId: body.assignedToId ? parseInt(body.assignedToId) : null,
         scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : null,
         timezone: body.timezone || DEFAULT_TIMEZONE,

@@ -95,6 +95,11 @@ function buildResourceBasedCosting(body: any) {
       discountValue,
       projectManagerName: body.projectManagerName ? String(body.projectManagerName).trim() : null,
       packageName: body.packageName ? String(body.packageName).trim() : null,
+      // New Client mode's free-text Product Name — see the Calculator
+      // form's own comment for why this has no dedicated column the way
+      // projectName does (a Product always needs an existing lead, which a
+      // brand-new client doesn't have yet).
+      productName: body.productName ? String(body.productName).trim() : null,
       validityDays,
       paymentMilestones,
     },
@@ -141,6 +146,10 @@ export async function GET(request: NextRequest) {
     // project's quotations.
     const projectId = searchParams.get('projectId') || '';
     if (projectId) AND.push({ projectId: parseInt(projectId) });
+    // Same, for Product Master's own Budget Estimation panel
+    // (ProductBudgetPanel).
+    const productId = searchParams.get('productId') || '';
+    if (productId) AND.push({ productId: parseInt(productId) });
 
     if (AND.length > 0) where.AND = AND;
 
@@ -156,6 +165,7 @@ export async function GET(request: NextRequest) {
         take: size,
         include: {
           lead: { select: { companyName: true, contactPerson: true } },
+          product: { select: { productName: true } },
           legalEntity: {
             select: {
               legalName: true, taxRegistrationNumber: true,
@@ -184,6 +194,11 @@ export async function GET(request: NextRequest) {
       pricingSnapshot: q.pricingSnapshot,
       costingMode: q.costingMode,
       projectName: q.projectName,
+      // Real Product Master link wins; falls back to the New Client-mode
+      // free text carried only in pricingSnapshot.productName (there's no
+      // typed productName column — see that field's own comment on the
+      // Quotation model/QuotationCalculatorForm's state for why).
+      productName: q.product?.productName || (q.pricingSnapshot as any)?.productName || null,
       outsourcingCost: q.outsourcingCost ? Number(q.outsourcingCost) : 0,
       travelCost: q.travelCost ? Number(q.travelCost) : 0,
       adminCost: q.adminCost ? Number(q.adminCost) : 0,
@@ -303,11 +318,23 @@ export async function POST(request: NextRequest) {
       clientState = clientState || lead?.state || null;
     }
 
+    // A quotation is for a Project or a Product, never both — same
+    // mutual-exclusion convention as Project/Product's own
+    // customerId/leadId check (see /api/projects, /api/products).
+    if (body.projectId && body.productId) {
+      return NextResponse.json({ message: 'Select either a Project or a Product, not both' }, { status: 400 });
+    }
     // A picked Project must actually belong to the resolved lead — same
     // check as /api/demos and /api/implementations.
     if (body.projectId) {
       const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: leadId! }, { leadId: leadId! }] } });
       if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+    // Same check for a picked Product (Product Master's own Budget
+    // Estimation flow — see ProductBudgetPanel).
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: parseInt(body.productId), OR: [{ customerId: leadId! }, { leadId: leadId! }] } });
+      if (!product) return NextResponse.json({ message: 'Selected product does not belong to this lead' }, { status: 400 });
     }
 
     const data: Prisma.QuotationUncheckedCreateInput = {
@@ -320,11 +347,24 @@ export async function POST(request: NextRequest) {
       notes: body.notes || null,
       additionalTerms: body.additionalTerms || null,
       projectId: body.projectId ? parseInt(body.projectId) : null,
+      productId: body.productId ? parseInt(body.productId) : null,
       status: 'DRAFT',
     };
     if (resourceBasedFields) {
       Object.assign(data, resourceBasedFields, { verticalId: body.verticalId ? parseInt(body.verticalId) : null });
     } else {
+      // Same Payment Milestones plan as the Calculator's own RESOURCE_BASED
+      // create above (buildResourceBasedCosting already ran
+      // validateMilestonePlan on body.paymentMilestones for that branch) —
+      // here it arrives nested under body.pricingSnapshot.paymentMilestones
+      // instead (see quotations/page.tsx's own save payload), since a
+      // CATALOG-mode quotation has no separate resourceBasedFields step to
+      // validate it in. Same validation, same shape, just a different
+      // caller — not a separate milestone system.
+      if (body.pricingSnapshot?.paymentMilestones !== undefined) {
+        const milestoneError = validateMilestonePlan(body.pricingSnapshot.paymentMilestones as MilestonePlanInput[]);
+        if (milestoneError) return NextResponse.json({ message: milestoneError }, { status: 400 });
+      }
       Object.assign(data, {
         softwareModules: body.softwareModules || null,
         businessModule: body.businessModule || null,

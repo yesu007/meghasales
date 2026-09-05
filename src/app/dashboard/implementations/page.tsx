@@ -20,7 +20,7 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
-import { formatBusinessVerticals, parseBusinessVerticals } from '@/lib/businessVerticals';
+import { useProductsForLead } from '@/hooks/useProductsForLead';
 // IMPL_STATUSES/STAGES moved to this shared lib (values/labels/colors
 // unchanged) so the Customer main table can reuse the exact same
 // structure — see src/lib/implementationStatus.ts's own comment. STAGES
@@ -41,6 +41,8 @@ interface Implementation {
   projectName: string | null;
   projectId: number | null;
   linkedProjectName: string | null;
+  productId: number | null;
+  linkedProductName: string | null;
   companyName: string;
   contactPerson: string;
   businessVerticals: string | null;
@@ -118,6 +120,7 @@ export default function ImplementationsPage() {
   const [stageFilter, setStageFilter] = useState('');
   const [managerFilter, setManagerFilter] = useState('');
   const [verticalFilter, setVerticalFilter] = useState('');
+  const [productFilter, setProductFilter] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
@@ -134,15 +137,25 @@ export default function ImplementationsPage() {
   if (stageFilter) params.currentStage = stageFilter;
   if (managerFilter) params.projectManagerId = managerFilter;
   if (verticalFilter) params.businessVertical = verticalFilter;
+  if (productFilter) params.productId = productFilter;
 
-  const activeFilters = [statusFilter, stageFilter, managerFilter, verticalFilter].filter(Boolean).length;
+  const activeFilters = [statusFilter, stageFilter, managerFilter, verticalFilter, productFilter].filter(Boolean).length;
   const clearFilters = () => {
-    setSearchInput(''); setSearch(''); setStatusFilter(''); setStageFilter(''); setManagerFilter(''); setVerticalFilter(''); setPage(0);
+    setSearchInput(''); setSearch(''); setStatusFilter(''); setStageFilter(''); setManagerFilter(''); setVerticalFilter(''); setProductFilter(''); setPage(0);
   };
 
   const { data: verticalOptions = [] } = useQuery<{ id: number; name: string; headId: number | null; headName: string | null }[]>({
     queryKey: ['verticals'],
     queryFn: async () => { const res = await fetch('/api/verticals'); if (!res.ok) throw new Error('Failed to fetch verticals'); return res.json(); },
+  });
+
+  // Full active Product list, for the Filters panel's own Product dropdown
+  // — same "global list, not scoped to any one Lead/Customer" convention as
+  // verticalOptions just above (this filters across every implementation's
+  // record, not one form's dropdown).
+  const { data: productOptions = [] } = useQuery<{ id: number; productName: string }[]>({
+    queryKey: ['products-for-impl-filter'],
+    queryFn: async () => { const res = await fetch('/api/products'); if (!res.ok) throw new Error('Failed to fetch products'); return res.json(); },
   });
 
   const { data, isLoading, isError } = useQuery({
@@ -151,10 +164,15 @@ export default function ImplementationsPage() {
     placeholderData: (prev: any) => prev,
   });
 
-  const blankForm = { sourceType: 'LEAD' as 'LEAD' | 'CUSTOMER', leadId: '', verticalId: '', projectName: '', projectId: '', startDate: '', targetEndDate: '', currentStage: '', projectManagerId: '', notes: '' };
+  const blankForm = { sourceType: 'LEAD' as 'LEAD' | 'CUSTOMER', leadId: '', verticalId: '', projectName: '', projectId: '', productId: '', startDate: '', targetEndDate: '', currentStage: '', projectManagerId: '', notes: '' };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  // Clears one field's stale "required" message as soon as the user
+  // actually changes it — validateForm only runs again on the next submit,
+  // so without this a message set by a failed submit attempt would
+  // otherwise keep showing even after the field now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
   // Business Vertical (and its derived Head) are locked once an
   // implementation is created — same as Source Type/Lead/Project — so
   // editing shows the value actually saved at creation time (server-joined,
@@ -170,56 +188,44 @@ export default function ImplementationsPage() {
     queryFn: () => fetchLeads(form.sourceType),
   });
 
-  // Project is scoped to whichever Lead/Customer is already selected above
-  // (same convention as Quotations' own Project picker — see
-  // useProjectsForLead's own comment) rather than driving Source
-  // Type/Lead/Customer itself, so a later Project pick can never silently
-  // override the Lead/Customer the user already chose per the required
-  // Source Type -> Lead/Company -> Vertical -> Head order.
+  // Project and Product are both scoped to whichever Lead/Customer is
+  // already selected above (same convention as Quotations' own pickers —
+  // see useProjectsForLead/useProductsForLead's own comments) rather than
+  // driving Source Type/Lead/Customer itself, so a later pick can never
+  // silently override the Lead/Customer the user already chose, per the
+  // required Source Type -> Lead/Company -> Project/Product order.
   const { data: leadProjects = [] } = useProjectsForLead(form.leadId);
+  const { data: leadProducts = [] } = useProductsForLead(form.leadId);
   const selectedProject = leadProjects.find((p) => String(p.id) === form.projectId);
+  const selectedProduct = leadProducts.find((p) => String(p.id) === form.productId);
   // Keeps the legacy free-text projectName column (still used for list
   // search/sort/display) in sync with whichever project is selected.
   useEffect(() => {
     if (selectedProject) setForm((f) => (f.projectName === selectedProject.projectName ? f : { ...f, projectName: selectedProject.projectName }));
   }, [selectedProject]);
 
-  // Business Vertical is scoped to whichever Lead/Company is selected above
-  // (same "reuse the existing mapping, don't invent a new one" convention as
-  // Project's own useProjectsForLead) — Lead.businessVerticals is the
-  // existing JSON-encoded list of Vertical *names* set on that Lead/Company
-  // (see parseBusinessVerticals's own comment and the Lead form's own
-  // vertical checklist, which writes v.name from this exact /api/verticals
-  // list), matched here against the Vertical Master's own name. Not shown at
-  // all until a Lead/Company is picked, and never auto-selected.
-  const selectedLead = leads.find((l: Lead) => String(l.id) === form.leadId);
-  const mappedVerticalNames = parseBusinessVerticals(selectedLead?.businessVerticals);
-  const availableVerticalOptions = form.leadId ? verticalOptions.filter((v) => mappedVerticalNames.includes(v.name)) : [];
-
-  // When editing, the Vertical actually saved on this record may no longer
-  // be in availableVerticalOptions above (deactivated since, or the Lead's
-  // own mapped Verticals changed) — same edge case editingVerticalInfo's own
-  // comment already handles for read-only display. Injected here as an
-  // extra option (not editingVerticalInfo's own separate branch) now that
-  // Vertical is an actual, changeable <select> in edit mode too, so the
-  // saved value still loads and shows correctly until the user picks a
-  // different (necessarily still-mapped, still-active) one.
-  const verticalStillAvailable = availableVerticalOptions.some((v) => String(v.id) === form.verticalId);
-  const verticalSelectOptions = editingId && form.verticalId && !verticalStillAvailable
-    ? [{ id: Number(form.verticalId), name: editingVerticalInfo.verticalName || `Vertical #${form.verticalId}`, headId: null, headName: editingVerticalInfo.headName }, ...availableVerticalOptions]
-    : availableVerticalOptions;
-
-  const selectedVertical = verticalSelectOptions.find((v) => String(v.id) === form.verticalId);
-
-  // Project is further scoped to the selected Vertical, once one is picked —
-  // each Project already carries exactly one Vertical (LeadProjectOption's
-  // own verticalId), so this reuses that existing data rather than a new
-  // lookup. Still just Lead/Company-scoped (leadProjects itself) until a
-  // Vertical is chosen, matching the required Source Type -> Lead/Company ->
-  // Vertical -> Head -> Project cascade order.
-  const verticalFilteredProjects = form.verticalId
-    ? leadProjects.filter((p) => String(p.verticalId) === form.verticalId)
-    : leadProjects;
+  // Business Vertical (and the Head derived from it) are now auto-populated
+  // from whichever of Project/Product is selected — each already carries
+  // exactly one Vertical (LeadProjectOption/LeadProductOption's own
+  // verticalId/verticalName/headId/headName), so this reuses that existing
+  // data rather than a new lookup, same pattern as the Quotation
+  // Calculator's own "auto-fill Vertical from the selected Project" effect.
+  // The user never picks Vertical/Head manually here — see their own
+  // read-only display below. Project and Product are mutually exclusive
+  // (see their own disabled fields), so at most one of the two is ever set;
+  // selectedProject wins if somehow both were (shouldn't happen). Skipped
+  // once editing (editingId set): Source Type/Lead/Project/Product are all
+  // locked then, and the Vertical/Head actually saved at creation time —
+  // server-joined via editingVerticalInfo, same "don't silently show a
+  // since-changed value" reasoning as that state's own comment — must keep
+  // showing regardless of whether the linked Project/Product's own Vertical
+  // has since changed.
+  useEffect(() => {
+    if (editingId) return;
+    const source = selectedProject || selectedProduct;
+    const nextVerticalId = source ? String(source.verticalId) : '';
+    setForm((f) => (f.verticalId === nextVerticalId ? f : { ...f, verticalId: nextVerticalId }));
+  }, [selectedProject, selectedProduct, editingId]);
 
   const { data: users = [], isError: isUsersError } = useQuery<UserOption[]>({
     queryKey: ['users-for-impl'],
@@ -264,12 +270,18 @@ export default function ImplementationsPage() {
   });
 
   const openEdit = (impl: Implementation) => {
+    // Guards against a still-open drawer's stale validation messages from a
+    // previous failed create attempt bleeding into this edit (see
+    // clearFieldError's own comment) — closeDrawer already clears this on
+    // the normal Cancel/X path, this is just defense in depth.
+    setFormErrors({});
     setForm({
       sourceType: impl.sourceType === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD',
       leadId: String(impl.leadId),
       verticalId: impl.verticalId ? String(impl.verticalId) : '',
       projectName: impl.projectName || '',
       projectId: impl.projectId ? String(impl.projectId) : '',
+      productId: impl.productId ? String(impl.productId) : '',
       startDate: impl.startDate ? dayjs(impl.startDate).format('YYYY-MM-DD') : '',
       targetEndDate: impl.targetEndDate ? dayjs(impl.targetEndDate).format('YYYY-MM-DD') : '',
       currentStage: impl.currentStage || '',
@@ -395,12 +407,19 @@ export default function ImplementationsPage() {
           {(searchInput || activeFilters > 0) && <button onClick={clearFilters} className="text-sm text-slate-500 hover:text-red-500">Clear All</button>}
         </div>
         {filtersOpen && (
-          <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Business Vertical</label>
               <select value={verticalFilter} onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
                 <option value="">All</option>
                 {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Product</label>
+              <select value={productFilter} onChange={(e) => { setProductFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
+                <option value="">All</option>
+                {productOptions.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
               </select>
             </div>
             <div>
@@ -423,6 +442,7 @@ export default function ImplementationsPage() {
           <div className="flex flex-wrap gap-2">
             {statusFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200">Status: {IMPL_STATUSES.find(s => s.value === statusFilter)?.label || statusFilter} <button onClick={() => setStatusFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
             {verticalFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-purple-50 text-purple-700 border border-purple-200">Vertical: {verticalFilter} <button onClick={() => setVerticalFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
+            {productFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-teal-50 text-teal-700 border border-teal-200">Product: {productOptions.find(p => String(p.id) === productFilter)?.productName || productFilter} <button onClick={() => setProductFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
             {stageFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">Stage: {stageFilter} <button onClick={() => setStageFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
             {managerFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">Manager: {users.find(u => String(u.id) === managerFilter)?.fullName || managerFilter} <button onClick={() => setManagerFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
           </div>
@@ -448,12 +468,13 @@ export default function ImplementationsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-900">
                   <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-white">Company</th>
                     <th className="px-4 py-3 text-left">
                       <button onClick={() => handleSort('projectName')} className="flex items-center gap-1 font-semibold text-white">
                         Project <SortIcon col="projectName" />
                       </button>
                     </th>
-                    <th className="px-4 py-3 text-left font-semibold text-white">Company</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden sm:table-cell">Product</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden sm:table-cell">Business Vertical</th>
                     <th className="px-4 py-3 text-left">
                       <button onClick={() => handleSort('status')} className="flex items-center gap-1 font-semibold text-white">
@@ -478,9 +499,17 @@ export default function ImplementationsPage() {
                 <tbody>
                   {implementations.map((impl, idx) => (
                     <tr key={impl.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
-                      <td className="px-4 py-3 font-medium text-slate-800">{impl.linkedProjectName || '-'}</td>
                       <td className="px-4 py-3 text-slate-600">{impl.companyName}</td>
-                      <td className="px-4 py-3 text-slate-600 hidden sm:table-cell">{formatBusinessVerticals(impl.businessVerticals) || 'Not assigned'}</td>
+                      <td className="px-4 py-3 text-slate-600">{impl.linkedProjectName || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden sm:table-cell">{impl.linkedProductName || '-'}</td>
+                      {/* The Vertical actually selected on this Implementation
+                          (auto-derived from its Project/Product — see the
+                          create form's own effect), not the Lead/Company's
+                          own separate mapped-verticals tags (impl.businessVerticals) —
+                          those are a different concept (which Verticals that
+                          Lead does business in generally) and could disagree
+                          with the one specific Vertical this record is for. */}
+                      <td className="px-4 py-3 text-slate-600 hidden sm:table-cell">{impl.verticalName || 'Not assigned'}</td>
                       <td className="px-4 py-3">
                         <select
                           value={impl.status}
@@ -623,11 +652,12 @@ export default function ImplementationsPage() {
                             value={form.sourceType}
                             onChange={(e) => {
                               const sourceType = e.target.value === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD';
-                              // Clearing leadId (and any Project/Vertical
-                              // already picked, since both are scoped to the
-                              // old leadId) on switch — the previously
-                              // selected record belongs to the other list.
-                              setForm(f => ({ ...f, sourceType, leadId: '', projectId: '', projectName: '', verticalId: '' }));
+                              // Clearing leadId (and any Project/Product/
+                              // Vertical already picked, since all three are
+                              // scoped to the old leadId) on switch — the
+                              // previously selected record belongs to the
+                              // other list.
+                              setForm(f => ({ ...f, sourceType, leadId: '', projectId: '', projectName: '', productId: '', verticalId: '' }));
                             }}
                             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
                           >
@@ -643,19 +673,22 @@ export default function ImplementationsPage() {
                             value={form.leadId}
                             onChange={(e) => {
                               const leadId = e.target.value;
-                              const newLead = leads.find((l: Lead) => String(l.id) === leadId);
-                              const newMappedNames = parseBusinessVerticals(newLead?.businessVerticals);
-                              setForm(f => {
-                                const stillValid = f.verticalId && verticalOptions.some((v) => String(v.id) === f.verticalId && newMappedNames.includes(v.name));
-                                return { ...f, leadId, projectId: '', projectName: '', verticalId: stillValid ? f.verticalId : '' };
-                              });
+                              // Reset Project/Product (and the Vertical/Head
+                              // derived from Project — see that effect's own
+                              // comment) — the previous picks belonged to
+                              // whichever Lead/Company was selected before,
+                              // and must not carry over. Both dropdowns
+                              // (scoped to this new leadId) repopulate via
+                              // the queries above.
+                              setForm(f => ({ ...f, leadId, projectId: '', projectName: '', productId: '', verticalId: '' }));
+                              clearFieldError('leadId');
                             }}
                             className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.leadId ? 'border-red-400' : 'border-slate-300'}`}
                           >
                             <option value="">{form.sourceType === 'CUSTOMER' ? 'Select a customer' : 'Select a lead'}</option>
                             {leads.map((lead: Lead) => (
                               <option key={lead.id} value={lead.id}>
-                                {lead.companyName} — {lead.contactPerson}
+                                {lead.companyName}
                               </option>
                             ))}
                           </select>
@@ -663,54 +696,60 @@ export default function ImplementationsPage() {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
-                            {/* Scoped to the selected Lead/Company's own
-                                mapped Verticals (see availableVerticalOptions's
-                                own comment) — never the full Vertical Master
-                                list, and never auto-picked; still a fully
-                                manual selection, just a filtered one. Source
-                                Type/Lead/Project stay locked once created (see
-                                their own disabled fields), but Vertical (and
-                                the Head derived from it) remains editable —
-                                verticalSelectOptions's own comment covers the
-                                edit-mode case where the saved value has since
-                                fallen out of that live mapped/active list. */}
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                            {/* Project and Product are mutually exclusive —
+                                picking one disables the other (cleared ->
+                                re-enabled), same rule as the Quotation
+                                module's own Project/Product pickers. */}
                             <select
-                              disabled={!form.leadId}
-                              title={!form.leadId ? 'Select a Lead / Company first' : undefined}
-                              value={form.verticalId}
-                              onChange={(e) => {
-                                const verticalId = e.target.value;
-                                setForm(f => {
-                                  const projectStillValid = f.projectId && leadProjects.some((p) => String(p.id) === f.projectId && (!verticalId || String(p.verticalId) === verticalId));
-                                  return projectStillValid ? { ...f, verticalId } : { ...f, verticalId, projectId: '', projectName: '' };
-                                });
-                              }}
+                              disabled={!form.leadId || !!editingId || !!form.productId}
+                              title={!form.leadId ? 'Select a Lead / Company first' : editingId ? 'Project cannot be changed after creation' : undefined}
+                              value={form.projectId}
+                              onChange={(e) => setForm(f => ({ ...f, projectId: e.target.value }))}
                               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
                             >
-                              <option value="">{form.leadId ? 'Select vertical' : 'Select a Lead / Company first'}</option>
-                              {verticalSelectOptions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                              <option value="">{form.leadId ? 'Select project' : 'Select a Lead / Company first'}</option>
+                              {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
                             </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                            <select
+                              disabled={!form.leadId || !!editingId || !!form.projectId}
+                              title={!form.leadId ? 'Select a Lead / Company first' : editingId ? 'Product cannot be changed after creation' : undefined}
+                              value={form.productId}
+                              onChange={(e) => setForm(f => ({ ...f, productId: e.target.value }))}
+                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                            >
+                              <option value="">{form.leadId ? 'Select product' : 'Select a Lead / Company first'}</option>
+                              {leadProducts.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical</label>
+                            {/* Auto-populated from whichever of Project/
+                                Product is selected above — never manually
+                                picked (see the effect deriving
+                                form.verticalId from selectedProject/
+                                selectedProduct). Shown read-only, same
+                                convention as Head just to the right. While
+                                editing, shows the value actually saved at
+                                creation (editingVerticalInfo, server-joined —
+                                see its own comment) rather than a live
+                                re-derivation, since Project/Product are
+                                locked then anyway. */}
+                            <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
+                              {editingId ? (editingVerticalInfo.verticalName || 'Not assigned') : ((selectedProject || selectedProduct)?.verticalName || '—')}
+                            </p>
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Head</label>
                             <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
-                              {form.verticalId ? (selectedVertical?.headName || 'No head assigned') : '—'}
+                              {editingId ? (editingVerticalInfo.headName || 'No head assigned') : ((selectedProject || selectedProduct) ? ((selectedProject || selectedProduct)?.headName || 'No head assigned') : '—')}
                             </p>
                           </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
-                          <select
-                            disabled={!form.leadId || !!editingId}
-                            title={!form.leadId ? 'Select a Lead / Company first' : editingId ? 'Project cannot be changed after creation' : undefined}
-                            value={form.projectId}
-                            onChange={(e) => setForm(f => ({ ...f, projectId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
-                          >
-                            <option value="">{form.leadId ? 'Select project' : 'Select a Lead / Company first'}</option>
-                            {verticalFilteredProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
-                          </select>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
