@@ -223,6 +223,14 @@ export default function ExpensesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(blankForm);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  // Clears one field's stale "required" message as soon as the user actually
+  // changes it — the form's own submit handler only runs validation again on
+  // the next submit, so without this a message set by a failed submit
+  // attempt would otherwise keep showing even after the field now holds a
+  // valid value. Same pattern used across every other module's form in this
+  // app (see e.g. src/app/dashboard/demos/page.tsx's own clearFieldError).
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
@@ -286,10 +294,15 @@ export default function ExpensesPage() {
     ? products.filter((p) => p.productName.toLowerCase().includes(productSearch.trim().toLowerCase()))
     : products;
 
-  const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
+  const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
 
   const openEdit = (row: ExpenseRow) => {
     setEditingId(row.id);
+    // Guards against a still-open form's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeForm
+    // already clears this on the normal Cancel path, this is just defense
+    // in depth.
+    setFormErrors({});
     setForm({
       categoryId: String(row.categoryId),
       subCategoryId: row.subCategoryId ? String(row.subCategoryId) : '',
@@ -503,22 +516,16 @@ export default function ExpensesPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!form.categoryId || !form.amount || !form.expenseDate || !form.paymentMethod) {
-              toast.error('Category, amount, date, and payment method are required');
-              return;
-            }
-            if (subCategoryOptions.length > 0 && !form.subCategoryId) {
-              toast.error('Sub-category is required');
-              return;
-            }
-            if (form.expenseType === 'PROJECT' && !form.projectId) {
-              toast.error('Select a project, or switch to Overall Expense');
-              return;
-            }
-            if (form.expenseType === 'PRODUCT' && !form.productId) {
-              toast.error('Select a product, or switch to Overall Expense');
-              return;
-            }
+            const errs: Record<string, string> = {};
+            if (!form.categoryId) errs.categoryId = 'Category is required';
+            if (subCategoryOptions.length > 0 && !form.subCategoryId) errs.subCategoryId = 'Sub-category is required';
+            if (form.expenseType === 'PROJECT' && !form.projectId) errs.projectId = 'Project is required';
+            if (form.expenseType === 'PRODUCT' && !form.productId) errs.productId = 'Product is required';
+            if (!form.expenseDate) errs.expenseDate = 'Expense date is required';
+            if (!form.amount) errs.amount = 'Amount is required';
+            if (!form.paymentMethod) errs.paymentMethod = 'Payment method is required';
+            setFormErrors(errs);
+            if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
             save.mutate();
           }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
@@ -558,18 +565,29 @@ export default function ExpensesPage() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-              <select value={form.categoryId} onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value, subCategoryId: '' }))} className={inputCls}>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Category *</label>
+              <select
+                value={form.categoryId}
+                onChange={(e) => { setForm((f) => ({ ...f, categoryId: e.target.value, subCategoryId: '' })); clearFieldError('categoryId'); }}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.categoryId ? 'border-red-400' : 'border-slate-300'}`}
+              >
                 <option value="">Select category</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              {formErrors.categoryId && <p className="text-xs text-red-600 mt-1">{formErrors.categoryId}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Sub Category</label>
-              <select value={form.subCategoryId} onChange={(e) => setForm((f) => ({ ...f, subCategoryId: e.target.value }))} className={inputCls} disabled={subCategoryOptions.length === 0}>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Sub Category{subCategoryOptions.length > 0 ? ' *' : ''}</label>
+              <select
+                value={form.subCategoryId}
+                onChange={(e) => { setForm((f) => ({ ...f, subCategoryId: e.target.value })); clearFieldError('subCategoryId'); }}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.subCategoryId ? 'border-red-400' : 'border-slate-300'}`}
+                disabled={subCategoryOptions.length === 0}
+              >
                 <option value="">{subCategoryOptions.length === 0 ? 'No sub-categories' : 'Select sub-category'}</option>
                 {subCategoryOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
+              {formErrors.subCategoryId && <p className="text-xs text-red-600 mt-1">{formErrors.subCategoryId}</p>}
             </div>
             {editingId && (
               <div>
@@ -582,29 +600,53 @@ export default function ExpensesPage() {
             )}
             {form.expenseType === 'PROJECT' && (
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
-                <select value={form.projectId} onChange={(e) => setForm((f) => ({ ...f, projectId: e.target.value }))} className={inputCls}>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Project *</label>
+                <select
+                  value={form.projectId}
+                  onChange={(e) => { setForm((f) => ({ ...f, projectId: e.target.value })); clearFieldError('projectId'); }}
+                  className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.projectId ? 'border-red-400' : 'border-slate-300'}`}
+                >
                   <option value="">Select project</option>
                   {projects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
                 </select>
+                {formErrors.projectId && <p className="text-xs text-red-600 mt-1">{formErrors.projectId}</p>}
               </div>
             )}
             {form.expenseType === 'PRODUCT' && (
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
-                <select value={form.productId} onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value }))} className={inputCls}>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Product *</label>
+                <select
+                  value={form.productId}
+                  onChange={(e) => { setForm((f) => ({ ...f, productId: e.target.value })); clearFieldError('productId'); }}
+                  className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.productId ? 'border-red-400' : 'border-slate-300'}`}
+                >
                   <option value="">Select product</option>
                   {products.map((p) => <option key={p.id} value={p.id}>{p.productName}</option>)}
                 </select>
+                {formErrors.productId && <p className="text-xs text-red-600 mt-1">{formErrors.productId}</p>}
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Expense Date</label>
-              <input type="date" value={form.expenseDate} onChange={(e) => setForm((f) => ({ ...f, expenseDate: e.target.value }))} className={inputCls} />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Expense Date *</label>
+              <input
+                type="date"
+                value={form.expenseDate}
+                onChange={(e) => { setForm((f) => ({ ...f, expenseDate: e.target.value })); clearFieldError('expenseDate'); }}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.expenseDate ? 'border-red-400' : 'border-slate-300'}`}
+              />
+              {formErrors.expenseDate && <p className="text-xs text-red-600 mt-1">{formErrors.expenseDate}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Amount</label>
-              <input type="number" min="0.01" step="0.01" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className={inputCls} />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Amount *</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={form.amount}
+                onChange={(e) => { setForm((f) => ({ ...f, amount: e.target.value })); clearFieldError('amount'); }}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.amount ? 'border-red-400' : 'border-slate-300'}`}
+              />
+              {formErrors.amount && <p className="text-xs text-red-600 mt-1">{formErrors.amount}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
@@ -620,11 +662,16 @@ export default function ExpensesPage() {
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Payment Method</label>
-              <select value={form.paymentMethod} onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value }))} className={inputCls}>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Payment Method *</label>
+              <select
+                value={form.paymentMethod}
+                onChange={(e) => { setForm((f) => ({ ...f, paymentMethod: e.target.value })); clearFieldError('paymentMethod'); }}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.paymentMethod ? 'border-red-400' : 'border-slate-300'}`}
+              >
                 <option value="">Select method</option>
                 {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
               </select>
+              {formErrors.paymentMethod && <p className="text-xs text-red-600 mt-1">{formErrors.paymentMethod}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Reference / Bill No.</label>

@@ -91,6 +91,12 @@ export default function ProjectFormDrawer({
   const { data: leads = [] } = useQuery({ queryKey: ['leads-for-project'], queryFn: fetchLeadOptions });
   const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
 
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — validateProjectForm only runs again on the next
+  // submit, so without this a message set by a failed submit attempt would
+  // otherwise keep showing even after the field now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
   // Vertical is freely selectable — the Lead/Customer's own business
   // vertical(s) (Lead.businessVerticals) are only used to *suggest* an
   // initial pick when one is first selected, matching Implementations
@@ -139,6 +145,12 @@ export default function ProjectFormDrawer({
     // primitive id, not the selectedVertical object (a new reference every
     // render), to avoid re-running this every render.
   }, [selectedVertical?.headId]);
+  // headId is never changed via a direct onChange (it just mirrors the
+  // selected Vertical above) — clear its own stale "required" message here
+  // instead, the moment it resolves to a real value.
+  useEffect(() => {
+    if (form.headId) clearFieldError('headId');
+  }, [form.headId]);
 
   const handleClose = () => { setFormErrors({}); onClose(); };
 
@@ -171,7 +183,7 @@ export default function ProjectFormDrawer({
                         <label className="block text-sm font-medium text-slate-700 mb-1">Project Name *</label>
                         <input
                           value={form.projectName}
-                          onChange={(e) => setForm(f => ({ ...f, projectName: e.target.value }))}
+                          onChange={(e) => { setForm(f => ({ ...f, projectName: e.target.value })); clearFieldError('projectName'); }}
                           placeholder="e.g. Salem ERP Rollout"
                           className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.projectName ? 'border-red-400' : 'border-slate-300'}`}
                         />
@@ -182,7 +194,7 @@ export default function ProjectFormDrawer({
                         <select
                           value={form.leadId}
                           disabled={!!form.customerId}
-                          onChange={(e) => setForm(f => ({ ...f, leadId: e.target.value }))}
+                          onChange={(e) => { setForm(f => ({ ...f, leadId: e.target.value })); clearFieldError('customerId'); }}
                           className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.customerId ? 'border-red-400' : 'border-slate-300'} ${form.customerId ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                         >
                           <option value="">Select Lead</option>
@@ -194,7 +206,7 @@ export default function ProjectFormDrawer({
                         <select
                           value={form.customerId}
                           disabled={!!form.leadId}
-                          onChange={(e) => setForm(f => ({ ...f, customerId: e.target.value }))}
+                          onChange={(e) => { setForm(f => ({ ...f, customerId: e.target.value })); clearFieldError('customerId'); }}
                           className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.customerId ? 'border-red-400' : 'border-slate-300'} ${form.leadId ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                         >
                           <option value="">Select Customer</option>
@@ -206,7 +218,7 @@ export default function ProjectFormDrawer({
                         <label className="block text-sm font-medium text-slate-700 mb-1">Vertical *</label>
                         <select
                           value={form.verticalId}
-                          onChange={(e) => setForm(f => ({ ...f, verticalId: e.target.value }))}
+                          onChange={(e) => { setForm(f => ({ ...f, verticalId: e.target.value })); clearFieldError('verticalId'); }}
                           className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.verticalId ? 'border-red-400' : 'border-slate-300'}`}
                         >
                           <option value="">Select Vertical</option>
@@ -226,7 +238,7 @@ export default function ProjectFormDrawer({
                         <input
                           type="number" min="0" step="0.01"
                           value={form.budget}
-                          onChange={(e) => setForm(f => ({ ...f, budget: e.target.value }))}
+                          onChange={(e) => { setForm(f => ({ ...f, budget: e.target.value })); clearFieldError('budget'); }}
                           placeholder="e.g. 500000"
                           className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.budget ? 'border-red-400' : 'border-slate-300'}`}
                         />

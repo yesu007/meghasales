@@ -12,8 +12,6 @@ interface PackageRow {
   isActive: boolean;
 }
 
-const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
-
 async function fetchPackages(): Promise<PackageRow[]> {
   const res = await fetch('/api/packages?includeInactive=true');
   if (!res.ok) throw new Error('Failed to fetch packages');
@@ -30,6 +28,14 @@ export default function PackagesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(blankForm);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — the form's own submit handler only runs
+  // validation again on the next submit, so without this a message set by a
+  // failed submit attempt would otherwise keep showing even after the field
+  // now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
 
   // Search — same debounced searchInput/search pattern as the Leads module
   // (src/app/dashboard/leads/page.tsx), but applied client-side since this
@@ -49,11 +55,16 @@ export default function PackagesPage() {
       })
     : packages;
 
-  const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
+  const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
 
   const openEdit = (p: PackageRow) => {
     setEditingId(p.id);
     setForm({ name: p.name });
+    // Guards against a still-open form's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeForm
+    // already clears this on the normal Cancel path, this is just defense
+    // in depth.
+    setFormErrors({});
     setShowForm(true);
   };
 
@@ -127,14 +138,27 @@ export default function PackagesPage() {
 
       {showForm && (
         <form
-          onSubmit={(e) => { e.preventDefault(); if (!form.name.trim()) { toast.error('Package name is required'); return; } save.mutate(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const errs: Record<string, string> = {};
+            if (!form.name.trim()) errs.name = 'Package name is required';
+            setFormErrors(errs);
+            if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
+            save.mutate();
+          }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
         >
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingId ? 'Edit Package' : 'New Package'}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Package Name</label>
-              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="e.g. Custom Project" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Package Name *</label>
+              <input
+                value={form.name}
+                onChange={(e) => { setForm((f) => ({ ...f, name: e.target.value })); clearFieldError('name'); }}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.name ? 'border-red-400' : 'border-slate-300'}`}
+                placeholder="e.g. Custom Project"
+              />
+              {formErrors.name && <p className="text-xs text-red-600 mt-1">{formErrors.name}</p>}
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
