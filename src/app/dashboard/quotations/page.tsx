@@ -335,8 +335,16 @@ export default function QuotationsPage() {
     if (isCurrencyListError) toast.error('Failed to load currencies');
   }, [isCurrencyListError]);
 
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — saveQuotation's own validation only runs again on
+  // the next submit, so without this a message set by a failed submit
+  // attempt would otherwise keep showing even after the field now holds a
+  // valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
   const selectExistingLead = (id: string) => {
     setSelectedLeadId(id);
+    clearFieldError('client');
     const lead = existingLeads.find(l => String(l.id) === id);
     setClientName(lead?.contactPerson || '');
     setCompanyName(lead?.companyName || '');
@@ -383,13 +391,14 @@ export default function QuotationsPage() {
     const isSelected = selectedModules.includes(code);
     setSelectedModules(prev => isSelected ? prev.filter(c => c !== code) : [...prev, code]);
     if (isSelected) setModuleOverrides(prev => { const { [code]: _drop, ...rest } = prev; return rest; });
+    clearFieldError('modules');
   };
   const updateModuleOverride = (code: string, value: number) => setModuleOverrides(prev => ({ ...prev, [code]: value }));
   const updateServiceOverride = (field: keyof ServiceOverrides, value: number) => setServiceOverrides(prev => ({ ...prev, [field]: value }));
   const toggleAddon = (code: string) => setSelectedAddons(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   const addCustomModule = () => setCustomModules(prev => [...prev, { id: Date.now().toString(), name: '', description: '', cost: 0, quantity: 1 }]);
   const removeCustomModule = (id: string) => setCustomModules(prev => prev.filter(m => m.id !== id));
-  const updateCustomModule = (id: string, field: keyof CustomModule, value: any) => setCustomModules(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m));
+  const updateCustomModule = (id: string, field: keyof CustomModule, value: any) => { setCustomModules(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m)); clearFieldError('modules'); };
   const customModulesTotal = customModules.reduce((sum, m) => sum + (m.cost * m.quantity), 0);
 
   const saveQuotation = async () => {
@@ -402,8 +411,16 @@ export default function QuotationsPage() {
       if (!companyName) errs.companyName = 'Company is required';
     }
     if (!hasModule) errs.modules = 'Select at least one module';
+    // Existing-client quotations must be tied to a Project or a Product
+    // (mutually exclusive — see their own disabled fields below); New
+    // Client mode has no real Project/Product to pick yet (only the free-
+    // text Project Name/Product Name, informational only), so this only
+    // applies once a real Client is picked. Same rule as the Quotation
+    // Calculator's own handleSave.
+    const projectOrProductValid = editingId || clientMode !== 'existing' || !!projectId || !!productId;
+    if (!editingId && clientMode === 'existing' && !projectId && !productId) errs.project = 'Select a Project or Product';
     setFormErrors(errs);
-    if (!pricing || !clientValid || !hasModule) {
+    if (!pricing || !clientValid || !hasModule || !projectOrProductValid) {
       toast.error(clientMode === 'existing' && !editingId ? 'Select a client and at least one module' : 'Fill required fields and select at least one module');
       return;
     }
@@ -487,6 +504,11 @@ export default function QuotationsPage() {
     const res = await fetch(`/api/quotations/${id}`);
     if (!res.ok) { toast.error('Failed to load quotation'); return; }
     const q = await res.json();
+    // Guards against a still-open form's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — resetCreateState
+    // already clears this on the normal Cancel path, this is just defense in
+    // depth.
+    setFormErrors({});
     const sw = Array.isArray(q.softwareModules) ? q.softwareModules : [];
     setSelectedModules(sw.filter((m: any) => typeof m === 'string'));
     setCustomModules(sw.filter((m: any) => m && typeof m === 'object').map((m: any, i: number) => ({
@@ -981,35 +1003,37 @@ export default function QuotationsPage() {
                   <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
                   <select
                     value={projectId}
-                    onChange={e => setProjectId(e.target.value)}
+                    onChange={e => { setProjectId(e.target.value); clearFieldError('project'); }}
                     disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0 || !!productId}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                    className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
                   >
                     <option value="">
                       {!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
                     </option>
                     {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
                   </select>
+                  {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
                   <select
                     value={productId}
-                    onChange={e => setProductId(e.target.value)}
+                    onChange={e => { setProductId(e.target.value); clearFieldError('project'); }}
                     disabled={!selectedLeadId || productsLoading || leadProducts.length === 0 || !!projectId}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                    className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
                   >
                     <option value="">
                       {!selectedLeadId ? 'Select a client first' : productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
                     </option>
                     {leadProducts.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
                   </select>
+                  {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                 </div>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input disabled={!!editingId} value={clientName} onChange={e => setClientName(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.clientName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.clientName && <p className="text-xs text-red-600 mt-1">{formErrors.clientName}</p>}</div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input disabled={!!editingId} value={companyName} onChange={e => setCompanyName(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}</div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input disabled={!!editingId} value={clientName} onChange={e => { setClientName(e.target.value); clearFieldError('clientName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.clientName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.clientName && <p className="text-xs text-red-600 mt-1">{formErrors.clientName}</p>}</div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input disabled={!!editingId} value={companyName} onChange={e => { setCompanyName(e.target.value); clearFieldError('companyName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}</div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input disabled={!!editingId} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input disabled={!!editingId} value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
                 {editingId ? (

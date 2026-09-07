@@ -62,6 +62,14 @@ export default function VerticalsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(blankForm);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — the form's own submit handler only runs
+  // validation again on the next submit, so without this a message set by a
+  // failed submit attempt would otherwise keep showing even after the field
+  // now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
 
   // Search — same debounced searchInput/search pattern as the Leads module
   // (src/app/dashboard/leads/page.tsx), but applied client-side since this
@@ -90,7 +98,7 @@ export default function VerticalsPage() {
   // they're already defined against.
   const [budgetViewMode, setBudgetViewMode] = useState<'monthly' | 'yearly'>('yearly');
 
-  const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
+  const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
 
   const openEdit = (v: VerticalRow) => {
     setEditingId(v.id);
@@ -100,6 +108,11 @@ export default function VerticalsPage() {
       budget: v.budget || '',
       budgetCurrencyCode: v.budgetCurrencyCode || 'INR',
     });
+    // Guards against a still-open form's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeForm
+    // already clears this on the normal Cancel path, this is just defense
+    // in depth.
+    setFormErrors({});
     setShowForm(true);
   };
 
@@ -192,21 +205,40 @@ export default function VerticalsPage() {
 
       {showForm && (
         <form
-          onSubmit={(e) => { e.preventDefault(); if (!form.name.trim()) { toast.error('Vertical name is required'); return; } save.mutate(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const errs: Record<string, string> = {};
+            if (!form.name.trim()) errs.name = 'Vertical name is required';
+            if (!form.headId) errs.headId = 'Vertical head is required';
+            setFormErrors(errs);
+            if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
+            save.mutate();
+          }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
         >
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingId ? 'Edit Vertical' : 'New Vertical'}</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Vertical Name</label>
-              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="e.g. Jewellery Manufacturing" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Vertical Name *</label>
+              <input
+                value={form.name}
+                onChange={(e) => { setForm((f) => ({ ...f, name: e.target.value })); clearFieldError('name'); }}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.name ? 'border-red-400' : 'border-slate-300'}`}
+                placeholder="e.g. Jewellery Manufacturing"
+              />
+              {formErrors.name && <p className="text-xs text-red-600 mt-1">{formErrors.name}</p>}
             </div>
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Vertical Head</label>
-              <select value={form.headId} onChange={(e) => setForm((f) => ({ ...f, headId: e.target.value }))} className={inputCls}>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Vertical Head *</label>
+              <select
+                value={form.headId}
+                onChange={(e) => { setForm((f) => ({ ...f, headId: e.target.value })); clearFieldError('headId'); }}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.headId ? 'border-red-400' : 'border-slate-300'}`}
+              >
                 <option value="">Unassigned</option>
                 {users.map((u) => <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>)}
               </select>
+              {formErrors.headId && <p className="text-xs text-red-600 mt-1">{formErrors.headId}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Budget</label>

@@ -267,22 +267,19 @@ export default function DemosPage() {
     const nextVerticalId = source ? String(source.verticalId) : '';
     setForm((f) => (f.verticalId === nextVerticalId ? f : { ...f, verticalId: nextVerticalId }));
   }, [selectedProject, selectedProduct, editingId]);
-  // verticalId is never changed via a direct onChange (see above) — clear
-  // its own stale "required" message here instead, the moment it resolves
-  // to a real value.
-  useEffect(() => {
-    if (form.verticalId) clearFieldError('verticalId');
-  }, [form.verticalId]);
-
   const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setSourceType('LEAD'); setFormErrors({}); setEditingVerticalInfo({ verticalName: null, headName: null }); };
 
   const validateForm = (data: typeof form) => {
     const errs: Record<string, string> = {};
     if (!data.leadId) errs.leadId = 'Lead / company is required';
-    // Vertical is no longer its own manual field — it's derived from
-    // whichever of Project/Product is selected (see that effect above), so
-    // this error now points the user at the actual action needed.
-    if (!data.verticalId) errs.verticalId = 'Select a Project or Product to set the Business Vertical';
+    // Project and/or Product required (at least one) — same rule as the
+    // Quotation/Implementation modules' own Project/Product validation.
+    // Business Vertical is derived from whichever is picked (see the effect
+    // above), so this one check covers both. Only checked on create: both
+    // are locked once editingId is set, so a legacy record with neither
+    // (and thus no Vertical) could never be saved again if this also
+    // applied there.
+    if (!editingId && !data.projectId && !data.productId) errs.project = 'Select a Project or Product';
     if (!data.demoType) errs.demoType = 'Demo type is required';
     if (!data.scheduledDate) errs.scheduledDate = 'Scheduled date & time is required';
     return errs;
@@ -776,12 +773,13 @@ export default function DemosPage() {
                               disabled={!!editingId || !form.leadId || !!form.productId}
                               title={editingId ? 'Project cannot be changed after creation' : !form.leadId ? 'Select a Lead / Company first' : undefined}
                               value={form.projectId}
-                              onChange={(e) => setForm(f => ({ ...f, projectId: e.target.value }))}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                              onChange={(e) => { setForm(f => ({ ...f, projectId: e.target.value })); clearFieldError('project'); }}
+                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
                             >
                               <option value="">Select project</option>
                               {projectsForLead.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
                             </select>
+                            {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
@@ -789,12 +787,13 @@ export default function DemosPage() {
                               disabled={!!editingId || !form.leadId || !!form.projectId}
                               title={editingId ? 'Product cannot be changed after creation' : !form.leadId ? 'Select a Lead / Company first' : undefined}
                               value={form.productId}
-                              onChange={(e) => setForm(f => ({ ...f, productId: e.target.value }))}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                              onChange={(e) => { setForm(f => ({ ...f, productId: e.target.value })); clearFieldError('project'); }}
+                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
                             >
                               <option value="">Select product</option>
                               {productsForLead.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
                             </select>
+                            {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -810,10 +809,9 @@ export default function DemosPage() {
                                 creation (editingVerticalInfo) rather than a
                                 live re-derivation, since Project/Product are
                                 locked then anyway. */}
-                            <p className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-600 bg-slate-50 ${formErrors.verticalId ? 'border-red-400' : 'border-slate-200'}`}>
+                            <p className="w-full px-3 py-2 border rounded-lg text-sm text-slate-600 bg-slate-50 border-slate-200">
                               {editingId ? (editingVerticalInfo.verticalName || 'Not assigned') : ((selectedProject || selectedProduct)?.verticalName || '—')}
                             </p>
-                            {formErrors.verticalId && <p className="text-xs text-red-600 mt-1">{formErrors.verticalId}</p>}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Head</label>

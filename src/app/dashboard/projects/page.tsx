@@ -126,6 +126,11 @@ export default function ProjectsPage() {
       headId: p.headId ? String(p.headId) : '',
       budget: p.budget || '',
     });
+    // Guards against a still-open drawer's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeDrawer
+    // already clears this on the normal Cancel/X path, this is just defense
+    // in depth.
+    setFormErrors({});
     setDrawerOpen(true);
   };
 

@@ -173,6 +173,12 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
     return errs;
   };
 
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — validate only runs again on the next submit, so
+  // without this a message set by a failed submit attempt would otherwise
+  // keep showing even after the field now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
   const openEdit = (contract: CustomerContract) => {
     setForm({
       contractType: contract.contractType,
@@ -184,6 +190,10 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
     });
     setPendingFile(null);
     setEditingId(contract.id);
+    // Guards against stale validation messages from a previous failed
+    // create attempt bleeding into this edit — resetForm already clears
+    // this on its own path, this is just defense in depth.
+    setFormErrors({});
   };
 
   const inputClass = (field: string) =>
@@ -223,7 +233,7 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Contract Type *</label>
-              <select value={form.contractType} onChange={(e) => setForm((f) => ({ ...f, contractType: e.target.value }))} className={inputClass('contractType')}>
+              <select value={form.contractType} onChange={(e) => { setForm((f) => ({ ...f, contractType: e.target.value })); clearFieldError('contractType'); }} className={inputClass('contractType')}>
                 <option value="">Select</option>
                 {CONTRACT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
@@ -249,7 +259,7 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Date *</label>
-              <input type="date" value={form.contractDate} onChange={(e) => setForm((f) => ({ ...f, contractDate: e.target.value }))} className={inputClass('contractDate')} />
+              <input type="date" value={form.contractDate} onChange={(e) => { setForm((f) => ({ ...f, contractDate: e.target.value })); clearFieldError('contractDate'); }} className={inputClass('contractDate')} />
               {formErrors.contractDate && <p className="text-xs text-red-600 mt-1">{formErrors.contractDate}</p>}
             </div>
             <div>
@@ -258,7 +268,7 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Status *</label>
-              <select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className={inputClass('status')}>
+              <select value={form.status} onChange={(e) => { setForm((f) => ({ ...f, status: e.target.value })); clearFieldError('status'); }} className={inputClass('status')}>
                 {CONTRACT_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>

@@ -118,6 +118,13 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
 
   const [status, setStatus] = useState('DRAFT');
   const [quotationNumber, setQuotationNumber] = useState('');
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — handleSave only runs validation again on the next
+  // submit, so without this a message set by a failed submit attempt would
+  // otherwise keep showing even after the field now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
 
   const { data: existing } = useQuery({
     queryKey: ['quotation', quotationId],
@@ -515,10 +522,20 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   };
 
   const handleSave = () => {
+    const errs: Record<string, string> = {};
     if (!quotationId) {
-      if (clientMode === 'existing' && !selectedLeadId) { toast.error('Select a client'); return; }
-      if (clientMode === 'new' && (!clientName || !companyName)) { toast.error('Client name and company are required'); return; }
+      if (clientMode === 'existing' && !selectedLeadId) errs.client = 'Select a client';
+      if (clientMode === 'new' && !clientName) errs.clientName = 'Client name is required';
+      if (clientMode === 'new' && !companyName) errs.companyName = 'Company is required';
+      // Existing-client quotations must be tied to a Project or a Product
+      // (mutually exclusive — see their own disabled fields above); New
+      // Client mode has no real Project/Product to pick yet (only the free-
+      // text Project Name/Product Name, informational only — see their own
+      // state comment), so this only applies once a real Client is picked.
+      if (clientMode === 'existing' && !projectId && !productId) errs.project = 'Select a Project or Product';
     }
+    setFormErrors(errs);
+    if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
     if (validResources.length === 0) { toast.error('At least one resource line item is required'); return; }
     if (milestoneError) { toast.error(milestoneError); return; }
     saveMutation.mutate();
@@ -555,44 +572,59 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <div className="grid grid-cols-3 gap-3 mb-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
-                  <select value={selectedLeadId} onChange={(e) => selectExistingLead(e.target.value)} className={inputCls}>
+                  <select
+                    value={selectedLeadId}
+                    onChange={(e) => { selectExistingLead(e.target.value); clearFieldError('client'); }}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.client ? 'border-red-400' : 'border-slate-300'}`}
+                  >
                     <option value="">Select a client</option>
                     {existingLeads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
                   </select>
+                  {formErrors.client && <p className="text-xs text-red-600 mt-1">{formErrors.client}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
                   <select
                     value={projectId}
-                    onChange={(e) => setProjectId(e.target.value)}
+                    onChange={(e) => { setProjectId(e.target.value); clearFieldError('project'); }}
                     disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0 || !!productId}
-                    className={inputCls}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
                   >
                     <option value="">
                       {!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
                     </option>
                     {leadProjects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
                   </select>
+                  {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
                   <select
                     value={productId}
-                    onChange={(e) => setProductId(e.target.value)}
+                    onChange={(e) => { setProductId(e.target.value); clearFieldError('project'); }}
                     disabled={!selectedLeadId || productsLoading || leadProducts.length === 0 || !!projectId}
-                    className={inputCls}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
                   >
                     <option value="">
                       {!selectedLeadId ? 'Select a client first' : productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
                     </option>
                     {leadProducts.map((p) => <option key={p.id} value={p.id}>{p.productName}</option>)}
                   </select>
+                  {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                 </div>
               </div>
             ) : !quotationId ? (
               <div className="grid grid-cols-2 gap-3 mb-3">
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input value={clientName} onChange={(e) => setClientName(e.target.value)} className={inputCls} /></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input value={companyName} onChange={(e) => setCompanyName(e.target.value)} className={inputCls} /></div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label>
+                  <input value={clientName} onChange={(e) => { setClientName(e.target.value); clearFieldError('clientName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.clientName ? 'border-red-400' : 'border-slate-300'}`} />
+                  {formErrors.clientName && <p className="text-xs text-red-600 mt-1">{formErrors.clientName}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Company *</label>
+                  <input value={companyName} onChange={(e) => { setCompanyName(e.target.value); clearFieldError('companyName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />
+                  {formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}
+                </div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} className={inputCls} /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className={inputCls} /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label><input value={newClientProjectName} onChange={(e) => setNewClientProjectName(e.target.value)} className={inputCls} /></div>

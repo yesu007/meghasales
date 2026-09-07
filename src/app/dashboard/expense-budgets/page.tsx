@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
@@ -102,6 +102,14 @@ export default function ExpenseBudgetsPage() {
   const [form, setForm] = useState(blankForm());
   const [categoryAmounts, setCategoryAmounts] = useState<Record<number, string>>({});
   const [editingBudget, setEditingBudget] = useState<BudgetRow | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  // Clears one field's stale "required" message as soon as the user actually
+  // changes it — the form's own submit handler only runs validation again on
+  // the next submit, so without this a message set by a failed submit
+  // attempt would otherwise keep showing even after the field now holds a
+  // valid value. Same pattern used across every other module's form in this
+  // app (see e.g. src/app/dashboard/expenses/page.tsx's own clearFieldError).
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
 
   // Which dimension runs down the rows — the "Category vs. Vertical" /
   // "Vertical vs. Category" toggle just flips this; the matrix itself,
@@ -183,12 +191,13 @@ export default function ExpenseBudgetsPage() {
     [rowAxisItems, safeRowPage, rowPageSize]
   );
 
-  const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); setEditingBudget(null); };
+  const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); setEditingBudget(null); setFormErrors({}); };
 
   const openNewForm = () => {
     setEditingBudget(null);
     setForm(blankForm());
     setCategoryAmounts({});
+    setFormErrors({});
     setShowForm(true);
   };
 
@@ -197,6 +206,11 @@ export default function ExpenseBudgetsPage() {
     if (!res.ok) { toast.error('Failed to load budget'); return; }
     const detail = await res.json();
     setEditingBudget(row);
+    // Guards against a still-open form's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeForm
+    // already clears this on the normal Cancel path, this is just defense
+    // in depth.
+    setFormErrors({});
     setForm({
       financialYearStart: dayjs(detail.financialYearStart).format('YYYY-MM-DD'),
       financialYearEnd: dayjs(detail.financialYearEnd).format('YYYY-MM-DD'),
@@ -217,6 +231,13 @@ export default function ExpenseBudgetsPage() {
     [categoryAmounts]
   );
   const categoryEntriesTotal = useMemo(() => categoryEntries.reduce((sum, e) => sum + e.amount, 0), [categoryEntries]);
+  // categoryEntries has no direct onChange of its own (it's derived from
+  // every category amount input combined) — clear its own stale "required"
+  // message here instead, the moment it resolves to at least one entry, same
+  // convention as the Demo/Implementation modules' own derived-field effects.
+  useEffect(() => {
+    if (categoryEntries.length > 0) clearFieldError('categories');
+  }, [categoryEntries.length]);
 
   const invalidateMatrix = () => queryClient.invalidateQueries({ queryKey: ['expense-budgets-matrix'] });
 
@@ -367,10 +388,12 @@ export default function ExpenseBudgetsPage() {
           onSubmit={(e) => {
             e.preventDefault();
             if (editingBudget) { saveEdit.mutate(); return; }
-            if (categoryEntries.length === 0 || !form.financialYearStart || !form.financialYearEnd) {
-              toast.error('Financial year and a budget amount for at least one category are required');
-              return;
-            }
+            const errs: Record<string, string> = {};
+            if (!form.financialYearStart) errs.financialYearStart = 'Financial year start is required';
+            if (!form.financialYearEnd) errs.financialYearEnd = 'Financial year end is required';
+            if (categoryEntries.length === 0) errs.categories = 'Enter a budget amount for at least one category';
+            setFormErrors(errs);
+            if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
             save.mutate();
           }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
@@ -378,24 +401,26 @@ export default function ExpenseBudgetsPage() {
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingBudget ? `Edit Expense Budget — ${editingBudget.categoryName}` : 'Create Expense Budget'}</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year Start</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year Start *</label>
               <input
                 type="date" value={form.financialYearStart}
-                onChange={(e) => setForm((f) => ({ ...f, financialYearStart: e.target.value }))}
+                onChange={(e) => { setForm((f) => ({ ...f, financialYearStart: e.target.value })); clearFieldError('financialYearStart'); }}
                 disabled={!!editingBudget}
                 title={editingBudget ? 'Financial year is fixed once a budget is created — delete and recreate it if this needs to change' : undefined}
-                className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:bg-slate-50 disabled:text-slate-400 ${formErrors.financialYearStart ? 'border-red-400' : 'border-slate-300'}`}
               />
+              {formErrors.financialYearStart && <p className="text-xs text-red-600 mt-1">{formErrors.financialYearStart}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year End</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year End *</label>
               <input
                 type="date" value={form.financialYearEnd}
-                onChange={(e) => setForm((f) => ({ ...f, financialYearEnd: e.target.value }))}
+                onChange={(e) => { setForm((f) => ({ ...f, financialYearEnd: e.target.value })); clearFieldError('financialYearEnd'); }}
                 disabled={!!editingBudget}
                 title={editingBudget ? 'Financial year is fixed once a budget is created — delete and recreate it if this needs to change' : undefined}
-                className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:bg-slate-50 disabled:text-slate-400 ${formErrors.financialYearEnd ? 'border-red-400' : 'border-slate-300'}`}
               />
+              {formErrors.financialYearEnd && <p className="text-xs text-red-600 mt-1">{formErrors.financialYearEnd}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
@@ -432,7 +457,7 @@ export default function ExpenseBudgetsPage() {
             <div className="mt-4">
               <label className="block text-sm font-medium text-slate-700 mb-1">Category Budgets <span className="text-red-500">*</span></label>
               <p className="text-xs text-slate-400 mb-2">Enter a budget amount for each category that needs one this financial year. Leave the rest blank.</p>
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <div className={`border rounded-lg overflow-hidden ${formErrors.categories ? 'border-red-400' : 'border-slate-200'}`}>
                 <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                   <p className="text-sm font-medium text-slate-700">Categories ({categories.length})</p>
                   {categoryEntries.length > 0 && <p className="text-xs font-medium text-amber-700">{categoryEntries.length} with an amount entered</p>}
@@ -463,6 +488,7 @@ export default function ExpenseBudgetsPage() {
                   </>
                 )}
               </div>
+              {formErrors.categories && <p className="text-xs text-red-600 mt-1">{formErrors.categories}</p>}
             </div>
           )}
 

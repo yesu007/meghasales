@@ -62,6 +62,12 @@ function CountryMasterManager() {
     return errs;
   };
 
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — validateCountryForm only runs again on the next
+  // submit, so without this a message set by a failed submit attempt would
+  // otherwise keep showing even after the field now holds a valid value.
+  const clearCountryFieldError = (key: string) => setCountryFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
   const saveCountryMutation = useMutation({
     mutationFn: async (data: typeof countryForm) => {
       const url = editingCountryId ? `/api/countries/${editingCountryId}` : '/api/countries';
@@ -108,17 +114,17 @@ function CountryMasterManager() {
         <div className="grid grid-cols-2 gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Country Name</label>
-            <input value={countryForm.countryName} onChange={(e) => setCountryForm(f => ({ ...f, countryName: e.target.value }))} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.countryName ? 'border-red-400' : 'border-slate-300'}`} />
+            <input value={countryForm.countryName} onChange={(e) => { setCountryForm(f => ({ ...f, countryName: e.target.value })); clearCountryFieldError('countryName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.countryName ? 'border-red-400' : 'border-slate-300'}`} />
             {countryFormErrors.countryName && <p className="text-xs text-red-600 mt-1">{countryFormErrors.countryName}</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">ISO Code</label>
-            <input value={countryForm.isoCode} onChange={(e) => setCountryForm(f => ({ ...f, isoCode: e.target.value.toUpperCase() }))} maxLength={2} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.isoCode ? 'border-red-400' : 'border-slate-300'}`} />
+            <input value={countryForm.isoCode} onChange={(e) => { setCountryForm(f => ({ ...f, isoCode: e.target.value.toUpperCase() })); clearCountryFieldError('isoCode'); }} maxLength={2} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.isoCode ? 'border-red-400' : 'border-slate-300'}`} />
             {countryFormErrors.isoCode && <p className="text-xs text-red-600 mt-1">{countryFormErrors.isoCode}</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
-            <select value={countryForm.currencyCode} onChange={(e) => setCountryForm(f => ({ ...f, currencyCode: e.target.value }))} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.currencyCode ? 'border-red-400' : 'border-slate-300'}`}>
+            <select value={countryForm.currencyCode} onChange={(e) => { setCountryForm(f => ({ ...f, currencyCode: e.target.value })); clearCountryFieldError('currencyCode'); }} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.currencyCode ? 'border-red-400' : 'border-slate-300'}`}>
               <option value="">Select</option>
               {currencies.map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode} — {c.currencyName}</option>)}
             </select>

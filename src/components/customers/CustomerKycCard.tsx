@@ -181,6 +181,12 @@ export default function CustomerKycCard({ leadId, canManage }: CustomerKycCardPr
     return errs;
   };
 
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — validate only runs again on the next submit, so
+  // without this a message set by a failed submit attempt would otherwise
+  // keep showing even after the field now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
   const inputClass = (field: string) =>
     `w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-50 disabled:text-slate-500 ${formErrors[field] ? 'border-red-400' : 'border-slate-300'}`;
 
@@ -207,7 +213,7 @@ export default function CustomerKycCard({ leadId, canManage }: CustomerKycCardPr
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">Legal Company Name *</label>
-              <input disabled={!canManage} value={form.legalCompanyName} onChange={(e) => setForm((f) => ({ ...f, legalCompanyName: e.target.value }))} className={inputClass('legalCompanyName')} />
+              <input disabled={!canManage} value={form.legalCompanyName} onChange={(e) => { setForm((f) => ({ ...f, legalCompanyName: e.target.value })); clearFieldError('legalCompanyName'); }} className={inputClass('legalCompanyName')} />
               {formErrors.legalCompanyName && <p className="text-xs text-red-600 mt-1">{formErrors.legalCompanyName}</p>}
             </div>
             <div>

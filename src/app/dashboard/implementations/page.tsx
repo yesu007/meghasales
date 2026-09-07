@@ -249,6 +249,12 @@ export default function ImplementationsPage() {
   const validateForm = (data: typeof form) => {
     const errs: Record<string, string> = {};
     if (!data.leadId) errs.leadId = 'Lead / company is required';
+    // Project and Product are mutually exclusive (see their own disabled
+    // fields below), but at least one is required — same rule as the
+    // Quotation module's own Project/Product validation. Only checked on
+    // create: both are locked once editingId is set, so a legacy record
+    // with neither could never be saved again if this also applied there.
+    if (!editingId && !data.projectId && !data.productId) errs.project = 'Select a Project or Product';
     return errs;
   };
 
@@ -705,12 +711,13 @@ export default function ImplementationsPage() {
                               disabled={!form.leadId || !!editingId || !!form.productId}
                               title={!form.leadId ? 'Select a Lead / Company first' : editingId ? 'Project cannot be changed after creation' : undefined}
                               value={form.projectId}
-                              onChange={(e) => setForm(f => ({ ...f, projectId: e.target.value }))}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                              onChange={(e) => { setForm(f => ({ ...f, projectId: e.target.value })); clearFieldError('project'); }}
+                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
                             >
                               <option value="">{form.leadId ? 'Select project' : 'Select a Lead / Company first'}</option>
                               {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
                             </select>
+                            {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
@@ -718,12 +725,13 @@ export default function ImplementationsPage() {
                               disabled={!form.leadId || !!editingId || !!form.projectId}
                               title={!form.leadId ? 'Select a Lead / Company first' : editingId ? 'Product cannot be changed after creation' : undefined}
                               value={form.productId}
-                              onChange={(e) => setForm(f => ({ ...f, productId: e.target.value }))}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
+                              onChange={(e) => { setForm(f => ({ ...f, productId: e.target.value })); clearFieldError('project'); }}
+                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
                             >
                               <option value="">{form.leadId ? 'Select product' : 'Select a Lead / Company first'}</option>
                               {leadProducts.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
                             </select>
+                            {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">

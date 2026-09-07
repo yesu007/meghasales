@@ -107,6 +107,12 @@ export default function UsersPage() {
 
   const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
 
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — validateForm only runs again on the next submit,
+  // so without this a message set by a failed submit attempt would
+  // otherwise keep showing even after the field now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
   const validateForm = (data: typeof form) => {
     const errs: Record<string, string> = {};
     if (!data.firstName) errs.firstName = 'First name is required';
@@ -124,6 +130,7 @@ export default function UsersPage() {
       ...f,
       roleIds: f.roleIds.includes(roleId) ? f.roleIds.filter((id) => id !== roleId) : [...f.roleIds, roleId],
     }));
+    clearFieldError('roleIds');
   };
 
   const saveMutation = useMutation({
@@ -158,6 +165,11 @@ export default function UsersPage() {
       roleIds: user.roles.map((r) => r.id),
     });
     setEditingId(user.id);
+    // Guards against a still-open drawer's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeDrawer
+    // already clears this on the normal Cancel/X path, this is just defense
+    // in depth.
+    setFormErrors({});
     setDrawerOpen(true);
   };
 
@@ -447,7 +459,7 @@ export default function UsersPage() {
                             <label className="block text-sm font-medium text-slate-700 mb-1">First Name *</label>
                             <input
                               value={form.firstName}
-                              onChange={(e) => setForm(f => ({ ...f, firstName: e.target.value }))}
+                              onChange={(e) => { setForm(f => ({ ...f, firstName: e.target.value })); clearFieldError('firstName'); }}
                               className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.firstName ? 'border-red-400' : 'border-slate-300'}`}
                             />
                             {formErrors.firstName && <p className="text-xs text-red-600 mt-1">{formErrors.firstName}</p>}
@@ -456,7 +468,7 @@ export default function UsersPage() {
                             <label className="block text-sm font-medium text-slate-700 mb-1">Last Name *</label>
                             <input
                               value={form.lastName}
-                              onChange={(e) => setForm(f => ({ ...f, lastName: e.target.value }))}
+                              onChange={(e) => { setForm(f => ({ ...f, lastName: e.target.value })); clearFieldError('lastName'); }}
                               className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.lastName ? 'border-red-400' : 'border-slate-300'}`}
                             />
                             {formErrors.lastName && <p className="text-xs text-red-600 mt-1">{formErrors.lastName}</p>}
@@ -467,7 +479,7 @@ export default function UsersPage() {
                           <input
                             type="email"
                             value={form.email}
-                            onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
+                            onChange={(e) => { setForm(f => ({ ...f, email: e.target.value })); clearFieldError('email'); }}
                             className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.email ? 'border-red-400' : 'border-slate-300'}`}
                           />
                           {formErrors.email && <p className="text-xs text-red-600 mt-1">{formErrors.email}</p>}
@@ -485,7 +497,7 @@ export default function UsersPage() {
                           <input
                             type="password"
                             value={form.password}
-                            onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))}
+                            onChange={(e) => { setForm(f => ({ ...f, password: e.target.value })); clearFieldError('password'); }}
                             className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.password ? 'border-red-400' : 'border-slate-300'}`}
                             placeholder={editingId ? 'Leave blank to keep current password' : 'Min 8 characters'}
                           />
