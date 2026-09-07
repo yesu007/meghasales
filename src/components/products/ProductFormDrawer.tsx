@@ -1,11 +1,11 @@
 'use client';
 
-import { Fragment, Dispatch, SetStateAction, useEffect } from 'react';
+import { Fragment, Dispatch, SetStateAction, useEffect, useMemo } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { parseBusinessVerticals } from '@/lib/businessVerticals';
+import AddableSelect from '@/components/AddableSelect';
 
 // Mirrors src/components/projects/ProjectFormDrawer.tsx's drawer shell
 // (width, header, spacing, Cancel/Save buttons, Lead/Customer/Vertical/Head
@@ -17,7 +17,7 @@ import { parseBusinessVerticals } from '@/lib/businessVerticals';
 
 interface CustomerOption { id: number; companyName: string; businessVerticals: string | null }
 interface LeadOption { id: number; companyName: string; contactPerson: string; businessVerticals: string | null }
-interface VerticalOption { id: number; name: string; headId: number | null; headName: string | null }
+interface VerticalOption { id: number; name: string; headId: number | null; headName: string | null; isProductVertical: boolean }
 
 async function fetchCustomerOptions(): Promise<CustomerOption[]> {
   const res = await fetch('/api/leads?status=CONFIRMED&size=100&sortBy=companyName&sortDir=asc');
@@ -84,10 +84,17 @@ export interface ProductFormDrawerProps {
   setFormErrors: Dispatch<SetStateAction<Record<string, string>>>;
   onSave: (data: ProductFormState) => void;
   isSaving: boolean;
+  // "+ Add Customer" option at the bottom of the Customer dropdown — same
+  // Customer-module round-trip as ProjectFormDrawer's own onAddCustomer
+  // (stash form state, navigate to /dashboard/customers, come back with
+  // the new customer preselected — see the Products page's own handler).
+  // Optional so any other caller of this drawer that doesn't wire it up
+  // simply doesn't get the option rendered.
+  onAddCustomer?: () => void;
 }
 
 export default function ProductFormDrawer({
-  open, onClose, editingId, form, setForm, formErrors, setFormErrors, onSave, isSaving,
+  open, onClose, editingId, form, setForm, formErrors, setFormErrors, onSave, isSaving, onAddCustomer,
 }: ProductFormDrawerProps) {
   const { data: customers = [] } = useQuery({ queryKey: ['customers-for-product'], queryFn: fetchCustomerOptions });
   const { data: leads = [] } = useQuery({ queryKey: ['leads-for-product'], queryFn: fetchLeadOptions });
@@ -99,20 +106,18 @@ export default function ProductFormDrawer({
   // otherwise keep showing even after the field now holds a valid value.
   const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
 
-  // Vertical is freely selectable — the Lead/Customer's own business
-  // vertical(s) (Lead.businessVerticals) are only used to *suggest* an
-  // initial pick when one is first selected, same convention as
-  // ProjectFormDrawer. It never overrides a vertical the user has already
-  // chosen, so switching the suggestion source (or picking a different
-  // Lead/Customer afterward) doesn't silently clobber a manual selection.
-  const selectedLead = leads.find(l => String(l.id) === form.leadId);
-  const selectedCustomer = customers.find(c => String(c.id) === form.customerId);
-  const sourceVerticalName = form.leadId
-    ? parseBusinessVerticals(selectedLead?.businessVerticals ?? null)[0] ?? null
-    : form.customerId
-      ? parseBusinessVerticals(selectedCustomer?.businessVerticals ?? null)[0] ?? null
-      : null;
-  const suggestedVertical = verticalOptions.find(v => v.name === sourceVerticalName);
+  // Product Name is no longer free text — it's a pick from the Vertical
+  // Master's own catalog of "Product Vertical"-flagged verticals (see the
+  // Vertical form's own "Product Vertical" checkbox), so the two are the
+  // same underlying row: picking a name IS picking its vertical. A
+  // currently-selected vertical is always kept in the list even if it's
+  // since been unflagged (or was set before this feature existed), so
+  // editing an older Product still shows its real Product Name/Vertical
+  // instead of silently blanking the dropdown.
+  const productVerticalOptions = useMemo(
+    () => verticalOptions.filter(v => v.isProductVertical || String(v.id) === form.verticalId),
+    [verticalOptions, form.verticalId]
+  );
 
   // Head is never picked directly — it's the Vertical Master's own Head
   // assignment (Vertical.headId/headName, already returned by
@@ -120,20 +125,13 @@ export default function ProductFormDrawer({
   // selected rather than needing its own users lookup.
   const selectedVertical = verticalOptions.find(v => String(v.id) === form.verticalId);
 
+  // Vertical is fully derived from the Product Name pick above (see its own
+  // onChange) — never independently selected, so unlike Head there's no
+  // separate effect keeping it in sync; this just clears its own stale
+  // "required" message the moment a Product Name sets it.
   useEffect(() => {
-    if (!form.leadId && !form.customerId) {
-      setForm(f => (f.verticalId ? { ...f, verticalId: '' } : f));
-      return;
-    }
-    // Only fills in a blank Vertical — never overwrites one already set, so
-    // this can't fight a manual selection made after picking a Lead/Customer.
-    if (form.verticalId || !suggestedVertical) return;
-    setForm(f => ({ ...f, verticalId: String(suggestedVertical.id) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately
-    // omits form.verticalId/suggestedVertical from deps: this should only
-    // react to a Lead/Customer being (de)selected, not re-fire (and
-    // potentially re-suggest) every time the form's own vertical changes.
-  }, [form.leadId, form.customerId]);
+    if (form.verticalId) clearFieldError('verticalId');
+  }, [form.verticalId]);
 
   // Head just mirrors whichever Vertical is selected — clear it here rather
   // than in the effect above so it stays in sync even when the user changes
@@ -181,49 +179,69 @@ export default function ProductFormDrawer({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="col-span-1 sm:col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Product Name *</label>
-                        <input
-                          value={form.productName}
-                          onChange={(e) => { setForm(f => ({ ...f, productName: e.target.value })); clearFieldError('productName'); }}
-                          placeholder="e.g. Salem ERP Rollout"
-                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.productName ? 'border-red-400' : 'border-slate-300'}`}
+                        {/* Sourced from the Vertical Master's own "Product
+                            Vertical"-flagged rows (see productVerticalOptions'
+                            own comment above) — picking a name picks that same
+                            row's id, which also drives the read-only Vertical
+                            display below. Same search+select UI as Lead/
+                            Customer/Vertical elsewhere in this app
+                            (AddableSelect) — no "+ Add …" action, this only
+                            ever picks from the existing catalog. */}
+                        <AddableSelect
+                          value={form.verticalId}
+                          onChange={(v) => {
+                            const vertical = verticalOptions.find(opt => String(opt.id) === v);
+                            setForm(f => ({ ...f, verticalId: v, productName: vertical?.name || '' }));
+                            clearFieldError('productName');
+                            clearFieldError('verticalId');
+                          }}
+                          options={productVerticalOptions.map(v => ({ value: String(v.id), label: v.name }))}
+                          placeholder="Select Product Name"
+                          error={!!formErrors.productName}
                         />
                         {formErrors.productName && <p className="text-xs text-red-600 mt-1">{formErrors.productName}</p>}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Lead</label>
-                        <select
+                        {/* Same search+select UI as the Customer field just
+                            to the right (AddableSelect) — deliberately no
+                            "+ Add …" action here, this only ever picks from
+                            existing Leads. */}
+                        <AddableSelect
                           value={form.leadId}
+                          onChange={(v) => { setForm(f => ({ ...f, leadId: v })); clearFieldError('customerId'); }}
+                          options={leads.map(l => ({ value: String(l.id), label: l.companyName }))}
+                          placeholder="Select Lead"
                           disabled={!!form.customerId}
-                          onChange={(e) => { setForm(f => ({ ...f, leadId: e.target.value })); clearFieldError('customerId'); }}
-                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.customerId ? 'border-red-400' : 'border-slate-300'} ${form.customerId ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
-                        >
-                          <option value="">Select Lead</option>
-                          {leads.map(l => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-                        </select>
+                          error={!!formErrors.customerId}
+                        />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Customer</label>
-                        <select
+                        {/* "+ Add Customer" pinned at the bottom — see
+                            onAddCustomer's own comment on the Products
+                            page's round-trip to the Customer module and
+                            back with the new Customer preselected. */}
+                        <AddableSelect
                           value={form.customerId}
+                          onChange={(v) => { setForm(f => ({ ...f, customerId: v })); clearFieldError('customerId'); }}
+                          options={customers.map(c => ({ value: String(c.id), label: c.companyName }))}
+                          placeholder="Select Customer"
+                          onAdd={() => onAddCustomer?.()}
+                          addLabel="Add Customer"
                           disabled={!!form.leadId}
-                          onChange={(e) => { setForm(f => ({ ...f, customerId: e.target.value })); clearFieldError('customerId'); }}
-                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.customerId ? 'border-red-400' : 'border-slate-300'} ${form.leadId ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
-                        >
-                          <option value="">Select Customer</option>
-                          {customers.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
-                        </select>
+                          error={!!formErrors.customerId}
+                        />
                       </div>
                       {formErrors.customerId && <p className="col-span-1 sm:col-span-2 -mt-3 text-xs text-red-600">{formErrors.customerId}</p>}
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Vertical *</label>
-                        <select
-                          value={form.verticalId}
-                          onChange={(e) => { setForm(f => ({ ...f, verticalId: e.target.value })); clearFieldError('verticalId'); }}
-                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.verticalId ? 'border-red-400' : 'border-slate-300'}`}
-                        >
-                          <option value="">Select Vertical</option>
-                          {verticalOptions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                        </select>
+                        {/* Auto-populated from the selected Product Name above
+                            — never independently picked, same read-only
+                            convention as Head just to the right. */}
+                        <p className={`w-full px-3 py-2 border rounded-lg text-sm bg-slate-50 ${formErrors.verticalId ? 'border-red-400' : 'border-slate-200'} ${selectedVertical?.name ? 'text-slate-700' : 'text-slate-400'}`}>
+                          {selectedVertical?.name || 'Select a Product Name first'}
+                        </p>
                         {formErrors.verticalId && <p className="text-xs text-red-600 mt-1">{formErrors.verticalId}</p>}
                       </div>
                       <div>

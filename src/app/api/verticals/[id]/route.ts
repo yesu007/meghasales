@@ -53,6 +53,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         ...(body.headId !== undefined && { headId: body.headId ? parseInt(body.headId) : null }),
         ...(body.budget !== undefined && { budget: body.budget === null || body.budget === '' ? null : Number(body.budget) }),
         ...(body.budgetCurrencyCode !== undefined && { budgetCurrencyCode: body.budgetCurrencyCode || 'INR' }),
+        ...(body.isProductVertical !== undefined && { isProductVertical: !!body.isProductVertical }),
         ...(body.sortOrder !== undefined && { sortOrder: Number(body.sortOrder) }),
         ...(body.isActive !== undefined && { isActive: !!body.isActive }),
       },

@@ -304,6 +304,12 @@ model Lead {
   // sub-type of Project, so it gets its own customer/lead relation pair.
   productsAsCustomer Product[]           @relation("ProductCustomer")
   productsAsLead     Product[]           @relation("ProductLead")
+  // This Lead/Customer's own "Product" picker field — same shape/rationale
+  // as projectId/linkedProject above (independent of productsAsCustomer/
+  // productsAsLead, which are ownership relations, not this reference).
+  // Added for the Customer creation form's "Product / Project" field.
+  productId     Int?     @map("product_id")
+  linkedProduct Product? @relation("LeadProductLink", fields: [productId], references: [id])
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, not
   // read/written by any Lead-owned page or API.
@@ -323,6 +329,7 @@ model Lead {
   @@index([assignedBaId])
   @@index([nextFollowUpDate])
   @@index([projectId])
+  @@index([productId])
   @@index([lastFollowUpDate])
   @@index([companyId])
   @@index([legalEntityId])
@@ -1932,6 +1939,11 @@ model Vertical {
   headId             Int?     @map("head_id")
   budget             Decimal? @map("budget") @db.Decimal(15, 2)
   budgetCurrencyCode String?  @default("INR") @map("budget_currency_code")
+  // Flags a vertical as product-oriented (vs. a services/project-oriented
+  // one) — purely informational at this stage, set/edited from the
+  // Create/Edit Vertical form's own "Product Vertical" checkbox; nothing
+  // elsewhere in the app currently reads it.
+  isProductVertical  Boolean  @default(false) @map("is_product_vertical")
   isActive           Boolean  @default(true) @map("is_active")
   sortOrder          Int      @default(0) @map("sort_order")
   createdAt          DateTime @default(now()) @map("created_at")
@@ -2038,6 +2050,10 @@ model Product {
   // Reverse side of Demo.productId — the Demo module's own Project/Product
   // picker, same convention as Project's own demos relation.
   demos           Demo[]
+  // Reverse side of Lead.productId — the Leads/Customers that picked this
+  // Product from their own "Product" field, same convention as Project's
+  // own linkedLeads relation.
+  linkedLeads     Lead[]           @relation("LeadProductLink")
 
   @@index([customerId])
   @@index([leadId])

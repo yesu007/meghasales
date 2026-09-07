@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, Fragment, type ComponentType, type SVGProps } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PlusIcon, ChevronDownIcon, ChevronRightIcon, PencilIcon, TrashIcon, ChartBarIcon, EllipsisVerticalIcon, ArrowPathIcon,
@@ -97,11 +97,21 @@ async function fetchProjects(): Promise<ProjectRow[]> {
   return res.json();
 }
 
+// "+ Add Customer" round-trip (Customer dropdown in the Add Project form —
+// see ProjectFormDrawer's own onAddCustomer) — the in-progress form is
+// stashed here before navigating away, and restored (merged with the newly
+// created Customer's id) on return. Same key literal used by both this
+// page and the Customers page's own read of it — see that page's own
+// comment on why it doesn't import a shared constant for this (a plain
+// string is simpler than a shared module just for one key name).
+const PENDING_PROJECT_FORM_KEY = 'pendingProjectForm';
+
 export default function ProjectsPage() {
   const queryClient = useQueryClient();
   const { has } = usePermissions();
   const canManageQuotations = has('manage_quotations');
   const searchParams = useSearchParams();
+  const router = useRouter();
   // Landed here from the calculator after saving a new Budget Estimation
   // (?expand=<projectId>, set by QuotationCalculatorForm) — auto-open that
   // project's panel so the estimation is immediately visible.
@@ -115,6 +125,58 @@ export default function ProjectsPage() {
   const { data: projects = [], isLoading, isError } = useQuery({ queryKey: ['projects-admin'], queryFn: fetchProjects });
 
   const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankProjectForm); setFormErrors({}); };
+
+  // Landed back here from the Customer module after "+ Add Customer" (see
+  // handleAddCustomer below) — ?newCustomerId=<id>, set by the Customers
+  // page's own createMutation once it knows this is a round-trip (returnTo
+  // was set). Restores whatever Project form state was in progress before
+  // navigating away, sets the new Customer as selected, and reopens the
+  // drawer — then strips the query param so a refresh/back-navigation
+  // doesn't repeat this.
+  const restoredFromCustomerRoundTrip = useRef(false);
+  useEffect(() => {
+    const newCustomerId = searchParams.get('newCustomerId');
+    // The ref guard (not just the param check) matters here specifically:
+    // this reads then *clears* sessionStorage, so React Strict Mode's
+    // dev-only double-invoke of effects would otherwise run this twice —
+    // the second pass reading back null (already cleared by the first) and
+    // overwriting the just-restored form with a blank one.
+    if (!newCustomerId || restoredFromCustomerRoundTrip.current) return;
+    restoredFromCustomerRoundTrip.current = true;
+    let restored: ProjectFormState = blankProjectForm;
+    try {
+      const saved = sessionStorage.getItem(PENDING_PROJECT_FORM_KEY);
+      if (saved) restored = JSON.parse(saved);
+    } catch {
+      // Corrupt/unavailable sessionStorage — fall back to a blank form
+      // rather than blocking the new Customer from being selectable at all.
+    }
+    sessionStorage.removeItem(PENDING_PROJECT_FORM_KEY);
+    setEditingId(null);
+    setForm({ ...restored, customerId: newCustomerId, leadId: '' });
+    setFormErrors({});
+    setDrawerOpen(true);
+    router.replace('/dashboard/projects');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only ever
+    // meant to react to the URL actually carrying ?newCustomerId, not to
+    // re-run on every searchParams identity change or router.replace above
+    // re-triggering it.
+  }, [searchParams]);
+
+  // "+ Add Customer" (ProjectFormDrawer's own AddableSelect) — stashes
+  // whatever's currently in the Add Project form so it isn't lost, then
+  // hands off to the Customer module's own "+ Add Customer" flow (reusing
+  // its existing create form/endpoint, not a new one) with a way back (see
+  // the useEffect above and the Customers page's own read of `returnTo`).
+  const handleAddCustomer = () => {
+    try {
+      sessionStorage.setItem(PENDING_PROJECT_FORM_KEY, JSON.stringify(form));
+    } catch {
+      // Best-effort — if sessionStorage isn't available, the user can still
+      // complete the round-trip, they'll just land back on a blank form.
+    }
+    router.push('/dashboard/customers?openCreate=true&returnTo=/dashboard/projects');
+  };
 
   const openEdit = (p: ProjectRow) => {
     setEditingId(p.id);
@@ -289,6 +351,7 @@ export default function ProjectsPage() {
         setFormErrors={setFormErrors}
         onSave={(data) => save.mutate(data)}
         isSaving={save.isPending}
+        onAddCustomer={handleAddCustomer}
       />
     </div>
   );

@@ -64,6 +64,13 @@ export async function GET(request: NextRequest) {
     // unnecessary extra join to every other caller of this endpoint.
     const includeImplementation = searchParams.get('includeImplementation') === 'true';
     const implementationStatus = searchParams.get('implementationStatus') || '';
+    // Opt-in, passed only by the Customers page's own listing — exposes
+    // isDirectCustomer per row (created directly from the Customer module
+    // vs. converted from a Lead), reusing the exact same CREATED-activity
+    // signal excludeDirectCustomers above already filters on, so the
+    // Customers page's own Edit action can open the right form without a
+    // new field of its own recording origin.
+    const includeSource = searchParams.get('includeSource') === 'true';
 
     // Build where clause
     const where: Prisma.LeadWhereInput = {};
@@ -147,6 +154,13 @@ export async function GET(request: NextRequest) {
               select: { id: true, status: true, currentStage: true },
             },
           }),
+          ...(includeSource && {
+            activities: {
+              where: { activityType: 'CREATED', description: { startsWith: 'Customer created for company:' } },
+              select: { id: true },
+              take: 1,
+            },
+          }),
         },
       }),
       prisma.lead.count({ where }),
@@ -193,6 +207,10 @@ export async function GET(request: NextRequest) {
               currentStage: (lead as any).implementations[0].currentStage,
             }
           : null,
+      }),
+      // Only present when includeSource=true was passed (see above).
+      ...(includeSource && {
+        isDirectCustomer: ((lead as any).activities?.length ?? 0) > 0,
       }),
     }));
 

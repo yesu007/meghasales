@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   MagnifyingGlassIcon,
   XMarkIcon,
@@ -24,10 +25,10 @@ import dayjs from 'dayjs';
 import { CUSTOMER_STATUSES, customerStatusColor } from '@/lib/customerStatus';
 import { useLeadSources } from '@/hooks/useLeadSources';
 import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
-import CustomerFormDrawer, { blankCustomerForm, type CustomerFormState } from '@/components/customers/CustomerFormDrawer';
+import CustomerFormDrawer, { blankCustomerForm, fetchCustomerForEdit, type CustomerFormState } from '@/components/customers/CustomerFormDrawer';
 import CustomerProjectsPanel from '@/components/customers/CustomerProjectsPanel';
 import CustomerProductsPanel from '@/components/customers/CustomerProductsPanel';
-import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
+import { invalidateLeadCustomerData, invalidateProjectData, invalidateProductData } from '@/lib/queryInvalidation';
 
 // Customers are Leads with status = CONFIRMED (labeled "Converted" — see
 // the LeadStatusOption master, GET /api/lead-status-options). There is no separate Customer
@@ -71,6 +72,10 @@ interface Lead {
   nextFollowUpDate: string | null;
   followUpCount: number;
   isOverdue: boolean;
+  // Created directly from this module vs. converted from a Lead — see
+  // GET /api/leads's own includeSource comment for the signal this reuses.
+  // Decides which form the Edit action opens (see openEdit below).
+  isDirectCustomer: boolean;
 }
 
 interface UserOption {
@@ -97,6 +102,8 @@ export default function CustomersPage() {
   const isAdmin = (session?.user?.roles || []).includes('ADMIN');
   const SOURCES = useLeadSources();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Project accordion — same expandedId + chevron-toggle pattern as the
@@ -124,7 +131,7 @@ export default function CustomersPage() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const params: Record<string, string> = { page: String(page), size: String(size), sortBy, sortDir, status: CUSTOMER_STATUS };
+  const params: Record<string, string> = { page: String(page), size: String(size), sortBy, sortDir, status: CUSTOMER_STATUS, includeSource: 'true' };
   if (search) params.search = search;
   if (sourceFilter) params.leadSource = sourceFilter;
   if (verticalFilter) params.businessVertical = verticalFilter;
@@ -167,7 +174,11 @@ export default function CustomersPage() {
     if (isCurrenciesError) toast.error('Failed to load currencies');
   }, [isCurrenciesError]);
 
-  const { data: verticalOptions = [] } = useQuery<{ id: number; name: string }[]>({
+  // headId is only used by the Edit Customer drawer's own Product field
+  // (see saveMutation below, and the Product Master's own "Vertical has no
+  // Head assigned" rule it reuses) — the filter dropdown further below just
+  // ignores the extra field.
+  const { data: verticalOptions = [] } = useQuery<{ id: number; name: string; headId: number | null }[]>({
     queryKey: ['verticals'],
     queryFn: async () => { const res = await fetch('/api/verticals'); if (!res.ok) throw new Error('Failed to fetch verticals'); return res.json(); },
   });
@@ -196,31 +207,216 @@ export default function CustomersPage() {
     onError: () => toast.error('Failed to update customer'),
   });
 
-  // "+ Create Customer" — Customer-owned create flow. Uses its own
+  // "+ Create Customer" — Customer-owned create/edit flow. Uses its own
   // drawer/state/endpoint (CustomerFormDrawer -> POST /api/customers)
-  // rather than the Lead create form/endpoint above.
+  // rather than the Lead form/endpoint above. Also reused for editing a
+  // directly-created Customer (editingCustomerId set — see openCustomerEdit
+  // below and the Edit button's own routing) — the *Original* trio is what
+  // fetchCustomerForEdit loaded, compared against the live form at save
+  // time to tell whether the user actually changed the Project/Product
+  // (see createMutation's own edit branch).
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CustomerFormState>(blankCustomerForm);
   const [createFormErrors, setCreateFormErrors] = useState<Record<string, string>>({});
+  const [editingCustomerId, setEditingCustomerId] = useState<number | null>(null);
+  const [editingCustomerOriginalProjectId, setEditingCustomerOriginalProjectId] = useState<number | null>(null);
+  const [editingCustomerOriginalProductId, setEditingCustomerOriginalProductId] = useState<number | null>(null);
+  const [editingCustomerOriginalProductVerticalId, setEditingCustomerOriginalProductVerticalId] = useState('');
+  const [editingCustomerOriginalStage, setEditingCustomerOriginalStage] = useState('');
+  const [editingCustomerOriginalImplementationId, setEditingCustomerOriginalImplementationId] = useState<number | null>(null);
+  // "+ Add Customer" round-trip from another module's own Customer dropdown
+  // (currently just Project's — see ProjectFormDrawer's own onAddCustomer)
+  // — set from ?returnTo=<path> when ?openCreate=true auto-opens this same
+  // Create Customer drawer below; createMutation's own onSuccess navigates
+  // back there (with the new customer's id) instead of just closing the
+  // drawer, only when this is actually set.
+  const [returnTo, setReturnTo] = useState<string | null>(null);
 
-  const closeCreateDrawer = () => { setCreateDrawerOpen(false); setCreateForm(blankCustomerForm); setCreateFormErrors({}); };
+  const openedFromCustomerRoundTrip = useRef(false);
+  useEffect(() => {
+    // The ref guard matters here for the same reason as the Projects
+    // page's own restore effect — React Strict Mode's dev-only
+    // double-invoke would otherwise run this twice before router.replace
+    // below actually takes effect.
+    if (searchParams.get('openCreate') !== 'true' || openedFromCustomerRoundTrip.current) return;
+    openedFromCustomerRoundTrip.current = true;
+    setReturnTo(searchParams.get('returnTo'));
+    setCreateDrawerOpen(true);
+    router.replace('/dashboard/customers');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only ever
+    // meant to react to the URL actually carrying ?openCreate, not to
+    // re-run on every searchParams identity change or router.replace above
+    // re-triggering it.
+  }, [searchParams]);
+
+  const closeCreateDrawer = () => {
+    setCreateDrawerOpen(false); setCreateForm(blankCustomerForm); setCreateFormErrors({});
+    setEditingCustomerId(null); setEditingCustomerOriginalProjectId(null); setEditingCustomerOriginalProductId(null); setEditingCustomerOriginalProductVerticalId('');
+    setEditingCustomerOriginalStage(''); setEditingCustomerOriginalImplementationId(null);
+    // Cleared even on a plain Cancel (not just after a successful
+    // round-trip save) — otherwise a later, unrelated "+ Create Customer"
+    // click would incorrectly redirect back to wherever an earlier
+    // round-trip came from (see the ?openCreate effect above).
+    setReturnTo(null);
+  };
+
+  const openCustomerEdit = async (id: number) => {
+    const result = await fetchCustomerForEdit(id);
+    if (!result) { toast.error('Failed to load customer'); return; }
+    setCreateForm(result.form);
+    setEditingCustomerId(id);
+    setEditingCustomerOriginalProjectId(result.originalProjectId);
+    setEditingCustomerOriginalProductId(result.originalProductId);
+    setEditingCustomerOriginalProductVerticalId(result.originalProductVerticalId);
+    setEditingCustomerOriginalStage(result.form.stage);
+    setEditingCustomerOriginalImplementationId(result.originalImplementationId);
+    setCreateFormErrors({});
+    setCreateDrawerOpen(true);
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: CustomerFormState) => {
-      const res = await fetch('/api/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (editingCustomerId) {
+        // Editing a directly-created Customer — the customer already
+        // exists, so unlike Create there's no ordering problem to work
+        // around: a new Project/Product is just created directly (owned by
+        // this same customer id) and linked in a second call, same as
+        // LeadFormDrawer's own Edit-mode Product handling.
+        const putBody: any = { ...data };
+        if (data.productOrProject === 'PROJECT') {
+          if (data.isNewProject) {
+            const projRes = await fetch('/api/projects', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ projectName: data.newProjectName.trim(), customerId: editingCustomerId, verticalId: data.newProjectVerticalId, budget: 0 }),
+            });
+            if (!projRes.ok) {
+              const b = await projRes.json().catch(() => null);
+              throw new Error(b?.message || 'Failed to create the new Project');
+            }
+            const newProject = await projRes.json();
+            putBody.projectId = newProject.id;
+          } else {
+            putBody.projectId = data.projectId;
+          }
+          putBody.productId = '';
+        } else if (data.productOrProject === 'PRODUCT') {
+          // Product Master rows are one-per-Customer (see the Product
+          // model's own comment) — a change here updates this Customer's
+          // existing Product row in place, or creates a fresh one if it
+          // doesn't have one yet, never re-points at someone else's row.
+          // Skipped entirely if the field wasn't actually changed.
+          if (data.newProductVerticalId && data.newProductVerticalId !== editingCustomerOriginalProductVerticalId) {
+            const vertical = verticalOptions.find((v) => v.id === Number(data.newProductVerticalId));
+            if (!vertical) throw new Error('Selected product was not found');
+            if (!vertical.headId) throw new Error("Selected product's vertical has no Head assigned");
+            if (editingCustomerOriginalProductId) {
+              const patchRes = await fetch(`/api/products/${editingCustomerOriginalProductId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ productName: vertical.name, verticalId: vertical.id }),
+              });
+              if (!patchRes.ok) {
+                const b = await patchRes.json().catch(() => null);
+                throw new Error(b?.message || 'Failed to update the Product');
+              }
+            } else {
+              const createRes = await fetch('/api/products', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ productName: vertical.name, verticalId: vertical.id, customerId: editingCustomerId, budget: 0 }),
+              });
+              if (!createRes.ok) {
+                const b = await createRes.json().catch(() => null);
+                throw new Error(b?.message || 'Failed to create the new Product');
+              }
+              const newProduct = await createRes.json();
+              putBody.productId = newProduct.id;
+            }
+          }
+          putBody.projectId = '';
+        } else {
+          // "None" selected — unlink both.
+          putBody.projectId = '';
+          putBody.productId = '';
+        }
+
+        const res = await fetch(`/api/leads/${editingCustomerId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(putBody) });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => null);
+          throw new Error(errBody?.message || 'Failed to update customer');
+        }
+        const updated = await res.json();
+
+        // Stage — reads/writes this Customer's own most-recently-created
+        // Implementation (see fetchCustomerForEdit's own comment), the
+        // same record POST /api/customers creates up front from this same
+        // field at creation. Skipped entirely if unchanged.
+        if (data.stage !== editingCustomerOriginalStage) {
+          if (editingCustomerOriginalImplementationId) {
+            const stageRes = await fetch(`/api/implementations/${editingCustomerOriginalImplementationId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ currentStage: data.stage || null }),
+            });
+            if (!stageRes.ok) throw new Error('Customer updated, but the Stage update failed');
+          } else if (data.stage) {
+            const stageRes = await fetch('/api/implementations', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ leadId: editingCustomerId, sourceType: 'CUSTOMER', currentStage: data.stage }),
+            });
+            if (!stageRes.ok) throw new Error('Customer updated, but the Stage failed to save');
+          }
+        }
+
+        return updated;
+      }
+
+      // "Create New Project"/Product sub-flows — sent as
+      // body.newProject = { projectName, verticalId } / body.newProduct =
+      // { verticalId } in this SAME request, rather than as separate
+      // follow-up calls. POST /api/customers validates the Vertical/Head
+      // and creates the Customer + Project/Product (linking them) inside
+      // one database transaction, so this is never left with a Customer
+      // that exists but no Project/Product (the previous "Customer
+      // created, but the new Project failed" bug, from an earlier version
+      // of this flow that made separate requests) — either both are
+      // created and linked, or neither is.
+      const body: any = { ...data };
+      if (data.productOrProject === 'PROJECT' && data.isNewProject) {
+        body.newProject = { projectName: data.newProjectName.trim(), verticalId: data.newProjectVerticalId };
+        body.projectId = '';
+      }
+      if (data.productOrProject === 'PRODUCT' && data.newProductVerticalId) {
+        body.newProduct = { verticalId: data.newProductVerticalId };
+      }
+      const res = await fetch('/api/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.message || 'Failed to create customer');
+        const errBody = await res.json().catch(() => null);
+        throw new Error(errBody?.message || 'Failed to create customer');
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (result, variables) => {
+      const wasEditing = !!editingCustomerId;
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       invalidateLeadCustomerData(queryClient);
-      toast.success('Customer created!');
+      // Any interaction with either field can change Project/Product Master
+      // data (a new row, an in-place update, or just a different
+      // linkedLeadsCount) — safe to invalidate whenever that field was
+      // touched at all, create or edit.
+      if (variables.productOrProject === 'PROJECT') invalidateProjectData(queryClient);
+      if (variables.productOrProject === 'PRODUCT') invalidateProductData(queryClient);
+      toast.success(wasEditing ? 'Customer updated!' : 'Customer created!');
+      // "+ Add Customer" round-trip (see the ?openCreate effect above) —
+      // only ever set for a fresh create, never while editing, so this
+      // can't fire from the Edit Customer flow.
+      const backTo = !wasEditing ? returnTo : null;
       closeCreateDrawer();
+      if (backTo) router.push(`${backTo}?newCustomerId=${result.id}`);
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to create customer'),
+    onError: (error: Error) => toast.error(error.message || (editingCustomerId ? 'Failed to update customer' : 'Failed to create customer')),
   });
 
   const openEdit = async (id: number) => {
@@ -423,7 +619,13 @@ export default function CustomersPage() {
                           <Link href={`/dashboard/customers/${customer.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-block" title="View">
                             <EyeIcon className="h-4 w-4" />
                           </Link>
-                          <button onClick={() => openEdit(customer.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                          {/* Directly-created Customers open the Customer
+                              Module's own Edit form (CustomerFormDrawer);
+                              Lead-converted ones keep opening the Lead
+                              Edit form (LeadFormDrawer) as before — see
+                              isDirectCustomer's own comment for the signal
+                              this reuses. */}
+                          <button onClick={() => (customer.isDirectCustomer ? openCustomerEdit(customer.id) : openEdit(customer.id))} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
                             <PencilIcon className="h-4 w-4" />
                           </button>
                           <button onClick={() => deleteCustomer(customer.id, customer.companyName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
@@ -531,6 +733,15 @@ export default function CustomersPage() {
         isSaving={createMutation.isPending}
         isAdmin={isAdmin}
         currencies={currencies}
+        editingId={editingCustomerId}
+        // Disabled only when this Create drawer was opened via a Project/
+        // Product module's own "+ Add Customer" round-trip (returnTo set)
+        // — that flow handles the Project/Product association itself once
+        // the user returns there, so picking one here too would be
+        // redundant/conflicting. A plain "+ Create Customer" click on this
+        // page (returnTo unset) and Edit both leave it enabled/as-is. See
+        // CustomerFormDrawer's own disableProductProject comment.
+        disableProductProject={!editingCustomerId && !!returnTo}
       />
     </div>
   );

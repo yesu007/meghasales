@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
       customerId: p.customerId,
       customerName: p.customer?.companyName ?? null,
       leadId: p.leadId,
-      leadName: p.lead ? `${p.lead.companyName} — ${p.lead.contactPerson}` : null,
+      leadName: p.lead?.companyName ?? null,
       verticalId: p.verticalId,
       verticalName: p.vertical.name,
       headId: p.headId,
@@ -131,6 +131,23 @@ export async function POST(request: NextRequest) {
     if (body.customerId) {
       const customer = await prisma.lead.findUnique({ where: { id: parseInt(body.customerId) }, select: { id: true } });
       if (!customer) return NextResponse.json({ message: 'Selected customer not found' }, { status: 404 });
+    }
+
+    // No duplicate Project — same name (case-insensitive) already recorded
+    // for the same Customer/Lead among active projects. A deleted one with
+    // the same name/owner doesn't block this, same soft-delete convention
+    // as every other Master module (e.g. Lead Sources/Stages) — only an
+    // active duplicate is rejected.
+    {
+      const duplicate = await prisma.project.findFirst({
+        where: {
+          isActive: true,
+          projectName: { equals: String(body.projectName).trim(), mode: 'insensitive' },
+          ...(body.customerId ? { customerId: parseInt(body.customerId) } : { leadId: parseInt(body.leadId) }),
+        },
+        select: { id: true },
+      });
+      if (duplicate) return NextResponse.json({ message: 'A project with this name already exists for this customer/lead' }, { status: 409 });
     }
 
     // Head is derived from the selected Vertical's own Head assignment
