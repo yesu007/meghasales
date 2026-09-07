@@ -60,6 +60,18 @@ export function validateProjectForm(data: ProjectFormState): Record<string, stri
   return errs;
 }
 
+// Toast copy for the single-missing-field case — kept separate from the
+// inline messages above (those stay as-is under each field) so the two can
+// read differently: e.g. "Please select a Customer or a Lead" here vs.
+// "Select a Customer or a Lead" inline.
+const REQUIRED_FIELD_TOASTS: Record<string, string> = {
+  projectName: 'Project Name is required',
+  customerId: 'Please select a Customer or a Lead',
+  verticalId: 'Vertical is required',
+  headId: 'Head is required',
+  budget: 'Budget is required',
+};
+
 export interface ProjectFormDrawerProps {
   open: boolean;
   onClose: () => void;
@@ -149,7 +161,9 @@ export default function ProjectFormDrawer({
                     e.preventDefault();
                     const errs = validateProjectForm(form);
                     setFormErrors(errs);
-                    if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
+                    const errorKeys = Object.keys(errs);
+                    if (errorKeys.length === 1) { toast.error(REQUIRED_FIELD_TOASTS[errorKeys[0]]); return; }
+                    if (errorKeys.length > 1) { toast.error('Please fill the required fields'); return; }
                     onSave(form);
                   }} className="flex-1 px-4 sm:px-6 py-4 space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
