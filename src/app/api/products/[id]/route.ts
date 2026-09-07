@@ -57,6 +57,27 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       if (!customer) return NextResponse.json({ message: 'Selected customer not found' }, { status: 404 });
     }
 
+    // No duplicate Product — same check as POST /api/products, run against
+    // the merged (post-update) name/owner/active state so this also catches
+    // a Reactivate that would collide with an already-active duplicate, not
+    // just a name/customer/lead edit.
+    {
+      const nextProductName = body.productName !== undefined ? String(body.productName).trim() : existing.productName;
+      const nextIsActive = body.isActive !== undefined ? !!body.isActive : existing.isActive;
+      if (nextIsActive) {
+        const duplicate = await prisma.product.findFirst({
+          where: {
+            id: { not: id },
+            isActive: true,
+            productName: { equals: nextProductName, mode: 'insensitive' },
+            ...(nextCustomerId ? { customerId: parseInt(String(nextCustomerId)) } : { leadId: parseInt(String(nextLeadId)) }),
+          },
+          select: { id: true },
+        });
+        if (duplicate) return NextResponse.json({ message: 'A product with this name already exists for this customer/lead' }, { status: 409 });
+      }
+    }
+
     // Head is derived from the Vertical's own Head assignment, never taken
     // from the client — see POST's identical rationale. Only recomputed
     // when verticalId itself is part of this update; other partial updates

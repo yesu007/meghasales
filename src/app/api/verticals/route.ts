@@ -113,6 +113,7 @@ export async function GET(request: NextRequest) {
         headName: v.head ? `${v.head.firstName} ${v.head.lastName}` : null,
         budget: v.budget,
         budgetCurrencyCode: v.budgetCurrencyCode,
+        isProductVertical: v.isProductVertical,
         isActive: v.isActive,
         sortOrder: v.sortOrder,
         ...(includeActuals ? {
@@ -162,6 +163,7 @@ export async function POST(request: NextRequest) {
         headId: body.headId ? parseInt(body.headId) : null,
         budget: body.budget !== undefined && body.budget !== null && body.budget !== '' ? Number(body.budget) : null,
         budgetCurrencyCode: body.budgetCurrencyCode || 'INR',
+        isProductVertical: !!body.isProductVertical,
         sortOrder: body.sortOrder != null ? Number(body.sortOrder) : 0,
       },
       include: { head: { select: { firstName: true, lastName: true } } },

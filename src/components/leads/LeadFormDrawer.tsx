@@ -18,8 +18,10 @@ import { CUSTOMER_STATUSES } from '@/lib/customerStatus';
 // Project master picker — replaces the old free-text Project Name input.
 // linkedLeadsCount (from GET /api/projects) is how many Lead/Customer rows
 // already have this same Project selected here, computed server-side so
-// this dropdown never has to (mis)count it itself.
-interface ProjectOption { id: number; projectName: string; linkedLeadsCount: number }
+// this dropdown never has to (mis)count it itself. verticalId/verticalName
+// are shown read-only once a Project is picked, same convention as
+// CustomerFormDrawer's own Create-time Project field.
+interface ProjectOption { id: number; projectName: string; linkedLeadsCount: number; verticalId: number; verticalName: string }
 async function fetchProjectOptions(): Promise<ProjectOption[]> {
   const res = await fetch('/api/projects');
   if (!res.ok) throw new Error('Failed to fetch projects');
@@ -128,10 +130,12 @@ export interface LeadFormDrawerProps {
   currencies: CurrencyOption[];
   // Customer lifecycle status (Active/In-Active/Hold — see
   // src/lib/customerStatus.ts) — a Customer-only concept, so both props
-  // are only ever passed by the Customers page's own "Edit Customer" use
-  // of this drawer (src/app/dashboard/customers/page.tsx). The Leads
-  // page's own "Edit Lead" use doesn't pass them, so the field simply
-  // doesn't render there — the Leads module is unaffected.
+  // are only ever passed by the Customers page's own Lead-converted-
+  // Customer "Edit Lead" use of this drawer (src/app/dashboard/
+  // customers/page.tsx) — a directly-created Customer's Edit opens
+  // CustomerFormDrawer instead. The Leads page's own "Edit Lead" use
+  // doesn't pass them, so the field simply doesn't render there — the
+  // Leads module is unaffected.
   customerStatus?: string;
   onCustomerStatusChange?: (value: string) => void;
 }
@@ -142,6 +146,7 @@ export default function LeadFormDrawer({
 }: LeadFormDrawerProps) {
   const { data: projectOptions = [] } = useQuery({ queryKey: ['projects-for-lead-link'], queryFn: fetchProjectOptions });
   const sources = useLeadSources();
+  const selectedProject = projectOptions.find(p => p.id === form.projectId);
 
   // Clears one field's stale validation message as soon as the user
   // actually changes it — validateLeadForm only runs again on the next
@@ -197,6 +202,11 @@ export default function LeadFormDrawer({
                           <option value="">Unassigned</option>
                           {projectOptions.map(p => <option key={p.id} value={p.id}>{p.projectName} — {p.linkedLeadsCount} {p.linkedLeadsCount === 1 ? 'Project' : 'Projects'}</option>)}
                         </select>
+                        {/* Read-only, same convention as CustomerFormDrawer's
+                            own Create-time Project field — the Vertical
+                            rides along with whichever Project is picked,
+                            never independently chosen here. */}
+                        {selectedProject && <p className="text-xs text-slate-500 mt-1">Vertical: <strong>{selectedProject.verticalName}</strong></p>}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person *</label>

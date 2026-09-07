@@ -17,6 +17,7 @@ interface VerticalRow {
   headName: string | null;
   budget: string | null;
   budgetCurrencyCode: string | null;
+  isProductVertical: boolean;
   isActive: boolean;
   // Present only when the /api/verticals?includeActuals=true request below
   // succeeds and the session can view Expense Budgets — see that route's
@@ -55,7 +56,7 @@ async function fetchCurrencies(): Promise<CurrencyOption[]> {
 // No separate `code` field anywhere in this form — code always mirrors
 // name, kept in sync server-side on both create and update (see POST/PATCH
 // /api/verticals).
-const blankForm = { name: '', headId: '', budget: '', budgetCurrencyCode: 'INR' };
+const blankForm = { name: '', headId: '', budget: '', budgetCurrencyCode: 'INR', isProductVertical: false };
 
 export default function VerticalsPage() {
   const queryClient = useQueryClient();
@@ -107,6 +108,7 @@ export default function VerticalsPage() {
       headId: v.headId ? String(v.headId) : '',
       budget: v.budget || '',
       budgetCurrencyCode: v.budgetCurrencyCode || 'INR',
+      isProductVertical: v.isProductVertical,
     });
     // Guards against a still-open form's stale validation messages from a
     // previous failed create attempt bleeding into this edit — closeForm
@@ -250,6 +252,23 @@ export default function VerticalsPage() {
                 <option value="INR">INR</option>
                 {currencies.filter((c) => c.currencyCode !== 'INR').map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
               </select>
+            </div>
+            <div>
+              {/* Invisible label matching "Currency"'s own — purely to push
+                  the checkbox row down to start level with the select
+                  below it, so the checkbox centers on the select's own
+                  height rather than the whole column (label + select). */}
+              <label className="block text-sm font-medium mb-1 invisible" aria-hidden="true">Currency</label>
+              <div className="flex items-center gap-2 min-h-[38px]">
+                <input
+                  type="checkbox"
+                  id="vertical-is-product"
+                  checked={form.isProductVertical}
+                  onChange={(e) => setForm((f) => ({ ...f, isProductVertical: e.target.checked }))}
+                  className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                />
+                <label htmlFor="vertical-is-product" className="text-sm font-medium text-slate-700">Product Vertical</label>
+              </div>
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">

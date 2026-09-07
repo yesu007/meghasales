@@ -21,6 +21,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       include: {
         assignedBa: { select: { firstName: true, lastName: true } },
         company: { select: { id: true, name: true } },
+        // This Lead/Customer's own Project/Product "picker" fields (see
+        // schema.prisma's Lead.projectId/productId comments) — included so
+        // the Edit form can show which Vertical each is currently under,
+        // same convention as the Create form's own Vertical display.
+        linkedProject: { select: { id: true, projectName: true, verticalId: true, vertical: { select: { name: true } } } },
+        linkedProduct: { select: { id: true, productName: true, verticalId: true, vertical: { select: { name: true } } } },
+        // Only meaningful for a directly-created Customer's own Edit form
+        // (CustomerFormDrawer's fetchCustomerForEdit) — a plain Lead has no
+        // legalEntityId set, so this is simply null/omitted there.
+        legalEntity: { select: { legalName: true, taxRegistrationNumber: true, addressLine1: true, addressLine2: true, postalCode: true } },
+        // Same "most-recently-created Implementation" convention as
+        // GET /api/leads/GET /api/projects' own includeImplementation —
+        // CustomerFormDrawer's own Stage field (fetchCustomerForEdit)
+        // reads/writes through this, same as POST /api/customers creates
+        // it against at creation time.
+        implementations: { orderBy: { createdAt: 'desc' as const }, take: 1, select: { id: true, currentStage: true } },
       },
     });
     if (!lead) return NextResponse.json({ message: 'Lead not found' }, { status: 404 });
@@ -80,6 +96,12 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       const project = await prisma.project.findUnique({ where: { id: parseInt(body.projectId) }, select: { id: true } });
       if (!project) return NextResponse.json({ message: 'Selected project not found' }, { status: 404 });
     }
+    // Same shape as projectId above, for this Lead/Customer's own "Product"
+    // picker field (see schema.prisma's Lead.productId comment).
+    if (body.productId !== undefined && body.productId !== null && body.productId !== '') {
+      const product = await prisma.product.findUnique({ where: { id: parseInt(body.productId) }, select: { id: true } });
+      if (!product) return NextResponse.json({ message: 'Selected product not found' }, { status: 404 });
+    }
 
     let businessVerticals: string | null | undefined;
     if (body.businessVerticals !== undefined) {
@@ -88,6 +110,28 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       } catch (e: any) {
         return NextResponse.json({ message: e.message || 'Invalid business vertical' }, { status: 400 });
       }
+    }
+
+    // Legal Entity — only touched when the caller actually sends one of
+    // these fields, which today only CustomerFormDrawer's own Edit does
+    // (for a directly-created Customer — see that form's own
+    // fetchCustomerForEdit comment); the Leads module's own use of this
+    // same endpoint never sends them, so it's unaffected. Update-only (a
+    // plain Lead has no legalEntityId to update) — matches the realistic
+    // case, since every directly-created Customer already has one from
+    // POST /api/customers' own find-or-create.
+    const legalEntityFields = ['legalName', 'taxRegistrationNumber', 'legalAddressLine1', 'legalAddressLine2', 'postalCode'];
+    if (legalEntityFields.some((f) => body[f] !== undefined) && existing.legalEntityId) {
+      await prisma.companyLegalEntity.update({
+        where: { id: existing.legalEntityId },
+        data: {
+          ...(body.legalName !== undefined && { legalName: body.legalName || existing.companyName }),
+          ...(body.taxRegistrationNumber !== undefined && { taxRegistrationNumber: body.taxRegistrationNumber || null }),
+          ...(body.legalAddressLine1 !== undefined && { addressLine1: body.legalAddressLine1 || null }),
+          ...(body.legalAddressLine2 !== undefined && { addressLine2: body.legalAddressLine2 || null }),
+          ...(body.postalCode !== undefined && { postalCode: body.postalCode || null }),
+        },
+      });
     }
 
     // Lead -> Customer conversion: "Customer" is this same Lead row once
@@ -106,6 +150,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       ...(body.companyName && { companyName: body.companyName }),
       ...(body.projectName !== undefined && { projectName: body.projectName || null }),
       ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
+      ...(body.productId !== undefined && { productId: body.productId ? parseInt(body.productId) : null }),
       ...(body.contactPerson && { contactPerson: body.contactPerson }),
       ...(body.designation !== undefined && { designation: body.designation || null }),
       ...(body.mobile !== undefined && { mobile: body.mobile }),

@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { parseBusinessVerticals } from '@/lib/businessVerticals';
+import AddableSelect from '@/components/AddableSelect';
 
 // Mirrors src/components/leads/LeadFormDrawer.tsx's drawer shell (width,
 // header, spacing, Cancel/Save buttons) so Add Project visually matches Add
@@ -82,10 +83,17 @@ export interface ProjectFormDrawerProps {
   setFormErrors: Dispatch<SetStateAction<Record<string, string>>>;
   onSave: (data: ProjectFormState) => void;
   isSaving: boolean;
+  // "+ Add Customer" option at the bottom of the Customer dropdown (see
+  // AddableSelect) — optional so any other caller of this drawer that
+  // doesn't wire up the Customer-module round-trip (stash form state,
+  // navigate to /dashboard/customers, come back with the new customer
+  // preselected — see the Projects page's own handler) simply doesn't get
+  // the option rendered.
+  onAddCustomer?: () => void;
 }
 
 export default function ProjectFormDrawer({
-  open, onClose, editingId, form, setForm, formErrors, setFormErrors, onSave, isSaving,
+  open, onClose, editingId, form, setForm, formErrors, setFormErrors, onSave, isSaving, onAddCustomer,
 }: ProjectFormDrawerProps) {
   const { data: customers = [] } = useQuery({ queryKey: ['customers-for-project'], queryFn: fetchCustomerOptions });
   const { data: leads = [] } = useQuery({ queryKey: ['leads-for-project'], queryFn: fetchLeadOptions });
@@ -191,27 +199,35 @@ export default function ProjectFormDrawer({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Lead</label>
-                        <select
+                        {/* Same search+select UI as the Customer field just
+                            to the right (AddableSelect) — deliberately no
+                            "+ Add …" action here, this only ever picks from
+                            existing Leads. */}
+                        <AddableSelect
                           value={form.leadId}
+                          onChange={(v) => { setForm(f => ({ ...f, leadId: v })); clearFieldError('customerId'); }}
+                          options={leads.map(l => ({ value: String(l.id), label: l.companyName }))}
+                          placeholder="Select Lead"
                           disabled={!!form.customerId}
-                          onChange={(e) => { setForm(f => ({ ...f, leadId: e.target.value })); clearFieldError('customerId'); }}
-                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.customerId ? 'border-red-400' : 'border-slate-300'} ${form.customerId ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
-                        >
-                          <option value="">Select Lead</option>
-                          {leads.map(l => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-                        </select>
+                          error={!!formErrors.customerId}
+                        />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Customer</label>
-                        <select
+                        {/* "+ Add Customer" pinned at the bottom — see
+                            onAddCustomer's own comment on the Projects
+                            page's round-trip to the Customer module and
+                            back with the new Customer preselected. */}
+                        <AddableSelect
                           value={form.customerId}
+                          onChange={(v) => { setForm(f => ({ ...f, customerId: v })); clearFieldError('customerId'); }}
+                          options={customers.map(c => ({ value: String(c.id), label: c.companyName }))}
+                          placeholder="Select Customer"
+                          onAdd={() => onAddCustomer?.()}
+                          addLabel="Add Customer"
                           disabled={!!form.leadId}
-                          onChange={(e) => { setForm(f => ({ ...f, customerId: e.target.value })); clearFieldError('customerId'); }}
-                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.customerId ? 'border-red-400' : 'border-slate-300'} ${form.leadId ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
-                        >
-                          <option value="">Select Customer</option>
-                          {customers.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
-                        </select>
+                          error={!!formErrors.customerId}
+                        />
                       </div>
                       {formErrors.customerId && <p className="col-span-1 sm:col-span-2 -mt-3 text-xs text-red-600">{formErrors.customerId}</p>}
                       <div>

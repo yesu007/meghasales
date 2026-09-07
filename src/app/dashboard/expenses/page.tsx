@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, EyeIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { invalidateExpenseData } from '@/lib/queryInvalidation';
+import AddableSelect from '@/components/AddableSelect';
 
 interface ExpenseSubCategory { id: number; categoryId: number; name: string; isActive: boolean }
 interface ExpenseCategory { id: number; name: string; description: string | null; isActive: boolean; subCategories: ExpenseSubCategory[] }
@@ -82,69 +83,6 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
-// Dropdown with an extra "+ Add …" action styled like the page's other
-// primary buttons (e.g. "New Expense") — a plain <option> can't carry that
-// styling, so the Category/Sub Category selects in the mapping form below
-// use this custom dropdown instead of a native <select>.
-function AddableSelect({
-  value, onChange, options, placeholder, onAdd, addLabel, disabled,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  placeholder: string;
-  onAdd: () => void;
-  addLabel: string;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = options.find((o) => o.value === value);
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
-        className={`${inputCls} flex items-center justify-between text-left ${disabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white'}`}
-      >
-        <span className={selected ? 'text-slate-800' : 'text-slate-400'}>{selected ? selected.label : placeholder}</span>
-        <ChevronDownIcon className="h-4 w-4 text-slate-400 shrink-0" />
-      </button>
-      {open && !disabled && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg flex flex-col max-h-56">
-            {/* Only this options list scrolls — the "+ Add …" button below
-                stays fixed at the bottom of the dropdown, never scrolling
-                out of view. */}
-            <div className="overflow-y-auto flex-1">
-              {options.length === 0 && <p className="px-3 py-2 text-sm text-slate-400">No options yet</p>}
-              {options.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  onClick={() => { onChange(o.value); setOpen(false); }}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-amber-50 ${o.value === value ? 'bg-amber-50 text-amber-700 font-medium' : 'text-slate-700'}`}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-            <div className="border-t border-slate-200 p-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => { setOpen(false); onAdd(); }}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-              >
-                <PlusIcon className="h-4 w-4" /> {addLabel}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
 async function fetchExpenses(status: string, expenseType: string, projectId: string, productId: string, page: number, size: number): Promise<ExpenseListResponse> {
   const params = new URLSearchParams({ page: String(page), size: String(size) });

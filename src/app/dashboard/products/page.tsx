@@ -112,6 +112,13 @@ async function fetchProducts(): Promise<ProductRow[]> {
   return res.json();
 }
 
+// "+ Add Customer" round-trip (Customer dropdown in the Add Product form —
+// see ProductFormDrawer's own onAddCustomer), same mechanism as the
+// Projects page's own PENDING_PROJECT_FORM_KEY: the in-progress form is
+// stashed here before navigating away, and restored (merged with the newly
+// created Customer's id) on return.
+const PENDING_PRODUCT_FORM_KEY = 'pendingProductForm';
+
 export default function ProductsPage() {
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -129,6 +136,54 @@ export default function ProductsPage() {
   const [form, setForm] = useState<ProductFormState>(blankProductForm);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<number | null>(expandParam ? parseInt(expandParam) : null);
+
+  // Landed back here from the Customer module after "+ Add Customer" (see
+  // handleAddCustomer below) — ?newCustomerId=<id>, set by the Customers
+  // page's own createMutation once it knows this is a round-trip. Restores
+  // whatever Product form state was in progress before navigating away,
+  // sets the new Customer as selected, and reopens the drawer — then
+  // strips the query param so a refresh/back-navigation doesn't repeat
+  // this. Same "ref guard against Strict Mode's dev-only double-invoke"
+  // reasoning as the Projects page's own identical effect.
+  const restoredFromCustomerRoundTrip = useRef(false);
+  useEffect(() => {
+    const newCustomerId = searchParams.get('newCustomerId');
+    if (!newCustomerId || restoredFromCustomerRoundTrip.current) return;
+    restoredFromCustomerRoundTrip.current = true;
+    let restored: ProductFormState = blankProductForm;
+    try {
+      const saved = sessionStorage.getItem(PENDING_PRODUCT_FORM_KEY);
+      if (saved) restored = JSON.parse(saved);
+    } catch {
+      // Corrupt/unavailable sessionStorage — fall back to a blank form
+      // rather than blocking the new Customer from being selectable at all.
+    }
+    sessionStorage.removeItem(PENDING_PRODUCT_FORM_KEY);
+    setEditingId(null);
+    setForm({ ...restored, customerId: newCustomerId, leadId: '' });
+    setFormErrors({});
+    setDrawerOpen(true);
+    router.replace('/dashboard/products');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only ever
+    // meant to react to the URL actually carrying ?newCustomerId, not to
+    // re-run on every searchParams identity change or router.replace above
+    // re-triggering it.
+  }, [searchParams]);
+
+  // "+ Add Customer" (ProductFormDrawer's own AddableSelect) — stashes
+  // whatever's currently in the Add Product form so it isn't lost, then
+  // hands off to the Customer module's own "+ Add Customer" flow (reusing
+  // its existing create form/endpoint, not a new one) with a way back (see
+  // the useEffect above and the Customers page's own read of `returnTo`).
+  const handleAddCustomer = () => {
+    try {
+      sessionStorage.setItem(PENDING_PRODUCT_FORM_KEY, JSON.stringify(form));
+    } catch {
+      // Best-effort — if sessionStorage isn't available, the user can still
+      // complete the round-trip, they'll just land back on a blank form.
+    }
+    router.push('/dashboard/customers?openCreate=true&returnTo=/dashboard/products');
+  };
 
   // Search — same debounced searchInput/search pattern as the other Master
   // modules (e.g. src/app/dashboard/packages/page.tsx), applied client-side
@@ -366,6 +421,7 @@ export default function ProductsPage() {
         setFormErrors={setFormErrors}
         onSave={(data) => save.mutate(data)}
         isSaving={save.isPending}
+        onAddCustomer={handleAddCustomer}
       />
     </div>
   );
