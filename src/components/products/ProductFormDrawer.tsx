@@ -183,20 +183,22 @@ export default function ProductFormDrawer({
                             Vertical"-flagged rows (see productVerticalOptions'
                             own comment above) — picking a name picks that same
                             row's id, which also drives the read-only Vertical
-                            display below. */}
-                        <select
+                            display below. Same search+select UI as Lead/
+                            Customer/Vertical elsewhere in this app
+                            (AddableSelect) — no "+ Add …" action, this only
+                            ever picks from the existing catalog. */}
+                        <AddableSelect
                           value={form.verticalId}
-                          onChange={(e) => {
-                            const vertical = verticalOptions.find(v => String(v.id) === e.target.value);
-                            setForm(f => ({ ...f, verticalId: e.target.value, productName: vertical?.name || '' }));
+                          onChange={(v) => {
+                            const vertical = verticalOptions.find(opt => String(opt.id) === v);
+                            setForm(f => ({ ...f, verticalId: v, productName: vertical?.name || '' }));
                             clearFieldError('productName');
                             clearFieldError('verticalId');
                           }}
-                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.productName ? 'border-red-400' : 'border-slate-300'}`}
-                        >
-                          <option value="">Select Product Name</option>
-                          {productVerticalOptions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                        </select>
+                          options={productVerticalOptions.map(v => ({ value: String(v.id), label: v.name }))}
+                          placeholder="Select Product Name"
+                          error={!!formErrors.productName}
+                        />
                         {formErrors.productName && <p className="text-xs text-red-600 mt-1">{formErrors.productName}</p>}
                       </div>
                       <div>

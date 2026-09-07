@@ -232,14 +232,16 @@ export default function ProjectFormDrawer({
                       {formErrors.customerId && <p className="col-span-1 sm:col-span-2 -mt-3 text-xs text-red-600">{formErrors.customerId}</p>}
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Vertical *</label>
-                        <select
+                        {/* Same search+select UI as Lead/Customer above
+                            (AddableSelect) — no "+ Add …" action, this only
+                            ever picks from the existing Vertical Master. */}
+                        <AddableSelect
                           value={form.verticalId}
-                          onChange={(e) => { setForm(f => ({ ...f, verticalId: e.target.value })); clearFieldError('verticalId'); }}
-                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.verticalId ? 'border-red-400' : 'border-slate-300'}`}
-                        >
-                          <option value="">Select Vertical</option>
-                          {verticalOptions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                        </select>
+                          onChange={(v) => { setForm(f => ({ ...f, verticalId: v })); clearFieldError('verticalId'); }}
+                          options={verticalOptions.map(v => ({ value: String(v.id), label: v.name }))}
+                          placeholder="Select Vertical"
+                          error={!!formErrors.verticalId}
+                        />
                         {formErrors.verticalId && <p className="text-xs text-red-600 mt-1">{formErrors.verticalId}</p>}
                       </div>
                       <div>
