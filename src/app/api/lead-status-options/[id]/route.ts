@@ -6,8 +6,10 @@ import { STATUS_COLOR_PRESETS } from '@/lib/leadStatus';
 
 export const dynamic = 'force-dynamic';
 
-// No POST/DELETE — the 6 rows are fixed pipeline stages, seeded once. Only
-// label/color/sortOrder are editable; `code` is never accepted here.
+// No DELETE — the 6 seeded pipeline stages are fixed and permanent (POST
+// /api/lead-status-options only ever adds supplementary rows on top of
+// them, see that route's own comment). Only label/color/sortOrder are
+// editable here; `code` is never accepted, on any row.
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const denied = await requirePermission('manage_lead_status_options');
   if (denied) return denied;
