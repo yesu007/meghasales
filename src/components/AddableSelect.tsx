@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronDownIcon, MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, MagnifyingGlassIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 // Dropdown with an extra "+ Add …" action styled like this app's other
 // primary buttons — a plain <option> can't carry that styling, so any
@@ -44,17 +44,53 @@ export default function AddableSelect({
   // starts from the full list rather than a stale filtered one.
   const close = () => { setOpen(false); setQuery(''); };
 
+  const toggle = () => { if (!disabled) (open ? close() : setOpen(true)); };
+
   return (
     <div className="relative">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => (open ? close() : setOpen(true))}
-        className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 flex items-center justify-between text-left ${error ? 'border-red-400' : 'border-slate-300'} ${disabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white'}`}
+      {/* A plain <button> can't host the "×" clear button below as a real,
+          independently-clickable child — nested interactive controls are
+          invalid HTML (a <button> inside a <button>) and unreliable across
+          browsers/assistive tech. This is a div standing in for the trigger
+          button instead, with the same role/keyboard/focus behavior. */}
+      <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled}
+        onClick={toggle}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+          else if (e.key === 'Escape') close();
+        }}
+        className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 flex items-center justify-between gap-1 text-left ${error ? 'border-red-400' : 'border-slate-300'} ${disabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white cursor-pointer'}`}
       >
-        <span className={selected ? 'text-slate-800' : 'text-slate-400'}>{selected ? selected.label : placeholder}</span>
-        <ChevronDownIcon className="h-4 w-4 text-slate-400 shrink-0" />
-      </button>
+        <span className={`truncate ${selected ? 'text-slate-800' : 'text-slate-400'}`}>{selected ? selected.label : placeholder}</span>
+        <span className="flex items-center gap-0.5 shrink-0">
+          {/* Only ever shown once a value is actually selected, and never
+              while disabled — clearing a locked/read-only field makes no
+              sense. Its own click must not also open/close the dropdown
+              (stopPropagation) or submit an enclosing <form> (type="button").
+              Checked against `value` rather than `selected`: some callers
+              (list-page filter bars, and a few "neutral default" fields like
+              Quotation's Vertical/Bill To) deliberately give '' its own real,
+              labeled option — e.g. "All Sources" — instead of treating it as
+              a placeholder. That option still counts as "nothing selected"
+              for clear-button purposes; showing an × on a fresh, untouched
+              filter would contradict "don't show it when empty". */}
+          {value !== '' && !disabled && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onChange(''); }}
+              className="p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600"
+              aria-label="Clear selection"
+            >
+              <XMarkIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <ChevronDownIcon className="h-4 w-4 text-slate-400" />
+        </span>
+      </div>
       {open && !disabled && (
         <>
           <div className="fixed inset-0 z-10" onClick={close} />
@@ -68,6 +104,12 @@ export default function AddableSelect({
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onClick={(e) => e.stopPropagation()}
+                  // autoFocus moves focus here as soon as the dropdown
+                  // opens, so Escape has to be caught on this input too —
+                  // the trigger's own onKeyDown (below) never sees it,
+                  // since this search box is a sibling of the trigger, not
+                  // a descendant, and keydown doesn't bubble sideways.
+                  onKeyDown={(e) => { if (e.key === 'Escape') close(); }}
                   placeholder="Search..."
                   className="w-full pl-8 pr-2 py-1.5 border border-slate-200 rounded-md text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                 />

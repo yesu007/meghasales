@@ -17,6 +17,7 @@ import {
   getActionItemTransitionCapability,
 } from '@/lib/meetings/constants';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-500',
@@ -216,14 +217,12 @@ export default function ActionItemsListPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Priority</label>
-            <select
+            <AddableSelect
               value={priorityFilter}
-              onChange={(e) => { setPriorityFilter(e.target.value); setPage(0); }}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">All priorities</option>
-              {ACTION_ITEM_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
+              onChange={(v) => { setPriorityFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All priorities' }, ...ACTION_ITEM_PRIORITIES.map((p) => ({ value: p, label: p }))]}
+              placeholder="All priorities"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Due From</label>
@@ -341,13 +340,12 @@ export default function ActionItemsListPage() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <span>Rows per page</span>
-              <select
-                value={size}
-                onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-              >
-                {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <AddableSelect
+                value={String(size)}
+                onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                options={[10, 20, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
+                placeholder="Rows per page"
+              />
             </div>
             <div className="flex items-center gap-1">
               <button

@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftIcon, PencilIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import AddableSelect from '@/components/AddableSelect';
 
 interface StructureOption {
   id: number;
@@ -230,40 +231,59 @@ export default function EmployeeDetailPage() {
               <Field label="Designation"><input value={form.designation || ''} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} className={inputCls} /></Field>
               <Field label="Role"><input value={form.role || ''} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className={inputCls} /></Field>
               <Field label="Vertical">
-                <select value={form.verticalId || ''} onChange={(e) => setForm((f) => ({ ...f, verticalId: e.target.value }))} className={inputCls}>
-                  <option value="">—</option>
-                  {verticalOptions.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
+                <AddableSelect
+                  value={form.verticalId || ''}
+                  onChange={(v) => setForm((f) => ({ ...f, verticalId: v }))}
+                  options={verticalOptions.map((v) => ({ value: String(v.id), label: v.name }))}
+                  placeholder="—"
+                />
               </Field>
               <Field label="Manager">
-                <select value={form.managerId || ''} onChange={(e) => setForm((f) => ({ ...f, managerId: e.target.value }))} className={inputCls}>
-                  <option value="">—</option>
-                  {managerOptions.filter((m) => m.id !== employee.id).map((m) => <option key={m.id} value={m.id}>{m.firstName} {m.lastName} ({m.employeeCode})</option>)}
-                </select>
+                <AddableSelect
+                  value={form.managerId || ''}
+                  onChange={(v) => setForm((f) => ({ ...f, managerId: v }))}
+                  options={managerOptions.filter((m) => m.id !== employee.id).map((m) => ({ value: String(m.id), label: `${m.firstName} ${m.lastName} (${m.employeeCode})` }))}
+                  placeholder="—"
+                />
               </Field>
               <Field label="Employment Type">
-                <select value={form.employmentType || 'FULL_TIME'} onChange={(e) => setForm((f) => ({ ...f, employmentType: e.target.value }))} className={inputCls}>
-                  <option value="FULL_TIME">Full-time</option>
-                  <option value="PART_TIME">Part-time</option>
-                  <option value="CONTRACT">Contract</option>
-                  <option value="INTERN">Intern</option>
-                </select>
+                <AddableSelect
+                  value={form.employmentType || 'FULL_TIME'}
+                  onChange={(v) => setForm((f) => ({ ...f, employmentType: v }))}
+                  options={[
+                    { value: 'FULL_TIME', label: 'Full-time' },
+                    { value: 'PART_TIME', label: 'Part-time' },
+                    { value: 'CONTRACT', label: 'Contract' },
+                    { value: 'INTERN', label: 'Intern' },
+                  ]}
+                  placeholder="Select employment type"
+                />
               </Field>
               <Field label="Status">
-                <select value={form.status || 'ACTIVE'} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className={inputCls}>
-                  <option value="ACTIVE">Active</option>
-                  <option value="ON_NOTICE">On Notice</option>
-                  <option value="EXITED">Exited</option>
-                </select>
+                <AddableSelect
+                  value={form.status || 'ACTIVE'}
+                  onChange={(v) => setForm((f) => ({ ...f, status: v }))}
+                  options={[
+                    { value: 'ACTIVE', label: 'Active' },
+                    { value: 'ON_NOTICE', label: 'On Notice' },
+                    { value: 'EXITED', label: 'Exited' },
+                  ]}
+                  placeholder="Select status"
+                />
               </Field>
               <Field label="PAN"><input value={form.panNumber || ''} onChange={(e) => setForm((f) => ({ ...f, panNumber: e.target.value.toUpperCase() }))} className={inputCls} /></Field>
               <Field label="UAN (PF)"><input value={form.uanNumber || ''} onChange={(e) => setForm((f) => ({ ...f, uanNumber: e.target.value }))} className={inputCls} /></Field>
               <Field label="ESIC Number"><input value={form.esicNumber || ''} onChange={(e) => setForm((f) => ({ ...f, esicNumber: e.target.value }))} className={inputCls} /></Field>
               <Field label="Tax Regime">
-                <select value={form.taxRegime || 'NEW'} onChange={(e) => setForm((f) => ({ ...f, taxRegime: e.target.value }))} className={inputCls}>
-                  <option value="NEW">New Regime</option>
-                  <option value="OLD">Old Regime</option>
-                </select>
+                <AddableSelect
+                  value={form.taxRegime || 'NEW'}
+                  onChange={(v) => setForm((f) => ({ ...f, taxRegime: v }))}
+                  options={[
+                    { value: 'NEW', label: 'New Regime' },
+                    { value: 'OLD', label: 'Old Regime' },
+                  ]}
+                  placeholder="Select tax regime"
+                />
               </Field>
             </div>
             <div className="flex flex-wrap gap-5 pt-1">
@@ -356,10 +376,12 @@ export default function EmployeeDetailPage() {
             className="space-y-3"
           >
             <Field label="Structure">
-              <select value={assignForm.structureId} onChange={(e) => setAssignForm((f) => ({ ...f, structureId: e.target.value }))} className={inputCls}>
-                <option value="">Select structure</option>
-                {structures.filter((s) => s.isActive).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              <AddableSelect
+                value={assignForm.structureId}
+                onChange={(v) => setAssignForm((f) => ({ ...f, structureId: v }))}
+                options={structures.filter((s) => s.isActive).map((s) => ({ value: String(s.id), label: s.name }))}
+                placeholder="Select structure"
+              />
             </Field>
             {editingAssignment ? (
               <Field label="Annual CTC (₹)">

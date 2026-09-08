@@ -42,6 +42,7 @@ import {
   ActionItemPriority,
 } from '@/lib/meetings/constants';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 const STATUS_COLORS: Record<string, string> = {
   SCHEDULED: 'bg-blue-100 text-blue-700',
@@ -312,13 +313,12 @@ function EditMeetingModal({ meeting, users, onClose }: { meeting: any; users: an
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Priority</label>
-              <select
+              <AddableSelect
                 value={form.priority}
-                onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as MeetingPriority }))}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-              >
-                {MEETING_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+                onChange={(v) => setForm((f) => ({ ...f, priority: v as MeetingPriority }))}
+                options={MEETING_PRIORITIES.map((p) => ({ value: p, label: p }))}
+                placeholder="Select priority"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Duration (min)</label>
@@ -349,16 +349,15 @@ function EditMeetingModal({ meeting, users, onClose }: { meeting: any; users: an
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Organizer</label>
-            <select
+            <AddableSelect
               value={form.organizerId}
-              onChange={(e) => setForm((f) => ({ ...f, organizerId: e.target.value }))}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">Unassigned</option>
-              {users.map((u: any) => (
-                <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
-              ))}
-            </select>
+              onChange={(v) => setForm((f) => ({ ...f, organizerId: v }))}
+              options={[
+                { value: '', label: 'Unassigned' },
+                ...users.map((u: any) => ({ value: String(u.id), label: `${u.firstName} ${u.lastName}` })),
+              ]}
+              placeholder="Unassigned"
+            />
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-5">
@@ -552,12 +551,14 @@ function AddParticipantForm({ meetingId, users, onDone }: { meetingId: number; u
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         {participantType === 'INTERNAL' ? (
-          <select value={userId} onChange={(e) => setUserId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm md:col-span-2">
-            <option value="">Select user</option>
-            {users.map((u: any) => (
-              <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
-            ))}
-          </select>
+          <div className="md:col-span-2">
+            <AddableSelect
+              value={userId}
+              onChange={(v) => setUserId(v)}
+              options={users.map((u: any) => ({ value: String(u.id), label: `${u.firstName} ${u.lastName}` }))}
+              placeholder="Select user"
+            />
+          </div>
         ) : (
           <>
             <input
@@ -574,9 +575,12 @@ function AddParticipantForm({ meetingId, users, onDone }: { meetingId: number; u
             />
           </>
         )}
-        <select value={role} onChange={(e) => setRole(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm">
-          {PARTICIPANT_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-        </select>
+        <AddableSelect
+          value={role}
+          onChange={(v) => setRole(v)}
+          options={PARTICIPANT_ROLES.map((r) => ({ value: r, label: r }))}
+          placeholder="Select role"
+        />
       </div>
       <div className="flex justify-end">
         <button
@@ -653,12 +657,15 @@ function AddAgendaItemForm({ meetingId, users, sortOrder, onDone }: { meetingId:
           placeholder="Minutes allocated"
           className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
         />
-        <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm">
-          <option value="">No owner</option>
-          {users.map((u: any) => (
-            <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
-          ))}
-        </select>
+        <AddableSelect
+          value={ownerId}
+          onChange={(v) => setOwnerId(v)}
+          options={[
+            { value: '', label: 'No owner' },
+            ...users.map((u: any) => ({ value: String(u.id), label: `${u.firstName} ${u.lastName}` })),
+          ]}
+          placeholder="No owner"
+        />
       </div>
       <div className="flex justify-end">
         <button
@@ -975,12 +982,15 @@ function AddActionItemModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Assign To</label>
-              <select value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
-                <option value="">Unassigned</option>
-                {users.map((u: any) => (
-                  <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
-                ))}
-              </select>
+              <AddableSelect
+                value={assignedToId}
+                onChange={(v) => setAssignedToId(v)}
+                options={[
+                  { value: '', label: 'Unassigned' },
+                  ...users.map((u: any) => ({ value: String(u.id), label: `${u.firstName} ${u.lastName}` })),
+                ]}
+                placeholder="Unassigned"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Assigned Team</label>
@@ -994,13 +1004,12 @@ function AddActionItemModal({
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Priority</label>
-              <select
+              <AddableSelect
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as ActionItemPriority)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-              >
-                {ACTION_ITEM_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+                onChange={(v) => setPriority(v as ActionItemPriority)}
+                options={ACTION_ITEM_PRIORITIES.map((p) => ({ value: p, label: p }))}
+                placeholder="Select priority"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Start Date</label>
@@ -1024,16 +1033,15 @@ function AddActionItemModal({
           {otherActionItems.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Depends On</label>
-              <select
+              <AddableSelect
                 value={dependsOnActionItemId}
-                onChange={(e) => setDependsOnActionItemId(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-              >
-                <option value="">No dependency</option>
-                {otherActionItems.map((a: any) => (
-                  <option key={a.id} value={a.id}>{a.description}</option>
-                ))}
-              </select>
+                onChange={(v) => setDependsOnActionItemId(v)}
+                options={[
+                  { value: '', label: 'No dependency' },
+                  ...otherActionItems.map((a: any) => ({ value: String(a.id), label: a.description })),
+                ]}
+                placeholder="No dependency"
+              />
             </div>
           )}
           {momId != null && (
@@ -1396,18 +1404,16 @@ export default function TodoDetailPage() {
 
         <div className="flex flex-wrap items-center gap-3 mt-5 pt-5 border-t border-slate-100">
           <div className="flex items-center gap-3">
-            <label htmlFor="status-select" className="text-sm font-medium text-slate-600">Status</label>
-            <select
-              id="status-select"
-              value={meeting.status}
-              disabled={!canManageMeetings || statusMutation.isPending}
-              onChange={(e) => statusMutation.mutate(e.target.value as MeetingStatus)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm disabled:opacity-50"
-            >
-              {availableStatuses.map((s) => (
-                <option key={s} value={s}>{s.replace('_', ' ')}{s === meeting.status ? ' (current)' : ''}</option>
-              ))}
-            </select>
+            <label className="text-sm font-medium text-slate-600">Status</label>
+            <div className="w-56">
+              <AddableSelect
+                value={meeting.status}
+                disabled={!canManageMeetings || statusMutation.isPending}
+                onChange={(v) => statusMutation.mutate(v as MeetingStatus)}
+                options={availableStatuses.map((s) => ({ value: s, label: `${s.replace('_', ' ')}${s === meeting.status ? ' (current)' : ''}` }))}
+                placeholder="Select status"
+              />
+            </div>
           </div>
 
           {canManageMeetings && (

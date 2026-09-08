@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeftIcon, ChevronRightIcon, ChartPieIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/lib/currency';
+import AddableSelect from '@/components/AddableSelect';
 
 const COMPANY_WIDE = 'company-wide';
 
@@ -202,13 +203,14 @@ export default function SalaryAllocationPage() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <span>Rows per page</span>
-              <select
-                value={pageSize}
-                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
-                className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-              >
-                {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <div className="w-28">
+                <AddableSelect
+                  value={String(pageSize)}
+                  onChange={(v) => { setPageSize(Number(v)); setPage(0); }}
+                  options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
+                  placeholder="Rows"
+                />
+              </div>
             </div>
             <div className="flex items-center gap-1">
               <button

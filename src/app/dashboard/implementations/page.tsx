@@ -15,7 +15,6 @@ import {
   ArrowsUpDownIcon,
   PencilIcon,
   TrashIcon,
-  FunnelIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -29,6 +28,7 @@ import { useProductsForLead } from '@/hooks/useProductsForLead';
 import { IMPLEMENTATION_STATUSES as IMPL_STATUSES } from '@/lib/implementationStatus';
 import { useStages } from '@/hooks/useStages';
 import { invalidateImplementationData } from '@/lib/queryInvalidation';
+import AddableSelect from '@/components/AddableSelect';
 // Go Live / Post Go Live tab labels + the state type — the tabs' own stage
 // categorization (GO_LIVE_STAGES/POST_GO_LIVE_STAGES) is applied server-side
 // in /api/implementations, not here.
@@ -116,11 +116,9 @@ export default function ImplementationsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [stageFilter, setStageFilter] = useState('');
   const [managerFilter, setManagerFilter] = useState('');
   const [verticalFilter, setVerticalFilter] = useState('');
-  const [productFilter, setProductFilter] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
@@ -137,11 +135,10 @@ export default function ImplementationsPage() {
   if (stageFilter) params.currentStage = stageFilter;
   if (managerFilter) params.projectManagerId = managerFilter;
   if (verticalFilter) params.businessVertical = verticalFilter;
-  if (productFilter) params.productId = productFilter;
 
-  const activeFilters = [statusFilter, stageFilter, managerFilter, verticalFilter, productFilter].filter(Boolean).length;
+  const activeFilters = [statusFilter, stageFilter, managerFilter, verticalFilter].filter(Boolean).length;
   const clearFilters = () => {
-    setSearchInput(''); setSearch(''); setStatusFilter(''); setStageFilter(''); setManagerFilter(''); setVerticalFilter(''); setProductFilter(''); setPage(0);
+    setSearchInput(''); setSearch(''); setStatusFilter(''); setStageFilter(''); setManagerFilter(''); setVerticalFilter(''); setPage(0);
   };
 
   const { data: verticalOptions = [] } = useQuery<{ id: number; name: string; headId: number | null; headName: string | null }[]>({
@@ -149,14 +146,6 @@ export default function ImplementationsPage() {
     queryFn: async () => { const res = await fetch('/api/verticals'); if (!res.ok) throw new Error('Failed to fetch verticals'); return res.json(); },
   });
 
-  // Full active Product list, for the Filters panel's own Product dropdown
-  // — same "global list, not scoped to any one Lead/Customer" convention as
-  // verticalOptions just above (this filters across every implementation's
-  // record, not one form's dropdown).
-  const { data: productOptions = [] } = useQuery<{ id: number; productName: string }[]>({
-    queryKey: ['products-for-impl-filter'],
-    queryFn: async () => { const res = await fetch('/api/products'); if (!res.ok) throw new Error('Failed to fetch products'); return res.json(); },
-  });
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['implementations', params],
@@ -381,10 +370,11 @@ export default function ImplementationsPage() {
         <p className="text-slate-500">Track project implementations and delivery</p>
       </div>
 
-      {/* Search & Filters */}
+      {/* Search & Filters — filter fields sit directly beside the search
+          bar, always visible (no "Filters" button/dropdown to open first). */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:flex-wrap gap-3">
+          <div className="relative flex-1 min-w-[220px]">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
@@ -399,56 +389,50 @@ export default function ImplementationsPage() {
               </button>
             )}
           </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Statuses</option>
-            {IMPL_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-          <button onClick={() => setFiltersOpen(!filtersOpen)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium ${activeFilters > 0 ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600'}`}>
-            <FunnelIcon className="h-4 w-4" /> Filters {activeFilters > 0 && <span className="bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{activeFilters}</span>}
-          </button>
-          {(searchInput || activeFilters > 0) && <button onClick={clearFilters} className="text-sm text-slate-500 hover:text-red-500">Clear All</button>}
-        </div>
-        {filtersOpen && (
-          <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div>
+          <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+            <div className="w-full sm:w-40">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+              <AddableSelect
+                value={statusFilter}
+                onChange={(v) => { setStatusFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All Statuses' }, ...IMPL_STATUSES.map(s => ({ value: s.value, label: s.label }))]}
+                placeholder="All Statuses"
+              />
+            </div>
+            <div className="w-full sm:w-40">
               <label className="block text-xs font-medium text-slate-600 mb-1">Business Vertical</label>
-              <select value={verticalFilter} onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-                <option value="">All</option>
-                {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-              </select>
+              <AddableSelect
+                value={verticalFilter}
+                onChange={(v) => { setVerticalFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All' }, ...verticalOptions.map(v => ({ value: v.name, label: v.name }))]}
+                placeholder="All"
+              />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Product</label>
-              <select value={productFilter} onChange={(e) => { setProductFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-                <option value="">All</option>
-                {productOptions.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
-              </select>
-            </div>
-            <div>
+            <div className="w-full sm:w-40">
               <label className="block text-xs font-medium text-slate-600 mb-1">Stage</label>
-              <select value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-                <option value="">All</option>
-                {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <AddableSelect
+                value={stageFilter}
+                onChange={(v) => { setStageFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All' }, ...STAGES.map(s => ({ value: s, label: s }))]}
+                placeholder="All"
+              />
             </div>
-            <div>
+            <div className="w-full sm:w-40">
               <label className="block text-xs font-medium text-slate-600 mb-1">Project Manager</label>
-              <select value={managerFilter} onChange={(e) => { setManagerFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-                <option value="">All</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-              </select>
+              <AddableSelect
+                value={managerFilter}
+                onChange={(v) => { setManagerFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All' }, ...users.map(u => ({ value: String(u.id), label: u.fullName }))]}
+                placeholder="All"
+              />
             </div>
           </div>
-        )}
+          {(searchInput || activeFilters > 0) && <button onClick={clearFilters} className="text-sm text-slate-500 hover:text-red-500 sm:mb-2.5">Clear All</button>}
+        </div>
         {activeFilters > 0 && (
           <div className="flex flex-wrap gap-2">
             {statusFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200">Status: {IMPL_STATUSES.find(s => s.value === statusFilter)?.label || statusFilter} <button onClick={() => setStatusFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
             {verticalFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-purple-50 text-purple-700 border border-purple-200">Vertical: {verticalFilter} <button onClick={() => setVerticalFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
-            {productFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-teal-50 text-teal-700 border border-teal-200">Product: {productOptions.find(p => String(p.id) === productFilter)?.productName || productFilter} <button onClick={() => setProductFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
             {stageFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">Stage: {stageFilter} <button onClick={() => setStageFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
             {managerFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">Manager: {users.find(u => String(u.id) === managerFilter)?.fullName || managerFilter} <button onClick={() => setManagerFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
           </div>
@@ -579,13 +563,14 @@ export default function ImplementationsPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(size)}
+                    onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                    options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows per page"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
@@ -652,12 +637,11 @@ export default function ImplementationsPage() {
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Source Type *</label>
-                          <select
+                          <AddableSelect
                             disabled={!!editingId}
-                            title={editingId ? 'Source Type cannot be changed after creation' : undefined}
                             value={form.sourceType}
-                            onChange={(e) => {
-                              const sourceType = e.target.value === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD';
+                            onChange={(v) => {
+                              const sourceType = v === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD';
                               // Clearing leadId (and any Project/Product/
                               // Vertical already picked, since all three are
                               // scoped to the old leadId) on switch — the
@@ -665,20 +649,17 @@ export default function ImplementationsPage() {
                               // other list.
                               setForm(f => ({ ...f, sourceType, leadId: '', projectId: '', projectName: '', productId: '', verticalId: '' }));
                             }}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
-                          >
-                            <option value="LEAD">Lead</option>
-                            <option value="CUSTOMER">Customer</option>
-                          </select>
+                            options={[{ value: 'LEAD', label: 'Lead' }, { value: 'CUSTOMER', label: 'Customer' }]}
+                            placeholder="Select Source Type"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Lead / Company *</label>
-                          <select
+                          <AddableSelect
                             disabled={!!editingId}
-                            title={editingId ? 'Lead cannot be changed after creation' : undefined}
                             value={form.leadId}
-                            onChange={(e) => {
-                              const leadId = e.target.value;
+                            onChange={(v) => {
+                              const leadId = v;
                               // Reset Project/Product (and the Vertical/Head
                               // derived from Project — see that effect's own
                               // comment) — the previous picks belonged to
@@ -689,15 +670,10 @@ export default function ImplementationsPage() {
                               setForm(f => ({ ...f, leadId, projectId: '', projectName: '', productId: '', verticalId: '' }));
                               clearFieldError('leadId');
                             }}
-                            className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.leadId ? 'border-red-400' : 'border-slate-300'}`}
-                          >
-                            <option value="">{form.sourceType === 'CUSTOMER' ? 'Select a customer' : 'Select a lead'}</option>
-                            {leads.map((lead: Lead) => (
-                              <option key={lead.id} value={lead.id}>
-                                {lead.companyName}
-                              </option>
-                            ))}
-                          </select>
+                            options={leads.map((lead: Lead) => ({ value: String(lead.id), label: lead.companyName }))}
+                            placeholder={form.sourceType === 'CUSTOMER' ? 'Select a customer' : 'Select a lead'}
+                            error={!!formErrors.leadId}
+                          />
                           {formErrors.leadId && <p className="text-xs text-red-600 mt-1">{formErrors.leadId}</p>}
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -707,30 +683,26 @@ export default function ImplementationsPage() {
                                 picking one disables the other (cleared ->
                                 re-enabled), same rule as the Quotation
                                 module's own Project/Product pickers. */}
-                            <select
+                            <AddableSelect
                               disabled={!form.leadId || !!editingId || !!form.productId}
-                              title={!form.leadId ? 'Select a Lead / Company first' : editingId ? 'Project cannot be changed after creation' : undefined}
                               value={form.projectId}
-                              onChange={(e) => { setForm(f => ({ ...f, projectId: e.target.value })); clearFieldError('project'); }}
-                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
-                            >
-                              <option value="">{form.leadId ? 'Select project' : 'Select a Lead / Company first'}</option>
-                              {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
-                            </select>
+                              onChange={(v) => { setForm(f => ({ ...f, projectId: v })); clearFieldError('project'); }}
+                              options={leadProjects.map(p => ({ value: String(p.id), label: p.projectName }))}
+                              placeholder={form.leadId ? 'Select project' : 'Select a Lead / Company first'}
+                              error={!!formErrors.project}
+                            />
                             {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
-                            <select
+                            <AddableSelect
                               disabled={!form.leadId || !!editingId || !!form.projectId}
-                              title={!form.leadId ? 'Select a Lead / Company first' : editingId ? 'Product cannot be changed after creation' : undefined}
                               value={form.productId}
-                              onChange={(e) => { setForm(f => ({ ...f, productId: e.target.value })); clearFieldError('project'); }}
-                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
-                            >
-                              <option value="">{form.leadId ? 'Select product' : 'Select a Lead / Company first'}</option>
-                              {leadProducts.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
-                            </select>
+                              onChange={(v) => { setForm(f => ({ ...f, productId: v })); clearFieldError('project'); }}
+                              options={leadProducts.map(p => ({ value: String(p.id), label: p.productName }))}
+                              placeholder={form.leadId ? 'Select product' : 'Select a Lead / Company first'}
+                              error={!!formErrors.project}
+                            />
                             {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                           </div>
                         </div>
@@ -781,27 +753,21 @@ export default function ImplementationsPage() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Current Stage</label>
-                          <select
+                          <AddableSelect
                             value={form.currentStage}
-                            onChange={(e) => setForm(f => ({ ...f, currentStage: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                          >
-                            <option value="">Select stage</option>
-                            {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
+                            onChange={(v) => setForm(f => ({ ...f, currentStage: v }))}
+                            options={STAGES.map(s => ({ value: s, label: s }))}
+                            placeholder="Select stage"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Project Manager</label>
-                          <select
+                          <AddableSelect
                             value={form.projectManagerId}
-                            onChange={(e) => setForm(f => ({ ...f, projectManagerId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                          >
-                            <option value="">Unassigned</option>
-                            {users.map((u) => (
-                              <option key={u.id} value={u.id}>{u.fullName}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => setForm(f => ({ ...f, projectManagerId: v }))}
+                            options={[{ value: '', label: 'Unassigned' }, ...users.map((u) => ({ value: String(u.id), label: u.fullName }))]}
+                            placeholder="Unassigned"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>

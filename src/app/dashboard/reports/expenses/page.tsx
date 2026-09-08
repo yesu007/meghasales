@@ -11,6 +11,7 @@ import { generateReportPDF } from '@/lib/generateReportPDF';
 import { computeReportTotals } from '@/lib/reportTotals';
 import { usePermissions } from '@/hooks/usePermissions';
 import ReportTotalsFooter, { StatusSplit } from '@/components/reports/ReportTotalsFooter';
+import AddableSelect from '@/components/AddableSelect';
 
 // The first report under the Reports hub. Structure intentionally mirrors
 // the Accounting Reports page (type tabs → filter bar → generic table →
@@ -193,21 +194,38 @@ export default function ExpenseReportPage() {
           <label className="text-xs font-medium text-slate-600">To</label>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800" />
         </div>
-        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-          <option value="">All Categories</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select value={verticalId} onChange={(e) => setVerticalId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-          <option value="">All Verticals</option>
-          {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-        </select>
-        <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-          <option value="">All Projects</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
-        </select>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-          {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+        <div className="w-56">
+          <AddableSelect
+            value={categoryId}
+            onChange={setCategoryId}
+            options={[{ value: '', label: 'All Categories' }, ...categories.map((c) => ({ value: String(c.id), label: c.name }))]}
+            placeholder="All Categories"
+          />
+        </div>
+        <div className="w-56">
+          <AddableSelect
+            value={verticalId}
+            onChange={setVerticalId}
+            options={[{ value: '', label: 'All Verticals' }, ...verticals.map((v) => ({ value: String(v.id), label: v.name }))]}
+            placeholder="All Verticals"
+          />
+        </div>
+        <div className="w-56">
+          <AddableSelect
+            value={projectId}
+            onChange={setProjectId}
+            options={[{ value: '', label: 'All Projects' }, ...projects.map((p) => ({ value: String(p.id), label: p.projectName }))]}
+            placeholder="All Projects"
+          />
+        </div>
+        <div className="w-56">
+          <AddableSelect
+            value={status}
+            onChange={setStatus}
+            options={STATUSES}
+            placeholder="All Statuses"
+          />
+        </div>
         {(from || to || categoryId || status || projectId || verticalId || projectOnly) && (
           <button onClick={() => { setFrom(''); setTo(''); setCategoryId(''); setStatus(''); setProjectId(''); setVerticalId(''); setProjectOnly(false); }} className="text-sm text-slate-500 hover:text-red-500">Clear</button>
         )}

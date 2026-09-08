@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import AddableSelect from '@/components/AddableSelect';
 
 interface LeaveType {
   id: number;
@@ -57,10 +58,15 @@ export default function LeaveTypesPanel() {
         <form onSubmit={(e) => { e.preventDefault(); if (!typeForm.name || !typeForm.code) { toast.error('Name and code are required'); return; } createType.mutate(); }} className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
           <input placeholder="Name" value={typeForm.name} onChange={(e) => setTypeForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} />
           <input placeholder="Code" value={typeForm.code} onChange={(e) => setTypeForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} className={inputCls} />
-          <select value={typeForm.isPaid ? 'PAID' : 'UNPAID'} onChange={(e) => setTypeForm((f) => ({ ...f, isPaid: e.target.value === 'PAID' }))} className={inputCls}>
-            <option value="PAID">Paid</option>
-            <option value="UNPAID">Unpaid (reduces payable days)</option>
-          </select>
+          <AddableSelect
+            value={typeForm.isPaid ? 'PAID' : 'UNPAID'}
+            onChange={(v) => setTypeForm((f) => ({ ...f, isPaid: v === 'PAID' }))}
+            options={[
+              { value: 'PAID', label: 'Paid' },
+              { value: 'UNPAID', label: 'Unpaid (reduces payable days)' },
+            ]}
+            placeholder="Select type"
+          />
           <input type="number" placeholder="Annual quota (blank = unlimited)" value={typeForm.annualQuota} onChange={(e) => setTypeForm((f) => ({ ...f, annualQuota: e.target.value }))} className={inputCls} />
           <div className="col-span-2 sm:col-span-4 flex justify-end gap-2">
             <button type="button" onClick={() => setShowTypeForm(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>

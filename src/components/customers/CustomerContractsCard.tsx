@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 import { CONTRACT_STATUSES, CONTRACT_TYPES, contractStatusColor } from '@/lib/customerContractStatus';
 import { validateCustomerDocumentFile } from '@/lib/customerDocumentUpload';
 import CustomerDocumentUploadBox from './CustomerDocumentUploadBox';
+import AddableSelect from '@/components/AddableSelect';
 
 interface ImplementationOption {
   id: number;
@@ -233,22 +234,28 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Contract Type *</label>
-              <select value={form.contractType} onChange={(e) => { setForm((f) => ({ ...f, contractType: e.target.value })); clearFieldError('contractType'); }} className={inputClass('contractType')}>
-                <option value="">Select</option>
-                {CONTRACT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+              <AddableSelect
+                value={form.contractType}
+                onChange={(v) => { setForm((f) => ({ ...f, contractType: v })); clearFieldError('contractType'); }}
+                options={CONTRACT_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+                placeholder="Select"
+                error={!!formErrors.contractType}
+              />
               {formErrors.contractType && <p className="text-xs text-red-600 mt-1">{formErrors.contractType}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
               {implementations.length > 0 ? (
-                <select value={form.implementationId} onChange={(e) => {
-                  const impl = implementations.find((i) => String(i.id) === e.target.value);
-                  setForm((f) => ({ ...f, implementationId: e.target.value, projectName: impl?.projectName || f.projectName }));
-                }} className={inputClass('implementationId')}>
-                  <option value="">Select existing project (or type below)</option>
-                  {implementations.map((impl) => <option key={impl.id} value={impl.id}>{impl.projectName || `Project #${impl.id}`}</option>)}
-                </select>
+                <AddableSelect
+                  value={form.implementationId}
+                  onChange={(v) => {
+                    const impl = implementations.find((i) => String(i.id) === v);
+                    setForm((f) => ({ ...f, implementationId: v, projectName: impl?.projectName || f.projectName }));
+                  }}
+                  options={implementations.map((impl) => ({ value: String(impl.id), label: impl.projectName || `Project #${impl.id}` }))}
+                  placeholder="Select existing project (or type below)"
+                  error={!!formErrors.implementationId}
+                />
               ) : null}
               <input
                 value={form.projectName}
@@ -268,9 +275,13 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Status *</label>
-              <select value={form.status} onChange={(e) => { setForm((f) => ({ ...f, status: e.target.value })); clearFieldError('status'); }} className={inputClass('status')}>
-                {CONTRACT_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
+              <AddableSelect
+                value={form.status}
+                onChange={(v) => { setForm((f) => ({ ...f, status: v })); clearFieldError('status'); }}
+                options={CONTRACT_STATUSES.map((s) => ({ value: s.value, label: s.label }))}
+                placeholder="Select Status"
+                error={!!formErrors.status}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Invoice Generation</label>

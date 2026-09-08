@@ -21,6 +21,7 @@ import InvoiceListPage from '@/components/accounting/InvoiceListPage';
 import ProjectsTab from '@/components/leads/ProjectsTab';
 import ProductsTab from '@/components/leads/ProductsTab';
 import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
+import AddableSelect from '@/components/AddableSelect';
 
 // A Customer is a Lead with status = CONFIRMED (see the module note atop
 // src/app/dashboard/customers/page.tsx) — there is no separate Customer
@@ -95,7 +96,7 @@ export default function CustomerDetailPage() {
   const id = params.id as string;
   const { data: session } = useSession();
   const queryClient = useQueryClient();
-  const { options: leadStatusOptions, color: leadStatusColor } = useLeadStatusOptions();
+  const { options: leadStatusOptions } = useLeadStatusOptions();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -180,14 +181,15 @@ export default function CustomerDetailPage() {
             <p className="text-slate-500 mt-1 text-sm sm:text-base truncate">{customer.contactPerson}{customer.email ? ` — ${customer.email}` : ''}</p>
           </div>
         </div>
-        <select
-          value={customer.status}
-          disabled={statusMutation.isPending}
-          onChange={(e) => statusMutation.mutate(e.target.value)}
-          className={`self-start sm:self-auto px-3 py-1.5 min-h-[44px] rounded-lg text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(customer.status)}`}
-        >
-          {leadStatusOptions.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
-        </select>
+        <div className="self-start sm:self-auto sm:w-56">
+          <AddableSelect
+            value={customer.status}
+            disabled={statusMutation.isPending}
+            onChange={(v) => statusMutation.mutate(v)}
+            options={leadStatusOptions.map((s) => ({ value: s.code, label: s.label }))}
+            placeholder="Select Status"
+          />
+        </div>
       </div>
 
       {/* Vertical tabs: same Tab/Tab.Panel elements, styling, and behavior as

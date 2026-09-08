@@ -19,6 +19,7 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 // Title-cases a SNAKE_CASE role name for display, e.g. BUSINESS_ANALYST -> "Business Analyst"
 function roleLabel(name: string): string {
@@ -249,23 +250,22 @@ export default function UsersPage() {
               </button>
             )}
           </div>
-          <select
-            value={roleFilter}
-            onChange={(e) => { setRoleFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Roles</option>
-            {roles.map(r => <option key={r.id} value={r.id}>{roleLabel(r.name)}</option>)}
-          </select>
-          <select
-            value={activeFilter}
-            onChange={(e) => { setActiveFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Status</option>
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
+          <div className="w-full sm:w-44 shrink-0">
+            <AddableSelect
+              value={roleFilter}
+              onChange={(v) => { setRoleFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Roles' }, ...roles.map(r => ({ value: String(r.id), label: roleLabel(r.name) }))]}
+              placeholder="All Roles"
+            />
+          </div>
+          <div className="w-full sm:w-44 shrink-0">
+            <AddableSelect
+              value={activeFilter}
+              onChange={(v) => { setActiveFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Status' }, { value: 'true', label: 'Active' }, { value: 'false', label: 'Inactive' }]}
+              placeholder="All Status"
+            />
+          </div>
           {(searchInput || roleFilter || activeFilter) && (
             <button onClick={() => { setSearchInput(''); setSearch(''); setRoleFilter(''); setActiveFilter(''); setPage(0); }} className="text-sm text-slate-500 hover:text-red-500">
               Clear
@@ -383,13 +383,14 @@ export default function UsersPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(size)}
+                    onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                    options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button

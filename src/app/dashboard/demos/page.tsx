@@ -13,7 +13,6 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   ArrowsUpDownIcon,
-  FunnelIcon,
   PencilIcon,
   TrashIcon,
   CalendarDaysIcon,
@@ -24,6 +23,7 @@ import { TIMEZONES, DEFAULT_TIMEZONE, timezoneShortLabel } from '@/lib/timezones
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
 import { useProductsForLead } from '@/hooks/useProductsForLead';
 import { invalidateDemoData } from '@/lib/queryInvalidation';
+import AddableSelect from '@/components/AddableSelect';
 
 const DEMO_TYPES = [
   { value: 'ONLINE', label: 'Online' },
@@ -145,7 +145,6 @@ async function fetchUsers(): Promise<UserOption[]> {
 export default function DemosPage() {
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Search, filter, sort, pagination
   const [searchInput, setSearchInput] = useState('');
@@ -415,8 +414,8 @@ export default function DemosPage() {
 
       {/* Search & Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-col md:flex-row md:flex-wrap gap-3">
+          <div className="relative flex-1 min-w-[220px]">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
@@ -431,36 +430,30 @@ export default function DemosPage() {
               </button>
             )}
           </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Statuses</option>
-            {DEMO_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-          <select
-            value={typeFilter}
-            onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Types</option>
-            {DEMO_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
-          <select
-            value={packageFilter}
-            onChange={(e) => { setPackageFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Packages</option>
-            {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <button
-            onClick={() => setFiltersOpen(!filtersOpen)}
-            className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium ${activeFilters > 0 ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600'}`}
-          >
-            <FunnelIcon className="h-4 w-4" /> Filters {activeFilters > 0 && <span className="bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{activeFilters}</span>}
-          </button>
+          <div className="w-full md:w-48">
+            <AddableSelect
+              value={statusFilter}
+              onChange={(v) => { setStatusFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Statuses' }, ...DEMO_STATUSES.map(s => ({ value: s.value, label: s.label }))]}
+              placeholder="All Statuses"
+            />
+          </div>
+          <div className="w-full md:w-48">
+            <AddableSelect
+              value={typeFilter}
+              onChange={(v) => { setTypeFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Types' }, ...DEMO_TYPES.map(t => ({ value: t.value, label: t.label }))]}
+              placeholder="All Types"
+            />
+          </div>
+          <div className="w-full md:w-48">
+            <AddableSelect
+              value={packageFilter}
+              onChange={(v) => { setPackageFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Packages' }, ...packages.map(p => ({ value: String(p.id), label: p.name }))]}
+              placeholder="All Packages"
+            />
+          </div>
           {(searchInput || activeFilters > 0) && (
             <button onClick={clearFilters} className="text-sm text-slate-500 hover:text-red-500">Clear All</button>
           )}
@@ -645,13 +638,14 @@ export default function DemosPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(size)}
+                    onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                    options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows per page"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
@@ -728,37 +722,28 @@ export default function DemosPage() {
                             list. */}
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Source Type *</label>
-                          <select
+                          <AddableSelect
                             disabled={!!editingId}
-                            title={editingId ? 'Source Type cannot be changed after creation' : undefined}
                             value={sourceType}
-                            onChange={(e) => {
-                              const next = e.target.value === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD';
+                            onChange={(v) => {
+                              const next = v === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD';
                               setSourceType(next);
                               setForm(f => ({ ...f, leadId: '', projectId: '', productId: '' }));
                             }}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
-                          >
-                            <option value="LEAD">Lead</option>
-                            <option value="CUSTOMER">Company</option>
-                          </select>
+                            options={[{ value: 'LEAD', label: 'Lead' }, { value: 'CUSTOMER', label: 'Company' }]}
+                            placeholder="Select Source Type"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Lead / Company *</label>
-                          <select
+                          <AddableSelect
                             disabled={!!editingId}
-                            title={editingId ? 'Lead cannot be changed after creation' : undefined}
                             value={form.leadId}
-                            onChange={(e) => { setForm(f => ({ ...f, leadId: e.target.value, projectId: '', productId: '' })); clearFieldError('leadId'); }}
-                            className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.leadId ? 'border-red-400' : 'border-slate-300'}`}
-                          >
-                            <option value="">{sourceType === 'CUSTOMER' ? 'Select a company' : 'Select a lead'}</option>
-                            {leads.map((lead: Lead) => (
-                              <option key={lead.id} value={lead.id}>
-                                {lead.companyName}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(v) => { setForm(f => ({ ...f, leadId: v, projectId: '', productId: '' })); clearFieldError('leadId'); }}
+                            options={leads.map((lead: Lead) => ({ value: String(lead.id), label: lead.companyName }))}
+                            placeholder={sourceType === 'CUSTOMER' ? 'Select a company' : 'Select a lead'}
+                            error={!!formErrors.leadId}
+                          />
                           {formErrors.leadId && <p className="text-xs text-red-600 mt-1">{formErrors.leadId}</p>}
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -769,30 +754,26 @@ export default function DemosPage() {
                                 re-enabled), same rule as the
                                 Quotation/Implementation modules' own
                                 Project/Product pickers. */}
-                            <select
+                            <AddableSelect
                               disabled={!!editingId || !form.leadId || !!form.productId}
-                              title={editingId ? 'Project cannot be changed after creation' : !form.leadId ? 'Select a Lead / Company first' : undefined}
                               value={form.projectId}
-                              onChange={(e) => { setForm(f => ({ ...f, projectId: e.target.value })); clearFieldError('project'); }}
-                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
-                            >
-                              <option value="">Select project</option>
-                              {projectsForLead.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
-                            </select>
+                              onChange={(v) => { setForm(f => ({ ...f, projectId: v })); clearFieldError('project'); }}
+                              options={projectsForLead.map(p => ({ value: String(p.id), label: p.projectName }))}
+                              placeholder="Select project"
+                              error={!!formErrors.project}
+                            />
                             {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
-                            <select
+                            <AddableSelect
                               disabled={!!editingId || !form.leadId || !!form.projectId}
-                              title={editingId ? 'Product cannot be changed after creation' : !form.leadId ? 'Select a Lead / Company first' : undefined}
                               value={form.productId}
-                              onChange={(e) => { setForm(f => ({ ...f, productId: e.target.value })); clearFieldError('project'); }}
-                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
-                            >
-                              <option value="">Select product</option>
-                              {productsForLead.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
-                            </select>
+                              onChange={(v) => { setForm(f => ({ ...f, productId: v })); clearFieldError('project'); }}
+                              options={productsForLead.map(p => ({ value: String(p.id), label: p.productName }))}
+                              placeholder="Select product"
+                              error={!!formErrors.project}
+                            />
                             {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                           </div>
                         </div>
@@ -827,14 +808,13 @@ export default function DemosPage() {
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Demo Type *</label>
-                            <select
+                            <AddableSelect
                               value={form.demoType}
-                              onChange={(e) => { setForm(f => ({ ...f, demoType: e.target.value })); clearFieldError('demoType'); }}
-                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.demoType ? 'border-red-400' : 'border-slate-300'}`}
-                            >
-                              <option value="">Select type</option>
-                              {DEMO_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                            </select>
+                              onChange={(v) => { setForm(f => ({ ...f, demoType: v })); clearFieldError('demoType'); }}
+                              options={DEMO_TYPES.map(t => ({ value: t.value, label: t.label }))}
+                              placeholder="Select type"
+                              error={!!formErrors.demoType}
+                            />
                             {formErrors.demoType && <p className="text-xs text-red-600 mt-1">{formErrors.demoType}</p>}
                           </div>
                           <div>
@@ -850,37 +830,30 @@ export default function DemosPage() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Timezone</label>
-                          <select
+                          <AddableSelect
                             value={form.timezone}
-                            onChange={(e) => setForm(f => ({ ...f, timezone: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                          >
-                            {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
-                          </select>
+                            onChange={(v) => setForm(f => ({ ...f, timezone: v }))}
+                            options={TIMEZONES.map(tz => ({ value: tz.value, label: tz.label }))}
+                            placeholder="Select Timezone"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Package</label>
-                          <select
+                          <AddableSelect
                             value={form.packageId}
-                            onChange={(e) => setForm(f => ({ ...f, packageId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                          >
-                            <option value="">Select package</option>
-                            {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
+                            onChange={(v) => setForm(f => ({ ...f, packageId: v }))}
+                            options={packages.map(p => ({ value: String(p.id), label: p.name }))}
+                            placeholder="Select package"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
-                          <select
+                          <AddableSelect
                             value={form.assignedToId}
-                            onChange={(e) => setForm(f => ({ ...f, assignedToId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                          >
-                            <option value="">Unassigned</option>
-                            {users.map((u) => (
-                              <option key={u.id} value={u.id}>{u.fullName}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => setForm(f => ({ ...f, assignedToId: v }))}
+                            options={[{ value: '', label: 'Unassigned' }, ...users.map((u) => ({ value: String(u.id), label: u.fullName }))]}
+                            placeholder="Unassigned"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Attendees</label>

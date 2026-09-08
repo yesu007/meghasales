@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import dayjs, { Dayjs } from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { defaultMonthlySpread } from '@/lib/expenseBudgetVariance';
+import AddableSelect from '@/components/AddableSelect';
 
 interface Vertical { id: number; name: string; headName?: string | null }
 interface ExpenseCategory { id: number; name: string }
@@ -424,23 +425,22 @@ export default function ExpenseBudgetsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
-              <select
+              <AddableSelect
                 value={form.verticalId}
-                onChange={(e) => setForm((f) => ({ ...f, verticalId: e.target.value }))}
+                onChange={(v) => setForm((f) => ({ ...f, verticalId: v }))}
+                options={[{ value: '', label: 'Company-wide' }, ...verticals.map((v) => ({ value: String(v.id), label: v.name }))]}
+                placeholder="Company-wide"
                 disabled={!!editingBudget}
-                title={editingBudget ? 'Vertical is fixed once a budget is created — delete and recreate it if this needs to change' : undefined}
-                className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}
-              >
-                <option value="">Company-wide</option>
-                {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-              <select value={form.currencyCode} onChange={(e) => setForm((f) => ({ ...f, currencyCode: e.target.value }))} className={inputCls}>
-                <option value="INR">INR</option>
-                {currencies.filter((c) => c.currencyCode !== 'INR').map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
-              </select>
+              <AddableSelect
+                value={form.currencyCode}
+                onChange={(v) => setForm((f) => ({ ...f, currencyCode: v }))}
+                options={[{ value: 'INR', label: 'INR' }, ...currencies.filter((c) => c.currencyCode !== 'INR').map((c) => ({ value: c.currencyCode, label: c.currencyCode }))]}
+                placeholder="Select currency"
+              />
             </div>
             <div className="col-span-2 sm:col-span-3">
               <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
@@ -712,13 +712,14 @@ export default function ExpenseBudgetsPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={rowPageSize}
-                  onChange={(e) => { setRowPageSize(Number(e.target.value)); setRowPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(rowPageSize)}
+                    onChange={(v) => { setRowPageSize(Number(v)); setRowPage(0); }}
+                    options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button

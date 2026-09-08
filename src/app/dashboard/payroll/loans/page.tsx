@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import AddableSelect from '@/components/AddableSelect';
 
 interface EmployeeOption { id: number; employeeCode: string; userName: string }
 interface Repayment { id: number; runId: number; amount: string; status: string; createdAt: string }
@@ -89,10 +90,12 @@ export default function LoansPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Employee</label>
-              <select value={form.employeeId} onChange={(e) => setForm((f) => ({ ...f, employeeId: e.target.value }))} className={inputCls}>
-                <option value="">Select employee</option>
-                {employees.map((e) => <option key={e.id} value={e.id}>{e.userName} ({e.employeeCode})</option>)}
-              </select>
+              <AddableSelect
+                value={form.employeeId}
+                onChange={(v) => setForm((f) => ({ ...f, employeeId: v }))}
+                options={employees.map((e) => ({ value: String(e.id), label: `${e.userName} (${e.employeeCode})` }))}
+                placeholder="Select employee"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Disbursed Date</label>
@@ -206,10 +209,14 @@ function LoanRowView({ loan, draftRuns, expanded, onToggle, idx }: { loan: LoanR
                 <div>
                   <p className="text-xs font-medium text-slate-500 uppercase mb-2">Apply Installment to a Draft Run</p>
                   <div className="flex gap-2">
-                    <select value={runId} onChange={(e) => setRunId(e.target.value)} className={inputCls}>
-                      <option value="">Select run</option>
-                      {draftRuns.map((r) => <option key={r.id} value={r.id}>{MONTH_NAMES[r.payPeriodMonth - 1]} {r.payPeriodYear}</option>)}
-                    </select>
+                    <div className="flex-1">
+                      <AddableSelect
+                        value={runId}
+                        onChange={(v) => setRunId(v)}
+                        options={draftRuns.map((r) => ({ value: String(r.id), label: `${MONTH_NAMES[r.payPeriodMonth - 1]} ${r.payPeriodYear}` }))}
+                        placeholder="Select run"
+                      />
+                    </div>
                     <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className={`${inputCls} max-w-[120px]`} />
                   </div>
                   <button onClick={() => runId && apply.mutate()} disabled={!runId || apply.isPending} className="mt-2 px-3 py-1.5 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-900 disabled:opacity-50">

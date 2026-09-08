@@ -10,6 +10,7 @@ import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIc
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
+import AddableSelect from '@/components/AddableSelect';
 import { CUSTOMER_STATUSES, customerStatusColor } from '@/lib/customerStatus';
 import { formatBusinessVerticals } from '@/lib/businessVerticals';
 import EventsTab from '@/components/leads/EventsTab';
@@ -160,24 +161,21 @@ export default function LeadDetailPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           {isConfirmed && (
-            <select
+            <AddableSelect
               value={lead.customerStatus}
               disabled={customerStatusMutation.isPending}
-              onChange={(e) => customerStatusMutation.mutate(e.target.value)}
-              title="Customer status"
-              className={`px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${customerStatusColor(lead.customerStatus)}`}
-            >
-              {CUSTOMER_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
+              onChange={(v) => customerStatusMutation.mutate(v)}
+              options={CUSTOMER_STATUSES.map((s) => ({ value: s.value, label: s.label }))}
+              placeholder="Select Customer Status"
+            />
           )}
-          <select
+          <AddableSelect
             value={lead.status}
             disabled={statusMutation.isPending}
-            onChange={(e) => statusMutation.mutate(e.target.value)}
-            className={`px-3 py-1.5 min-h-[44px] rounded-full text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(lead.status)}`}
-          >
-            {leadStatusOptions.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
-          </select>
+            onChange={(v) => statusMutation.mutate(v)}
+            options={leadStatusOptions.map((s) => ({ value: s.code, label: s.label }))}
+            placeholder="Select Status"
+          />
         </div>
       </div>
 

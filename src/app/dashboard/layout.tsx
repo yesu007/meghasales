@@ -326,9 +326,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setMobileNavOpen(false)} />
       )}
 
-      {/* Sidebar — static in-flow column at md+ (unchanged from before),
-          a slide-in overlay drawer below md */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out overflow-y-auto md:static md:z-auto md:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      {/* Sidebar — sticky, viewport-height column at md+ (was `md:static`,
+          which let it scroll away with the page on a long main-content
+          page since it just stretched to match the flex row's height);
+          a slide-in overlay drawer below md, unchanged. `overflow-hidden`
+          here (was `overflow-y-auto`) — the <nav> below is the only part
+          that scrolls now, so the logo/header above it never moves. */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out overflow-hidden md:sticky md:top-0 md:h-screen md:self-start md:z-auto md:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-4 border-b border-slate-700 flex items-start justify-between">
           <div>
             <div className="bg-white rounded-lg px-2.5 py-1.5 inline-block">
@@ -342,7 +346,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
 
-        <nav className="flex-1 py-2 overflow-y-auto">
+        {/* min-h-0 overrides the flex item's default min-height:auto — without
+            it, a flex-1 child can't shrink below its own content's height,
+            so it just grows past the aside's bounded height instead of
+            triggering this overflow-y-auto and scrolling internally.
+            no-scrollbar (globals.css) hides the scrollbar track/thumb —
+            wheel/trackpad/touch scrolling still works exactly the same. */}
+        <nav className="flex-1 min-h-0 py-2 overflow-y-auto no-scrollbar">
           {navSections.map((section, sectionIdx) => (
             <div key={section.title ?? 'top'} className={sectionIdx > 0 ? 'mt-1 pt-1 border-t border-slate-800/70' : ''}>
               {section.title && (

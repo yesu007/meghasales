@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon, ChevronUpDownIcon, CheckIcon, PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+import AddableSelect from '@/components/AddableSelect';
 import { useLeadSources } from '@/hooks/useLeadSources';
 import { useStages } from '@/hooks/useStages';
 import { isValidEmail } from '@/lib/email';
@@ -385,10 +386,13 @@ export default function CustomerFormDrawer({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Source *</label>
-                        <select value={form.leadSource} onChange={(e) => { setForm(f => ({...f, leadSource: e.target.value})); clearFieldError('leadSource'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
-                          <option value="">Select</option>
-                          {sources.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
-                        </select>
+                        <AddableSelect
+                          value={form.leadSource}
+                          onChange={(v) => { setForm(f => ({...f, leadSource: v})); clearFieldError('leadSource'); }}
+                          options={sources.map(s => ({ value: s.code, label: s.name }))}
+                          placeholder="Select Source"
+                          error={!!formErrors.leadSource}
+                        />
                         {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                       </div>
                       <div>
@@ -400,10 +404,12 @@ export default function CustomerFormDrawer({
                             creation; editing it here updates that same
                             record instead of creating a second one (see the
                             Customers page's own save orchestration). */}
-                        <select value={form.stage} onChange={(e) => setForm(f => ({...f, stage: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                          <option value="">Select stage</option>
-                          {stages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                        </select>
+                        <AddableSelect
+                          value={form.stage}
+                          onChange={(v) => setForm(f => ({...f, stage: v}))}
+                          options={stages.map(s => ({ value: s.name, label: s.name }))}
+                          placeholder="Select stage"
+                        />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Product / Project</label>
@@ -422,21 +428,23 @@ export default function CustomerFormDrawer({
                             that association happens from the Project/
                             Product Master's own form once the user returns
                             there instead. */}
-                        <select
+                        <AddableSelect
                           value={form.productOrProject}
                           disabled={disableProductProject}
-                          onChange={(e) => {
-                            const next = e.target.value as CustomerFormState['productOrProject'];
+                          onChange={(v) => {
+                            const next = v as CustomerFormState['productOrProject'];
                             setForm(f => ({ ...f, productOrProject: next, newProductVerticalId: '', projectId: '', isNewProject: false, newProjectName: '', newProjectVerticalId: '' }));
                             clearFieldError('productOrProject');
                             clearFieldError('newProjectVerticalId');
                           }}
-                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed ${formErrors.productOrProject ? 'border-red-400' : 'border-slate-300'}`}
-                        >
-                          <option value="">None</option>
-                          <option value="PRODUCT">Product</option>
-                          <option value="PROJECT">Project</option>
-                        </select>
+                          options={[
+                            { value: '', label: 'None' },
+                            { value: 'PRODUCT', label: 'Product' },
+                            { value: 'PROJECT', label: 'Project' },
+                          ]}
+                          placeholder="None"
+                          error={!!formErrors.productOrProject}
+                        />
                         {formErrors.productOrProject && <p className="text-xs text-red-600 mt-1">{formErrors.productOrProject}</p>}
                       </div>
 
@@ -448,14 +456,13 @@ export default function CustomerFormDrawer({
                               time — see this file's own top-of-file
                               comment on why there's no "pick an existing
                               Product row" mode here. */}
-                          <select
+                          <AddableSelect
                             value={form.newProductVerticalId}
-                            onChange={(e) => { setForm(f => ({ ...f, newProductVerticalId: e.target.value })); clearFieldError('productOrProject'); }}
-                            className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.productOrProject ? 'border-red-400' : 'border-slate-300'}`}
-                          >
-                            <option value="">Select product</option>
-                            {productVerticalOptions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                          </select>
+                            onChange={(v) => { setForm(f => ({ ...f, newProductVerticalId: v })); clearFieldError('productOrProject'); }}
+                            options={productVerticalOptions.map(v => ({ value: String(v.id), label: v.name }))}
+                            placeholder="Select product"
+                            error={!!formErrors.productOrProject}
+                          />
                         </div>
                       )}
 
@@ -569,16 +576,16 @@ export default function CustomerFormDrawer({
                                 right in this field — same convention as the
                                 new-Project case just below, rather than as
                                 separate text under the Project field. */}
-                            <select
-                              value={form.isNewProject ? form.newProjectVerticalId : (selectedExistingProject ? String(selectedExistingProject.verticalId) : '')}
-                              disabled={!form.isNewProject}
-                              onChange={(e) => { setForm(f => ({ ...f, newProjectVerticalId: e.target.value })); clearFieldError('newProjectVerticalId'); }}
-                              title={!form.isNewProject && !selectedExistingProject ? 'Select an existing Project, or type a new Project name and press Enter, first' : undefined}
-                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-400 ${formErrors.newProjectVerticalId ? 'border-red-400' : 'border-slate-300'}`}
-                            >
-                              <option value="">{form.isNewProject ? 'Select vertical' : 'Select or create a Project first'}</option>
-                              {verticalOptions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                            </select>
+                            <div title={!form.isNewProject && !selectedExistingProject ? 'Select an existing Project, or type a new Project name and press Enter, first' : undefined}>
+                              <AddableSelect
+                                value={form.isNewProject ? form.newProjectVerticalId : (selectedExistingProject ? String(selectedExistingProject.verticalId) : '')}
+                                disabled={!form.isNewProject}
+                                onChange={(v) => { setForm(f => ({ ...f, newProjectVerticalId: v })); clearFieldError('newProjectVerticalId'); }}
+                                options={verticalOptions.map(v => ({ value: String(v.id), label: v.name }))}
+                                placeholder={form.isNewProject ? 'Select vertical' : 'Select or create a Project first'}
+                                error={!!formErrors.newProjectVerticalId}
+                              />
+                            </div>
                             {formErrors.newProjectVerticalId && <p className="text-xs text-red-600 mt-1">{formErrors.newProjectVerticalId}</p>}
                           </div>
                         </>
@@ -597,16 +604,15 @@ export default function CustomerFormDrawer({
                         {isAdmin && form.countryId && (
                           <div className="mt-2">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Override currency (Administrator only)</label>
-                            <select
+                            <AddableSelect
                               value={form.currencyCode}
-                              onChange={(e) => {
-                                const c = currencies.find((cur) => cur.currencyCode === e.target.value);
+                              onChange={(v) => {
+                                const c = currencies.find((cur) => cur.currencyCode === v);
                                 if (c) setForm(f => ({ ...f, currencyCode: c.currencyCode, currencySymbol: c.currencySymbol }));
                               }}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                            >
-                              {currencies.map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode} — {c.currencyName}</option>)}
-                            </select>
+                              options={currencies.map((c) => ({ value: c.currencyCode, label: `${c.currencyCode} — ${c.currencyName}` }))}
+                              placeholder="Select currency"
+                            />
                           </div>
                         )}
                       </div>
@@ -627,13 +633,6 @@ export default function CustomerFormDrawer({
                         <input value={form.addressLine2} onChange={(e) => setForm(f => ({...f, addressLine2: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
 
-                      <div className="col-span-2 pt-3 mt-1 border-t border-slate-100">
-                        <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Legal Entity — {form.countryId ? 'this country' : 'select a country above'}</p>
-                        <p className="text-xs text-slate-400 mb-3">
-                          One company can have several legal entities, one per country it&apos;s registered in — a second customer for the same
-                          company name with a different country adds another entity, instead of a duplicate company.
-                        </p>
-                      </div>
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Registered Legal Name</label>
                         <input value={form.legalName} onChange={(e) => setForm(f => ({...f, legalName: e.target.value}))} placeholder={form.companyName || 'Defaults to Company Name'} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
@@ -654,10 +653,6 @@ export default function CustomerFormDrawer({
                         <label className="block text-sm font-medium text-slate-700 mb-1">Postal Code</label>
                         <input value={form.postalCode} onChange={(e) => setForm(f => ({...f, postalCode: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
-                      <div className="col-span-2 -mt-1">
-                        <p className="text-xs text-slate-400">Documents (incorporation certificate, tax certificate, etc.) can be uploaded from the customer&apos;s Company tab after saving.</p>
-                      </div>
-
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
                         <textarea rows={3} value={form.notes} onChange={(e) => setForm(f => ({...f, notes: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />

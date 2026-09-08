@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { invalidateInvoiceData } from '@/lib/queryInvalidation';
+import AddableSelect from '@/components/AddableSelect';
 
 const PAYMENT_METHODS = [
   { value: 'CASH', label: 'Cash' },
@@ -150,10 +151,12 @@ export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoice
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Currency *</label>
-                        <select required value={form.currencyCode} onChange={(e) => setForm((f) => ({ ...f, currencyCode: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                          <option value={currencyCode}>{currencyCode}</option>
-                          {currencies.filter((c) => c.currencyCode !== currencyCode).map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
-                        </select>
+                        <AddableSelect
+                          value={form.currencyCode}
+                          onChange={(v) => setForm((f) => ({ ...f, currencyCode: v }))}
+                          options={[{ value: currencyCode, label: currencyCode }, ...currencies.filter((c) => c.currencyCode !== currencyCode).map((c) => ({ value: c.currencyCode, label: c.currencyCode }))]}
+                          placeholder="Select currency"
+                        />
                       </div>
                     </div>
                     {!paidInInvoiceCurrency && (
@@ -187,10 +190,12 @@ export default function PaymentEntryDrawer({ isOpen, onClose, invoiceId, invoice
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Method *</label>
-                        <select required value={form.paymentMethod} onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                          <option value="">Select method</option>
-                          {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                        </select>
+                        <AddableSelect
+                          value={form.paymentMethod}
+                          onChange={(v) => setForm((f) => ({ ...f, paymentMethod: v }))}
+                          options={PAYMENT_METHODS}
+                          placeholder="Select method"
+                        />
                       </div>
                     </div>
                     <div>

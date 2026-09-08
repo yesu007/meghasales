@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import AddableSelect from '@/components/AddableSelect';
 
 interface StatutorySettings {
   pfWageCeiling: string | null;
@@ -134,9 +135,12 @@ export default function StatutorySettingsPage() {
           <p className="text-xs font-medium text-slate-500 uppercase mb-3">Time &amp; Attendance</p>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Saturday weekly-off policy</label>
-            <select value={form.weeklyOffSaturdays || 'SECOND_FOURTH'} onChange={(e) => setForm((f) => ({ ...f, weeklyOffSaturdays: e.target.value }))} className={inputCls}>
-              {SATURDAY_POLICY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <AddableSelect
+              value={form.weeklyOffSaturdays || 'SECOND_FOURTH'}
+              onChange={(v) => setForm((f) => ({ ...f, weeklyOffSaturdays: v }))}
+              options={SATURDAY_POLICY_OPTIONS}
+              placeholder="Select policy"
+            />
             <p className="text-xs text-slate-400 mt-1">Controls which Saturdays show as a day off on the Time &amp; Attendance timesheet. Sunday is always off.</p>
           </div>
         </div>

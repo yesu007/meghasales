@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { STATUS_COLOR_PRESETS } from '@/lib/leadStatus';
+import AddableSelect from '@/components/AddableSelect';
 
 interface LeadStatusOptionRow {
   id: number;
@@ -174,9 +175,12 @@ export default function LeadStatusesPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Color</label>
-              <select value={createForm.color} onChange={(e) => setCreateForm((f) => ({ ...f, color: e.target.value }))} className={inputCls}>
-                {STATUS_COLOR_PRESETS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
+              <AddableSelect
+                value={createForm.color}
+                onChange={(v) => setCreateForm((f) => ({ ...f, color: v }))}
+                options={STATUS_COLOR_PRESETS.map((c) => ({ value: c.value, label: c.label }))}
+                placeholder="Select Color"
+              />
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
@@ -216,9 +220,12 @@ export default function LeadStatusesPage() {
                           <input value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} className={inputCls} />
                         </td>
                         <td className="px-4 py-3">
-                          <select value={form.color} onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))} className={inputCls}>
-                            {STATUS_COLOR_PRESETS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                          </select>
+                          <AddableSelect
+                            value={form.color}
+                            onChange={(v) => setForm((f) => ({ ...f, color: v }))}
+                            options={STATUS_COLOR_PRESETS.map((c) => ({ value: c.value, label: c.label }))}
+                            placeholder="Select Color"
+                          />
                         </td>
                         <td className="px-4 py-3">
                           <input type="number" value={form.sortOrder} onChange={(e) => setForm((f) => ({ ...f, sortOrder: Number(e.target.value) }))} className={`${inputCls} w-20`} />

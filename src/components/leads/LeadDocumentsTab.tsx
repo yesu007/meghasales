@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DocumentIcon, PhotoIcon, TrashIcon, ArrowUpTrayIcon, ChevronDownIcon, ChevronUpIcon, ArrowDownTrayIcon, EyeIcon, FolderOpenIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import AddableSelect from '@/components/AddableSelect';
 import DocumentUpload from './DocumentUpload';
 
 interface DocVersion {
@@ -139,10 +140,12 @@ export default function LeadDocumentsTab({ leadId, canManage }: LeadDocumentsTab
         <h2 className="text-lg font-semibold text-slate-800">Documents</h2>
         {canManage && (
           <div className="flex flex-col sm:flex-row gap-2">
-            <select value={uploadEventId} onChange={(e) => setUploadEventId(e.target.value)} className="w-full sm:w-auto px-3 py-2 min-h-[44px] border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-              <option value="">No event (general document)</option>
-              {events.map((ev) => <option key={ev.id} value={ev.id}>{ev.title}</option>)}
-            </select>
+            <AddableSelect
+              value={uploadEventId}
+              onChange={(v) => setUploadEventId(v)}
+              options={[{ value: '', label: 'No event (general document)' }, ...events.map((ev) => ({ value: String(ev.id), label: ev.title }))]}
+              placeholder="No event (general document)"
+            />
             <DocumentUpload label="Upload Document" onFileSelected={(file) => uploadMutation.mutate(file)} disabled={uploadMutation.isPending} />
           </div>
         )}

@@ -7,6 +7,7 @@ import { ArrowDownTrayIcon, PrinterIcon, DocumentChartBarIcon } from '@heroicons
 import { generateReportPDF } from '@/lib/generateReportPDF';
 import { usePermissions } from '@/hooks/usePermissions';
 import { formatCurrency } from '@/lib/currency';
+import AddableSelect from '@/components/AddableSelect';
 
 const REPORT_TYPES = [
   { value: 'outstanding', label: 'Outstanding' },
@@ -124,10 +125,14 @@ export default function AccountingReportsPage() {
           <label className="text-xs font-medium text-slate-600">To</label>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800" />
         </div>
-        <select value={leadId} onChange={(e) => setLeadId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-          <option value="">All Customers</option>
-          {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-        </select>
+        <div className="w-56">
+          <AddableSelect
+            value={leadId}
+            onChange={(v) => setLeadId(v)}
+            options={[{ value: '', label: 'All Customers' }, ...leads.map((l) => ({ value: String(l.id), label: l.companyName }))]}
+            placeholder="All Customers"
+          />
+        </div>
         {(from || to || leadId) && (
           <button onClick={() => { setFrom(''); setTo(''); setLeadId(''); }} className="text-sm text-slate-500 hover:text-red-500">Clear</button>
         )}

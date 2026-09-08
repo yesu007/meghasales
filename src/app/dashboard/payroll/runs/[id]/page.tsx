@@ -8,6 +8,7 @@ import { ArrowLeftIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, XMark
 import toast from 'react-hot-toast';
 import { generatePayslipPDF } from '@/lib/generatePayslipPDF';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 interface LineItem { id: number; label: string; type: string; amount: string; isAdjustment: boolean }
 interface PayslipRow {
@@ -238,10 +239,17 @@ function PayslipRowView({ payslip, isDraft, periodLabel, expanded, onToggle, onS
                     {adjustments.map((a, i) => (
                       <div key={i} className="flex items-center gap-2">
                         <input placeholder="Label" value={a.label} onChange={(e) => setAdjustments((arr) => arr.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} className="flex-1 px-2 py-1 border border-slate-300 rounded text-sm" />
-                        <select value={a.type} onChange={(e) => setAdjustments((arr) => arr.map((x, j) => j === i ? { ...x, type: e.target.value } : x))} className="px-2 py-1 border border-slate-300 rounded text-sm">
-                          <option value="EARNING">+ Earning</option>
-                          <option value="DEDUCTION">- Deduction</option>
-                        </select>
+                        <div className="w-40">
+                          <AddableSelect
+                            value={a.type}
+                            onChange={(v) => setAdjustments((arr) => arr.map((x, j) => j === i ? { ...x, type: v } : x))}
+                            options={[
+                              { value: 'EARNING', label: '+ Earning' },
+                              { value: 'DEDUCTION', label: '- Deduction' },
+                            ]}
+                            placeholder="Select type"
+                          />
+                        </div>
                         <input type="number" placeholder="Amount" value={a.amount} onChange={(e) => setAdjustments((arr) => arr.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} className="w-24 px-2 py-1 border border-slate-300 rounded text-sm" />
                         <button onClick={() => setAdjustments((arr) => arr.filter((_, j) => j !== i))} className="p-1 text-slate-400 hover:text-red-600"><XMarkIcon className="h-4 w-4" /></button>
                       </div>

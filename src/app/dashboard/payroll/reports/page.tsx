@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 type ReportType = 'salary-register' | 'department-cost' | 'ytd-earnings' | 'pf-contribution' | 'esi-contribution' | 'pt-summary';
 
@@ -82,20 +83,25 @@ export default function PayrollReportsPage() {
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
         <div className="flex flex-wrap items-end gap-3">
-          <div>
+          <div className="w-64">
             <label className="block text-xs text-slate-500 mb-1">Report</label>
-            <select value={type} onChange={(e) => { setType(e.target.value as ReportType); setReport(null); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-              {Object.entries(REPORT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+            <AddableSelect
+              value={type}
+              onChange={(v) => { setType(v as ReportType); setReport(null); }}
+              options={Object.entries(REPORT_LABELS).map(([v, l]) => ({ value: v, label: l }))}
+              placeholder="Select report"
+            />
           </div>
 
           {RUN_SCOPED.includes(type) ? (
-            <div>
+            <div className="w-64">
               <label className="block text-xs text-slate-500 mb-1">Payroll Run</label>
-              <select value={runId} onChange={(e) => setRunId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                <option value="">Select a run</option>
-                {runs.map((r) => <option key={r.id} value={r.id}>{MONTH_NAMES[r.payPeriodMonth - 1]} {r.payPeriodYear} ({r.status})</option>)}
-              </select>
+              <AddableSelect
+                value={runId}
+                onChange={(v) => setRunId(v)}
+                options={runs.map((r) => ({ value: String(r.id), label: `${MONTH_NAMES[r.payPeriodMonth - 1]} ${r.payPeriodYear} (${r.status})` }))}
+                placeholder="Select a run"
+              />
             </div>
           ) : (
             <>
@@ -104,12 +110,14 @@ export default function PayrollReportsPage() {
                 <input type="number" value={year} onChange={(e) => setYear(e.target.value)} className="w-24 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
               </div>
               {type === 'department-cost' && (
-                <div>
+                <div className="w-40">
                   <label className="block text-xs text-slate-500 mb-1">Month (optional)</label>
-                  <select value={month} onChange={(e) => setMonth(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                    <option value="">Whole year</option>
-                    {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-                  </select>
+                  <AddableSelect
+                    value={month}
+                    onChange={(v) => setMonth(v)}
+                    options={[{ value: '', label: 'Whole year' }, ...MONTH_NAMES.map((m, i) => ({ value: String(i + 1), label: m }))]}
+                    placeholder="Whole year"
+                  />
                 </div>
               )}
             </>

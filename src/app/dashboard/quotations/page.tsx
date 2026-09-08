@@ -16,7 +16,6 @@ import {
   DocumentPlusIcon,
   ClockIcon,
   MagnifyingGlassIcon,
-  FunnelIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
@@ -24,6 +23,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { generateInvoicePDF } from '@/lib/generateInvoicePDF';
 import { formatCurrency } from '@/lib/currency';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+import AddableSelect from '@/components/AddableSelect';
 import dayjs from 'dayjs';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
@@ -241,7 +241,6 @@ export default function QuotationsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 400);
@@ -806,12 +805,11 @@ export default function QuotationsPage() {
         </div>
       </div>
 
-      {/* Search & Filters — same bordered-card layout, debounced search
-          input, and Filters-toggle-reveals-a-panel behavior as the
-          Customer module (src/app/dashboard/customers/page.tsx). */}
+      {/* Search & Filters — filter fields sit directly beside the search
+          bar, always visible (no "Filters" button/dropdown to open first). */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:flex-wrap gap-3">
+          <div className="relative flex-1 min-w-[220px]">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
@@ -826,22 +824,17 @@ export default function QuotationsPage() {
               </button>
             )}
           </div>
-          <button onClick={() => setFiltersOpen(!filtersOpen)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium ${statusFilter ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600'}`}>
-            <FunnelIcon className="h-4 w-4" /> Filters {statusFilter && <span className="bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">1</span>}
-          </button>
-          {(searchInput || statusFilter) && <button onClick={clearQuotationFilters} className="text-sm text-slate-500 hover:text-red-500">Clear All</button>}
-        </div>
-        {filtersOpen && (
-          <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-                <option value="">All</option>
-                {QUOTATION_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </div>
+          <div className="w-full sm:w-44">
+            <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+            <AddableSelect
+              value={statusFilter}
+              onChange={(v) => setStatusFilter(v)}
+              options={[{ value: '', label: 'All' }, ...QUOTATION_STATUSES.map(s => ({ value: s.value, label: s.label }))]}
+              placeholder="All"
+            />
           </div>
-        )}
+          {(searchInput || statusFilter) && <button onClick={clearQuotationFilters} className="text-sm text-slate-500 hover:text-red-500 sm:mb-2.5">Clear All</button>}
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -992,41 +985,38 @@ export default function QuotationsPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
-                  <select value={selectedLeadId} onChange={e => selectExistingLead(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.client ? 'border-red-400' : 'border-slate-300'}`}>
-                    <option value="">Select a client</option>
-                    {existingLeads.map(l => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-                  </select>
+                  <AddableSelect
+                    value={selectedLeadId}
+                    onChange={v => selectExistingLead(v)}
+                    options={existingLeads.map(l => ({ value: String(l.id), label: l.companyName }))}
+                    placeholder="Select a client"
+                    error={!!formErrors.client}
+                  />
                   {formErrors.client && <p className="text-xs text-red-600 mt-1">{formErrors.client}</p>}
                   {existingLeads.length === 0 && <p className="text-xs text-slate-400 mt-1">No existing clients yet — switch to &ldquo;New Client&rdquo; to add one.</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
-                  <select
+                  <AddableSelect
                     value={projectId}
-                    onChange={e => { setProjectId(e.target.value); clearFieldError('project'); }}
+                    onChange={v => { setProjectId(v); clearFieldError('project'); }}
+                    options={leadProjects.map(p => ({ value: String(p.id), label: p.projectName }))}
+                    placeholder={!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
                     disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0 || !!productId}
-                    className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
-                  >
-                    <option value="">
-                      {!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
-                    </option>
-                    {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
-                  </select>
+                    error={!!formErrors.project}
+                  />
                   {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
-                  <select
+                  <AddableSelect
                     value={productId}
-                    onChange={e => { setProductId(e.target.value); clearFieldError('project'); }}
+                    onChange={v => { setProductId(v); clearFieldError('project'); }}
+                    options={leadProducts.map(p => ({ value: String(p.id), label: p.productName }))}
+                    placeholder={!selectedLeadId ? 'Select a client first' : productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
                     disabled={!selectedLeadId || productsLoading || leadProducts.length === 0 || !!projectId}
-                    className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
-                  >
-                    <option value="">
-                      {!selectedLeadId ? 'Select a client first' : productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
-                    </option>
-                    {leadProducts.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
-                  </select>
+                    error={!!formErrors.project}
+                  />
                   {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                 </div>
               </div>
@@ -1040,27 +1030,23 @@ export default function QuotationsPage() {
                   <>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
-                      <select
+                      <AddableSelect
                         value={projectId}
-                        onChange={e => setProjectId(e.target.value)}
+                        onChange={v => setProjectId(v)}
+                        options={leadProjects.map(p => ({ value: String(p.id), label: p.projectName }))}
+                        placeholder={projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
                         disabled={projectsLoading || leadProjects.length === 0 || !!productId}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
-                      >
-                        <option value="">{projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}</option>
-                        {leadProjects.map(p => <option key={p.id} value={p.id}>{p.projectName}</option>)}
-                      </select>
+                      />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
-                      <select
+                      <AddableSelect
                         value={productId}
-                        onChange={e => setProductId(e.target.value)}
+                        onChange={v => setProductId(v)}
+                        options={leadProducts.map(p => ({ value: String(p.id), label: p.productName }))}
+                        placeholder={productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
                         disabled={productsLoading || leadProducts.length === 0 || !!projectId}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500"
-                      >
-                        <option value="">{productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}</option>
-                        {leadProducts.map(p => <option key={p.id} value={p.id}>{p.productName}</option>)}
-                      </select>
+                      />
                     </div>
                   </>
                 ) : (
@@ -1231,7 +1217,7 @@ export default function QuotationsPage() {
                   disabled={countryLocked}
                 />
               </div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">State</label><select value={clientState} onChange={e => setClientState(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"><option value="">Select</option>{states.map(s => <option key={s.stateCode} value={s.stateCode}>{s.stateName}</option>)}</select></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">State</label><AddableSelect value={clientState} onChange={v => setClientState(v)} options={states.map(s => ({ value: s.stateCode, label: s.stateName }))} placeholder="Select" /></div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Discount %</label><input type="number" min={0} max={50} value={discountPercentage} onChange={e => setDiscountPercentage(Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></div>
             </div>
             <div className="mt-4">
