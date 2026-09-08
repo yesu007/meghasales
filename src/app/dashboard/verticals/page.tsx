@@ -6,6 +6,7 @@ import { PlusIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/ou
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/lib/currency';
 import BudgetVsActualChart, { ActualExpenseBreakdownEntry } from '@/components/verticals/BudgetVsActualChart';
+import AddableSelect from '@/components/AddableSelect';
 
 interface UserOption { id: number; firstName: string; lastName: string }
 interface CurrencyOption { currencyCode: string }
@@ -232,14 +233,13 @@ export default function VerticalsPage() {
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">Vertical Head *</label>
-              <select
+              <AddableSelect
                 value={form.headId}
-                onChange={(e) => { setForm((f) => ({ ...f, headId: e.target.value })); clearFieldError('headId'); }}
-                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.headId ? 'border-red-400' : 'border-slate-300'}`}
-              >
-                <option value="">Unassigned</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>)}
-              </select>
+                onChange={(v) => { setForm((f) => ({ ...f, headId: v })); clearFieldError('headId'); }}
+                options={users.map((u) => ({ value: String(u.id), label: `${u.firstName} ${u.lastName}` }))}
+                placeholder="Unassigned"
+                error={!!formErrors.headId}
+              />
               {formErrors.headId && <p className="text-xs text-red-600 mt-1">{formErrors.headId}</p>}
             </div>
             <div>
@@ -248,10 +248,12 @@ export default function VerticalsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-              <select value={form.budgetCurrencyCode} onChange={(e) => setForm((f) => ({ ...f, budgetCurrencyCode: e.target.value }))} className={inputCls}>
-                <option value="INR">INR</option>
-                {currencies.filter((c) => c.currencyCode !== 'INR').map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
-              </select>
+              <AddableSelect
+                value={form.budgetCurrencyCode}
+                onChange={(v) => setForm((f) => ({ ...f, budgetCurrencyCode: v }))}
+                options={[{ value: 'INR', label: 'INR' }, ...currencies.filter((c) => c.currencyCode !== 'INR').map((c) => ({ value: c.currencyCode, label: c.currencyCode }))]}
+                placeholder="Select Currency"
+              />
             </div>
             <div>
               {/* Invisible label matching "Currency"'s own — purely to push

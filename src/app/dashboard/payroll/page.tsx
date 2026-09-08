@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, Transition } from '@headlessui/react';
 import { PlusIcon, XMarkIcon, InboxIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import AddableSelect from '@/components/AddableSelect';
 
 interface EmployeeRow {
   id: number;
@@ -250,13 +251,14 @@ export default function PayrollEmployeesPage() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <span>Rows per page</span>
-              <select
-                value={size}
-                onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-              >
-                {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <div className="w-28">
+                <AddableSelect
+                  value={String(size)}
+                  onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                  options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
+                  placeholder="Size"
+                />
+              </div>
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -349,18 +351,22 @@ export default function PayrollEmployeesPage() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
-                          <select value={form.verticalId} onChange={(e) => setForm((f) => ({ ...f, verticalId: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                            <option value="">—</option>
-                            {verticalOptions.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                          </select>
+                          <AddableSelect
+                            value={form.verticalId}
+                            onChange={(v) => setForm((f) => ({ ...f, verticalId: v }))}
+                            options={verticalOptions.map((v) => ({ value: String(v.id), label: v.name }))}
+                            placeholder="—"
+                          />
                         </div>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Manager</label>
-                        <select value={form.managerId} onChange={(e) => setForm((f) => ({ ...f, managerId: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                          <option value="">—</option>
-                          {managerOptions.map((m) => <option key={m.id} value={m.id}>{m.firstName} {m.lastName} ({m.employeeCode})</option>)}
-                        </select>
+                        <AddableSelect
+                          value={form.managerId}
+                          onChange={(v) => setForm((f) => ({ ...f, managerId: v }))}
+                          options={managerOptions.map((m) => ({ value: String(m.id), label: `${m.firstName} ${m.lastName} (${m.employeeCode})` }))}
+                          placeholder="—"
+                        />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -369,12 +375,17 @@ export default function PayrollEmployeesPage() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Employment Type</label>
-                          <select value={form.employmentType} onChange={(e) => setForm((f) => ({ ...f, employmentType: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                            <option value="FULL_TIME">Full-time</option>
-                            <option value="PART_TIME">Part-time</option>
-                            <option value="CONTRACT">Contract</option>
-                            <option value="INTERN">Intern</option>
-                          </select>
+                          <AddableSelect
+                            value={form.employmentType}
+                            onChange={(v) => setForm((f) => ({ ...f, employmentType: v }))}
+                            options={[
+                              { value: 'FULL_TIME', label: 'Full-time' },
+                              { value: 'PART_TIME', label: 'Part-time' },
+                              { value: 'CONTRACT', label: 'Contract' },
+                              { value: 'INTERN', label: 'Intern' },
+                            ]}
+                            placeholder="Select employment type"
+                          />
                         </div>
                       </div>
                       <div className="pt-2 border-t border-slate-100">

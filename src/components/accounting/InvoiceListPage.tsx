@@ -27,6 +27,7 @@ import PaymentEntryDrawer from './PaymentEntryDrawer';
 import { formatCurrency } from '@/lib/currency';
 import { usePermissions } from '@/hooks/usePermissions';
 import { invalidateInvoiceData } from '@/lib/queryInvalidation';
+import AddableSelect from '@/components/AddableSelect';
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-green-100 text-green-700',
@@ -354,10 +355,14 @@ const InvoiceListPage = forwardRef<InvoiceListPageHandle, { mode: 'open' | 'paid
             )}
           </div>
           {!leadId && (
-            <select value={leadFilter} onChange={(e) => { setLeadFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-              <option value="">All Customers</option>
-              {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-            </select>
+            <div className="w-56">
+              <AddableSelect
+                value={leadFilter}
+                onChange={(v) => { setLeadFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All Customers' }, ...leads.map((l) => ({ value: String(l.id), label: l.companyName }))]}
+                placeholder="All Customers"
+              />
+            </div>
           )}
           <div className="flex items-center gap-2">
             <label className="text-xs font-medium text-slate-600">Due From</label>
@@ -502,13 +507,14 @@ const InvoiceListPage = forwardRef<InvoiceListPageHandle, { mode: 'open' | 'paid
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(size)}
+                    onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                    options={[10, 25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
@@ -563,21 +569,27 @@ const InvoiceListPage = forwardRef<InvoiceListPageHandle, { mode: 'open' | 'paid
                     <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="flex-1 px-6 py-4 space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Customer / Lead *</label>
-                        <select required disabled={!!editingId} value={form.leadId} onChange={(e) => setForm((f) => ({ ...f, leadId: e.target.value, quotationId: '' }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500">
-                          <option value="">Select a customer</option>
-                          {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}</option>)}
-                        </select>
+                        <AddableSelect
+                          disabled={!!editingId}
+                          value={form.leadId}
+                          onChange={(v) => setForm((f) => ({ ...f, leadId: v, quotationId: '' }))}
+                          options={leads.map((l) => ({ value: String(l.id), label: `${l.companyName} — ${l.contactPerson}` }))}
+                          placeholder="Select a customer"
+                        />
                       </div>
 
                       {!editingId && (
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Generate from Approved Quotation</label>
-                          <select value={form.quotationId} onChange={(e) => setForm((f) => ({ ...f, quotationId: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                            <option value="">None — enter line items manually</option>
-                            {approvedQuotations.filter((q) => !form.leadId || q.leadId === Number(form.leadId)).map((q) => (
-                              <option key={q.id} value={q.id}>{q.quotationNumber} — {q.businessModule || 'Custom'}</option>
-                            ))}
-                          </select>
+                          <AddableSelect
+                            value={form.quotationId}
+                            onChange={(v) => setForm((f) => ({ ...f, quotationId: v }))}
+                            options={[
+                              { value: '', label: 'None — enter line items manually' },
+                              ...approvedQuotations.filter((q) => !form.leadId || q.leadId === Number(form.leadId)).map((q) => ({ value: String(q.id), label: `${q.quotationNumber} — ${q.businessModule || 'Custom'}` })),
+                            ]}
+                            placeholder="Select quotation"
+                          />
                         </div>
                       )}
 
@@ -616,10 +628,12 @@ const InvoiceListPage = forwardRef<InvoiceListPageHandle, { mode: 'open' | 'paid
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Account Manager</label>
-                          <select value={form.accountManagerId} onChange={(e) => setForm((f) => ({ ...f, accountManagerId: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                            <option value="">Unassigned</option>
-                            {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-                          </select>
+                          <AddableSelect
+                            value={form.accountManagerId}
+                            onChange={(v) => setForm((f) => ({ ...f, accountManagerId: v }))}
+                            options={[{ value: '', label: 'Unassigned' }, ...users.map((u) => ({ value: String(u.id), label: u.fullName }))]}
+                            placeholder="Select account manager"
+                          />
                         </div>
                       </div>
 

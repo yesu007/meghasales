@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, InboxIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import AddableSelect from '@/components/AddableSelect';
 
 interface RunRow {
   id: number;
@@ -65,9 +66,12 @@ export default function PayrollRunsPage() {
         <form onSubmit={(e) => { e.preventDefault(); createRun.mutate(); }} className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-xs text-slate-500 mb-1">Month</label>
-            <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-              {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-            </select>
+            <AddableSelect
+              value={String(month)}
+              onChange={(v) => setMonth(Number(v))}
+              options={MONTH_NAMES.map((m, i) => ({ value: String(i + 1), label: m }))}
+              placeholder="Select month"
+            />
           </div>
           <div>
             <label className="block text-xs text-slate-500 mb-1">Year</label>

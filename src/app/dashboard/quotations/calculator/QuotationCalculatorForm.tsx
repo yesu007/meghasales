@@ -13,6 +13,7 @@ import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationM
 import { usePermissions } from '@/hooks/usePermissions';
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
 import { useProductsForLead } from '@/hooks/useProductsForLead';
+import AddableSelect from '@/components/AddableSelect';
 
 interface ExistingLead { id: number; companyName: string; projectName: string | null; contactPerson: string; email: string | null; mobile: string | null }
 interface Vertical { id: number; name: string; headName?: string | null }
@@ -572,44 +573,37 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <div className="grid grid-cols-3 gap-3 mb-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
-                  <select
+                  <AddableSelect
                     value={selectedLeadId}
-                    onChange={(e) => { selectExistingLead(e.target.value); clearFieldError('client'); }}
-                    className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.client ? 'border-red-400' : 'border-slate-300'}`}
-                  >
-                    <option value="">Select a client</option>
-                    {existingLeads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-                  </select>
+                    onChange={(v) => { selectExistingLead(v); clearFieldError('client'); }}
+                    options={existingLeads.map((l) => ({ value: String(l.id), label: l.companyName }))}
+                    placeholder="Select a client"
+                    error={!!formErrors.client}
+                  />
                   {formErrors.client && <p className="text-xs text-red-600 mt-1">{formErrors.client}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
-                  <select
+                  <AddableSelect
                     value={projectId}
-                    onChange={(e) => { setProjectId(e.target.value); clearFieldError('project'); }}
+                    onChange={(v) => { setProjectId(v); clearFieldError('project'); }}
+                    options={leadProjects.map((p) => ({ value: String(p.id), label: p.projectName }))}
+                    placeholder={!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
                     disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0 || !!productId}
-                    className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
-                  >
-                    <option value="">
-                      {!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
-                    </option>
-                    {leadProjects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
-                  </select>
+                    error={!!formErrors.project}
+                  />
                   {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
-                  <select
+                  <AddableSelect
                     value={productId}
-                    onChange={(e) => { setProductId(e.target.value); clearFieldError('project'); }}
+                    onChange={(v) => { setProductId(v); clearFieldError('project'); }}
+                    options={leadProducts.map((p) => ({ value: String(p.id), label: p.productName }))}
+                    placeholder={!selectedLeadId ? 'Select a client first' : productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
                     disabled={!selectedLeadId || productsLoading || leadProducts.length === 0 || !!projectId}
-                    className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.project ? 'border-red-400' : 'border-slate-300'}`}
-                  >
-                    <option value="">
-                      {!selectedLeadId ? 'Select a client first' : productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
-                    </option>
-                    {leadProducts.map((p) => <option key={p.id} value={p.id}>{p.productName}</option>)}
-                  </select>
+                    error={!!formErrors.project}
+                  />
                   {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
                 </div>
               </div>
@@ -635,27 +629,23 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 <div className="flex items-end pb-2 text-sm text-slate-700 font-medium">{companyName} — {clientName}</div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
-                  <select
+                  <AddableSelect
                     value={projectId}
-                    onChange={(e) => setProjectId(e.target.value)}
+                    onChange={(v) => setProjectId(v)}
+                    options={leadProjects.map((p) => ({ value: String(p.id), label: p.projectName }))}
+                    placeholder={projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
                     disabled={projectsLoading || leadProjects.length === 0 || !!productId}
-                    className={inputCls}
-                  >
-                    <option value="">{projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}</option>
-                    {leadProjects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
-                  </select>
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
-                  <select
+                  <AddableSelect
                     value={productId}
-                    onChange={(e) => setProductId(e.target.value)}
+                    onChange={(v) => setProductId(v)}
+                    options={leadProducts.map((p) => ({ value: String(p.id), label: p.productName }))}
+                    placeholder={productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
                     disabled={productsLoading || leadProducts.length === 0 || !!projectId}
-                    className={inputCls}
-                  >
-                    <option value="">{productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}</option>
-                    {leadProducts.map((p) => <option key={p.id} value={p.id}>{p.productName}</option>)}
-                  </select>
+                  />
                 </div>
               </div>
             )}
@@ -663,10 +653,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
-                <select value={verticalId} onChange={(e) => selectVertical(e.target.value)} className={inputCls}>
-                  <option value="">Company-wide</option>
-                  {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
+                <AddableSelect
+                  value={verticalId}
+                  onChange={(v) => selectVertical(v)}
+                  options={[{ value: '', label: 'Company-wide' }, ...verticals.map((v) => ({ value: String(v.id), label: v.name }))]}
+                  placeholder="Select vertical"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Project Manager</label>
@@ -678,24 +670,31 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-                <select value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)} className={inputCls}>
-                  <option value="INR">INR</option>
-                  {currencies.filter((c) => c.currencyCode !== 'INR').map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
-                </select>
+                <AddableSelect
+                  value={currencyCode}
+                  onChange={(v) => setCurrencyCode(v)}
+                  options={[{ value: 'INR', label: 'INR' }, ...currencies.filter((c) => c.currencyCode !== 'INR').map((c) => ({ value: c.currencyCode, label: c.currencyCode }))]}
+                  placeholder="Select currency"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Bill To (Company)</label>
-                <select value={billingCompanyId} onChange={(e) => selectBillingCompany(e.target.value)} className={inputCls}>
-                  <option value="">Not linked to a Company</option>
-                  {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <AddableSelect
+                  value={billingCompanyId}
+                  onChange={(v) => selectBillingCompany(v)}
+                  options={[{ value: '', label: 'Not linked to a Company' }, ...companies.map((c) => ({ value: String(c.id), label: c.name }))]}
+                  placeholder="Select company"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Legal Entity</label>
-                <select value={legalEntityId} onChange={(e) => setLegalEntityId(e.target.value)} disabled={!billingCompanyId} className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}>
-                  <option value="">{billingCompanyId ? 'Select entity' : 'Pick a Company first'}</option>
-                  {legalEntityOptions.map((e) => <option key={e.id} value={e.id}>{e.country.flagEmoji ? `${e.country.flagEmoji} ` : ''}{e.country.countryName} — {e.legalName}</option>)}
-                </select>
+                <AddableSelect
+                  value={legalEntityId}
+                  onChange={(v) => setLegalEntityId(v)}
+                  options={legalEntityOptions.map((e) => ({ value: String(e.id), label: `${e.country.flagEmoji ? `${e.country.flagEmoji} ` : ''}${e.country.countryName} — ${e.legalName}` }))}
+                  placeholder={billingCompanyId ? 'Select entity' : 'Pick a Company first'}
+                  disabled={!billingCompanyId}
+                />
                 {billingCompanyId && legalEntityOptions.length === 0 && (
                   <p className="text-xs text-slate-400 mt-1">This company has no legal entities yet — add one from the Company tab on a linked customer&apos;s detail page.</p>
                 )}
@@ -760,7 +759,6 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             <button type="button" onClick={addResource} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-sm font-medium text-amber-700 hover:bg-amber-50">
               <PlusIcon className="h-4 w-4" /> Add resource
             </button>
-            <p className="text-xs text-slate-400 mt-2">Picking an employee from the suggestions fills in a day rate estimated from their CTC (still editable afterward), sets Role to their job title, and Designation to who they are — for internal reference only, never printed on the quotation. Not an employee? Just type a role directly (e.g. &quot;Freelance Designer&quot;) and set the day rate — it costs into the budget the same way, with Designation left blank.</p>
             <datalist id="resource-employee-options">
               {resourceEmployees.map((e) => <option key={e.id} value={employeeLabel(e)} />)}
             </datalist>
@@ -928,10 +926,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 <div className="flex items-center gap-1.5">
                   <span className="font-mono font-medium text-slate-700">{fmt(costing.adminCost)}</span>
                   <input type="number" min="0" value={adminValue} onChange={(e) => setAdminValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
-                  <select value={adminMode} onChange={(e) => setAdminMode(e.target.value as CostMode)} className="px-1 py-0.5 border border-slate-300 rounded text-xs text-slate-700">
-                    <option value="PCT">%</option>
-                    <option value="FIXED">₹</option>
-                  </select>
+                  <AddableSelect
+                    value={adminMode}
+                    onChange={(v) => setAdminMode(v as CostMode)}
+                    options={[{ value: 'PCT', label: '%' }, { value: 'FIXED', label: '₹' }]}
+                    placeholder="Mode"
+                  />
                 </div>
               </div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100 font-semibold"><span className="text-slate-800">Base project cost</span><span className="font-mono text-slate-800">{fmt(costing.baseCost)}</span></div>
@@ -940,10 +940,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 <div className="flex items-center gap-1.5">
                   <span className="font-mono font-medium text-slate-700">{fmt(costing.markupAmount)}</span>
                   <input type="number" min="0" value={markupValue} onChange={(e) => setMarkupValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
-                  <select value={markupMode} onChange={(e) => setMarkupMode(e.target.value as CostMode)} className="px-1 py-0.5 border border-slate-300 rounded text-xs text-slate-700">
-                    <option value="PCT">%</option>
-                    <option value="FIXED">₹</option>
-                  </select>
+                  <AddableSelect
+                    value={markupMode}
+                    onChange={(v) => setMarkupMode(v as CostMode)}
+                    options={[{ value: 'PCT', label: '%' }, { value: 'FIXED', label: '₹' }]}
+                    placeholder="Mode"
+                  />
                 </div>
               </div>
               <div className="flex items-center justify-between py-1 border-b border-dashed border-slate-100">
@@ -951,10 +953,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 <div className="flex items-center gap-1.5">
                   <span className={`font-mono font-medium ${costing.discountAmount > 0 ? 'text-red-600' : 'text-slate-700'}`}>{costing.discountAmount > 0 ? '-' : ''}{fmt(costing.discountAmount)}</span>
                   <input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
-                  <select value={discountMode} onChange={(e) => setDiscountMode(e.target.value as CostMode)} className="px-1 py-0.5 border border-slate-300 rounded text-xs text-slate-700">
-                    <option value="PCT">%</option>
-                    <option value="FIXED">₹</option>
-                  </select>
+                  <AddableSelect
+                    value={discountMode}
+                    onChange={(v) => setDiscountMode(v as CostMode)}
+                    options={[{ value: 'PCT', label: '%' }, { value: 'FIXED', label: '₹' }]}
+                    placeholder="Mode"
+                  />
                 </div>
               </div>
               <div className="flex items-center justify-between py-1">

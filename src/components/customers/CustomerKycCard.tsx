@@ -5,9 +5,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DocumentIcon, PhotoIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { KYC_VERIFICATION_STATUSES, kycVerificationStatusColor } from '@/lib/customerKycStatus';
+import { KYC_VERIFICATION_STATUSES } from '@/lib/customerKycStatus';
 import { validateCustomerDocumentFile } from '@/lib/customerDocumentUpload';
 import CustomerDocumentUploadBox from './CustomerDocumentUploadBox';
+import AddableSelect from '@/components/AddableSelect';
 
 interface UserOption {
   id: number;
@@ -279,16 +280,24 @@ export default function CustomerKycCard({ leadId, canManage }: CustomerKycCardPr
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Verification Status</label>
-              <select disabled={!canManage} value={form.verificationStatus} onChange={(e) => setForm((f) => ({ ...f, verificationStatus: e.target.value }))} className={`px-2 py-2 rounded-lg text-sm font-medium border w-full ${kycVerificationStatusColor(form.verificationStatus)}`}>
-                {KYC_VERIFICATION_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
+              <AddableSelect
+                disabled={!canManage}
+                value={form.verificationStatus}
+                onChange={(v) => setForm((f) => ({ ...f, verificationStatus: v }))}
+                options={KYC_VERIFICATION_STATUSES.map((s) => ({ value: s.value, label: s.label }))}
+                placeholder="Select Status"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Verification By</label>
-              <select disabled={!canManage} value={form.verifiedById} onChange={(e) => setForm((f) => ({ ...f, verifiedById: e.target.value }))} className={inputClass('verifiedById')}>
-                <option value="">Unassigned</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-              </select>
+              <AddableSelect
+                disabled={!canManage}
+                value={form.verifiedById}
+                onChange={(v) => setForm((f) => ({ ...f, verifiedById: v }))}
+                options={[{ value: '', label: 'Unassigned' }, ...users.map((u) => ({ value: String(u.id), label: u.fullName }))]}
+                placeholder="Unassigned"
+                error={!!formErrors.verifiedById}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Verification Date</label>

@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+import AddableSelect from '@/components/AddableSelect';
 import { useLeadSources } from '@/hooks/useLeadSources';
 import { parseBusinessVerticals } from '@/lib/businessVerticals';
 // Business Vertical is no longer collected on this form (removed per
@@ -198,10 +199,15 @@ export default function LeadFormDrawer({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
-                        <select value={form.projectId ?? ''} onChange={(e) => setForm(f => ({...f, projectId: e.target.value ? Number(e.target.value) : null}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                          <option value="">Unassigned</option>
-                          {projectOptions.map(p => <option key={p.id} value={p.id}>{p.projectName} — {p.linkedLeadsCount} {p.linkedLeadsCount === 1 ? 'Project' : 'Projects'}</option>)}
-                        </select>
+                        <AddableSelect
+                          value={form.projectId != null ? String(form.projectId) : ''}
+                          onChange={(v) => setForm(f => ({...f, projectId: v ? Number(v) : null}))}
+                          options={[
+                            { value: '', label: 'Unassigned' },
+                            ...projectOptions.map(p => ({ value: String(p.id), label: `${p.projectName} — ${p.linkedLeadsCount} ${p.linkedLeadsCount === 1 ? 'Project' : 'Projects'}` })),
+                          ]}
+                          placeholder="Unassigned"
+                        />
                         {/* Read-only, same convention as CustomerFormDrawer's
                             own Create-time Project field — the Vertical
                             rides along with whichever Project is picked,
@@ -261,18 +267,24 @@ export default function LeadFormDrawer({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Lead Source *</label>
-                        <select value={form.leadSource} onChange={(e) => { setForm(f => ({...f, leadSource: e.target.value})); clearFieldError('leadSource'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
-                          <option value="">Select</option>
-                          {sources.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
-                        </select>
+                        <AddableSelect
+                          value={form.leadSource}
+                          onChange={(v) => { setForm(f => ({...f, leadSource: v})); clearFieldError('leadSource'); }}
+                          options={sources.map(s => ({ value: s.code, label: s.name }))}
+                          placeholder="Select"
+                          error={!!formErrors.leadSource}
+                        />
                         {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                       </div>
                       {onCustomerStatusChange && (
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
-                          <select value={customerStatus} onChange={(e) => onCustomerStatusChange(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                            {CUSTOMER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                          </select>
+                          <AddableSelect
+                            value={customerStatus ?? ''}
+                            onChange={(v) => onCustomerStatusChange(v)}
+                            options={CUSTOMER_STATUSES.map(s => ({ value: s.value, label: s.label }))}
+                            placeholder="Select Status"
+                          />
                         </div>
                       )}
                       <div className="col-span-2">
@@ -288,16 +300,15 @@ export default function LeadFormDrawer({
                         {isAdmin && form.countryId && (
                           <div className="mt-2">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Override currency (Administrator only)</label>
-                            <select
+                            <AddableSelect
                               value={form.currencyCode}
-                              onChange={(e) => {
-                                const c = currencies.find((cur) => cur.currencyCode === e.target.value);
+                              onChange={(v) => {
+                                const c = currencies.find((cur) => cur.currencyCode === v);
                                 if (c) setForm(f => ({ ...f, currencyCode: c.currencyCode, currencySymbol: c.currencySymbol }));
                               }}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                            >
-                              {currencies.map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode} — {c.currencyName}</option>)}
-                            </select>
+                              options={currencies.map((c) => ({ value: c.currencyCode, label: `${c.currencyCode} — ${c.currencyName}` }))}
+                              placeholder="Select Currency"
+                            />
                           </div>
                         )}
                       </div>

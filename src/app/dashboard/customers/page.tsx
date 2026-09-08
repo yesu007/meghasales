@@ -14,7 +14,6 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   ArrowsUpDownIcon,
-  FunnelIcon,
   PencilIcon,
   TrashIcon,
   EyeIcon,
@@ -24,6 +23,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { CUSTOMER_STATUSES, customerStatusColor } from '@/lib/customerStatus';
 import { useLeadSources } from '@/hooks/useLeadSources';
+import AddableSelect from '@/components/AddableSelect';
 import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 import CustomerFormDrawer, { blankCustomerForm, fetchCustomerForEdit, type CustomerFormState } from '@/components/customers/CustomerFormDrawer';
 import CustomerProjectsPanel from '@/components/customers/CustomerProjectsPanel';
@@ -105,7 +105,6 @@ export default function CustomersPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   // Project accordion — same expandedId + chevron-toggle pattern as the
   // Project module's own (src/app/dashboard/projects/page.tsx), just
   // expanding to this Customer's own Projects (CustomerProjectsPanel)
@@ -496,43 +495,48 @@ export default function CustomersPage() {
         <p className="text-slate-500 text-sm sm:text-base">Leads that have converted to customers</p>
       </div>
 
-      {/* Search & Filters */}
+      {/* Search & Filters — filter fields sit directly beside the search
+          bar, always visible (no "Filters" button/dropdown to open first). */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:flex-wrap gap-3">
+          <div className="relative flex-1 min-w-[220px]">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input type="text" placeholder="Search by name, company, email, phone..." value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
             {searchInput && <button onClick={() => { setSearchInput(''); setSearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><XMarkIcon className="h-4 w-4" /></button>}
           </div>
-          <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-            <option value="">All Sources</option>
-            {SOURCES.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
-          </select>
-          <button onClick={() => setFiltersOpen(!filtersOpen)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium ${activeFilters > 0 ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600'}`}>
-            <FunnelIcon className="h-4 w-4" /> Filters {activeFilters > 0 && <span className="bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{activeFilters}</span>}
-          </button>
-          {(searchInput || activeFilters > 0) && <button onClick={clearFilters} className="text-sm text-slate-500 hover:text-red-500">Clear All</button>}
-        </div>
-        {filtersOpen && (
-          <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Business Vertical</label>
-              <select value={verticalFilter} onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-                <option value="">All</option>
-                {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-              </select>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="w-full sm:w-44">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Source</label>
+              <AddableSelect
+                value={sourceFilter}
+                onChange={(v) => { setSourceFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All Sources' }, ...SOURCES.map(s => ({ value: s.code, label: s.name }))]}
+                placeholder="All Sources"
+              />
             </div>
-            <div>
+            <div className="w-full sm:w-44">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Business Vertical</label>
+              <AddableSelect
+                value={verticalFilter}
+                onChange={(v) => { setVerticalFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All' }, ...verticalOptions.map(vo => ({ value: vo.name, label: vo.name }))]}
+                placeholder="All"
+              />
+            </div>
+            <div className="w-full sm:w-40">
               <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-              <select value={customerStatusFilter} onChange={(e) => { setCustomerStatusFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-                <option value="">All</option>
-                {CUSTOMER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
+              <AddableSelect
+                value={customerStatusFilter}
+                onChange={(v) => { setCustomerStatusFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All' }, ...CUSTOMER_STATUSES.map(s => ({ value: s.value, label: s.label }))]}
+                placeholder="All"
+              />
             </div>
           </div>
-        )}
+          {(searchInput || activeFilters > 0) && <button onClick={clearFilters} className="text-sm text-slate-500 hover:text-red-500 sm:mb-2.5">Clear All</button>}
+        </div>
         {activeFilters > 0 && (
           <div className="flex flex-wrap gap-2">
             {sourceFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">Source: {sourceFilter.replace(/_/g,' ')} <button onClick={() => setSourceFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
@@ -661,13 +665,14 @@ export default function CustomersPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(size)}
+                    onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                    options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button

@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 async function fetchProfile() {
   const res = await fetch('/api/settings/profile');
@@ -124,10 +125,13 @@ function CountryMasterManager() {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
-            <select value={countryForm.currencyCode} onChange={(e) => { setCountryForm(f => ({ ...f, currencyCode: e.target.value })); clearCountryFieldError('currencyCode'); }} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.currencyCode ? 'border-red-400' : 'border-slate-300'}`}>
-              <option value="">Select</option>
-              {currencies.map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode} — {c.currencyName}</option>)}
-            </select>
+            <AddableSelect
+              value={countryForm.currencyCode}
+              onChange={(v) => { setCountryForm(f => ({ ...f, currencyCode: v })); clearCountryFieldError('currencyCode'); }}
+              options={currencies.map((c) => ({ value: c.currencyCode, label: `${c.currencyCode} — ${c.currencyName}` }))}
+              placeholder="Select"
+              error={!!countryFormErrors.currencyCode}
+            />
             {countryFormErrors.currencyCode && <p className="text-xs text-red-600 mt-1">{countryFormErrors.currencyCode}</p>}
           </div>
           <div>
@@ -136,11 +140,16 @@ function CountryMasterManager() {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Tax Type</label>
-            <select value={countryForm.defaultTaxType} onChange={(e) => setCountryForm(f => ({ ...f, defaultTaxType: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
-              <option value="GST">GST</option>
-              <option value="VAT">VAT</option>
-              <option value="NONE">None</option>
-            </select>
+            <AddableSelect
+              value={countryForm.defaultTaxType}
+              onChange={(v) => setCountryForm(f => ({ ...f, defaultTaxType: v }))}
+              options={[
+                { value: 'GST', label: 'GST' },
+                { value: 'VAT', label: 'VAT' },
+                { value: 'NONE', label: 'None' },
+              ]}
+              placeholder="Select tax type"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Tax Percentage</label>

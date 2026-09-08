@@ -17,4 +17,17 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Keeps an element's own scroll (wheel/trackpad/touch all still work,
+     scrollTop still moves) while hiding its scrollbar track/thumb — e.g.
+     the dashboard sidebar's nav list. Firefox/IE via the standard
+     property, Chrome/Safari/Edge via the -webkit- pseudo-element (which
+     has no plain CSS property equivalent, hence the extra selector). */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }

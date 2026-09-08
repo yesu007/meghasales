@@ -7,6 +7,7 @@ import { ArrowLeftIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { STATUSES, PRIORITIES, isValidStatusTransition, TicketStatus, Priority } from '@/lib/adminTicket/constants';
+import AddableSelect from '@/components/AddableSelect';
 
 const STATUS_COLORS: Record<string, string> = {
   OPEN: 'bg-blue-100 text-blue-700',
@@ -164,32 +165,28 @@ export default function AdminTicketDetailPage() {
         <div className="flex flex-wrap items-center gap-6 mt-5 pt-5 border-t border-slate-100">
           <div className="flex items-center gap-3">
             <label htmlFor="status-select" className="text-sm font-medium text-slate-600">Status</label>
-            <select
-              id="status-select"
-              value={ticket.status}
-              disabled={statusMutation.isPending}
-              onChange={(e) => statusMutation.mutate(e.target.value as TicketStatus)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm disabled:opacity-50"
-            >
-              {availableStatuses.map((s) => (
-                <option key={s} value={s}>{s.replace('_', ' ')}{s === ticket.status ? ' (current)' : ''}</option>
-              ))}
-            </select>
+            <div id="status-select" className="w-56">
+              <AddableSelect
+                value={ticket.status}
+                disabled={statusMutation.isPending}
+                onChange={(v) => statusMutation.mutate(v as TicketStatus)}
+                options={availableStatuses.map((s) => ({ value: s, label: `${s.replace('_', ' ')}${s === ticket.status ? ' (current)' : ''}` }))}
+                placeholder="Select status"
+              />
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
             <label htmlFor="priority-select" className="text-sm font-medium text-slate-600">Priority</label>
-            <select
-              id="priority-select"
-              value={ticket.priority}
-              disabled={priorityMutation.isPending}
-              onChange={(e) => priorityMutation.mutate(e.target.value as Priority)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm disabled:opacity-50"
-            >
-              {(PRIORITIES as readonly Priority[]).map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
+            <div id="priority-select" className="w-56">
+              <AddableSelect
+                value={ticket.priority}
+                disabled={priorityMutation.isPending}
+                onChange={(v) => priorityMutation.mutate(v as Priority)}
+                options={(PRIORITIES as readonly Priority[]).map((p) => ({ value: p, label: p }))}
+                placeholder="Select priority"
+              />
+            </div>
           </div>
         </div>
       </div>

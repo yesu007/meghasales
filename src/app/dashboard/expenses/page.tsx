@@ -504,63 +504,61 @@ export default function ExpensesPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category *</label>
-              <select
+              <AddableSelect
                 value={form.categoryId}
-                onChange={(e) => { setForm((f) => ({ ...f, categoryId: e.target.value, subCategoryId: '' })); clearFieldError('categoryId'); }}
-                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.categoryId ? 'border-red-400' : 'border-slate-300'}`}
-              >
-                <option value="">Select category</option>
-                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+                onChange={(v) => { setForm((f) => ({ ...f, categoryId: v, subCategoryId: '' })); clearFieldError('categoryId'); }}
+                options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                placeholder="Select category"
+                error={!!formErrors.categoryId}
+              />
               {formErrors.categoryId && <p className="text-xs text-red-600 mt-1">{formErrors.categoryId}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Sub Category{subCategoryOptions.length > 0 ? ' *' : ''}</label>
-              <select
+              <AddableSelect
                 value={form.subCategoryId}
-                onChange={(e) => { setForm((f) => ({ ...f, subCategoryId: e.target.value })); clearFieldError('subCategoryId'); }}
-                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.subCategoryId ? 'border-red-400' : 'border-slate-300'}`}
+                onChange={(v) => { setForm((f) => ({ ...f, subCategoryId: v })); clearFieldError('subCategoryId'); }}
+                options={subCategoryOptions.map((s) => ({ value: String(s.id), label: s.name }))}
+                placeholder={subCategoryOptions.length === 0 ? 'No sub-categories' : 'Select sub-category'}
                 disabled={subCategoryOptions.length === 0}
-              >
-                <option value="">{subCategoryOptions.length === 0 ? 'No sub-categories' : 'Select sub-category'}</option>
-                {subCategoryOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+                error={!!formErrors.subCategoryId}
+              />
               {formErrors.subCategoryId && <p className="text-xs text-red-600 mt-1">{formErrors.subCategoryId}</p>}
             </div>
             {editingId && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Customer</label>
-                <select value={form.vendorLeadId} onChange={(e) => setForm((f) => ({ ...f, vendorLeadId: e.target.value }))} className={inputCls}>
-                  <option value="">Select customer</option>
-                  {customers.map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
-                </select>
+                <AddableSelect
+                  value={form.vendorLeadId}
+                  onChange={(v) => setForm((f) => ({ ...f, vendorLeadId: v }))}
+                  options={customers.map((c) => ({ value: String(c.id), label: c.companyName }))}
+                  placeholder="Select customer"
+                />
               </div>
             )}
             {form.expenseType === 'PROJECT' && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Project *</label>
-                <select
+                <AddableSelect
                   value={form.projectId}
-                  onChange={(e) => { setForm((f) => ({ ...f, projectId: e.target.value })); clearFieldError('projectId'); }}
-                  className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.projectId ? 'border-red-400' : 'border-slate-300'}`}
-                >
-                  <option value="">Select project</option>
-                  {projects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
-                </select>
+                  onChange={(v) => { setForm((f) => ({ ...f, projectId: v })); clearFieldError('projectId'); }}
+                  options={projects.map((p) => ({ value: String(p.id), label: p.projectName }))}
+                  placeholder="Select project"
+                  error={!!formErrors.projectId}
+                />
                 {formErrors.projectId && <p className="text-xs text-red-600 mt-1">{formErrors.projectId}</p>}
               </div>
             )}
             {form.expenseType === 'PRODUCT' && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Product *</label>
-                <select
+                <AddableSelect
                   value={form.productId}
-                  onChange={(e) => { setForm((f) => ({ ...f, productId: e.target.value })); clearFieldError('productId'); }}
-                  className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.productId ? 'border-red-400' : 'border-slate-300'}`}
-                >
-                  <option value="">Select product</option>
-                  {products.map((p) => <option key={p.id} value={p.id}>{p.productName}</option>)}
-                </select>
+                  onChange={(v) => { setForm((f) => ({ ...f, productId: v })); clearFieldError('productId'); }}
+                  options={products.map((p) => ({ value: String(p.id), label: p.productName }))}
+                  placeholder="Select product"
+                  error={!!formErrors.productId}
+                />
                 {formErrors.productId && <p className="text-xs text-red-600 mt-1">{formErrors.productId}</p>}
               </div>
             )}
@@ -588,10 +586,12 @@ export default function ExpensesPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-              <select value={form.currencyCode} onChange={(e) => setForm((f) => ({ ...f, currencyCode: e.target.value }))} className={inputCls}>
-                <option value="INR">INR</option>
-                {currencies.filter((c) => c.currencyCode !== 'INR').map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
-              </select>
+              <AddableSelect
+                value={form.currencyCode}
+                onChange={(v) => setForm((f) => ({ ...f, currencyCode: v }))}
+                options={[{ value: 'INR', label: 'INR' }, ...currencies.filter((c) => c.currencyCode !== 'INR').map((c) => ({ value: c.currencyCode, label: c.currencyCode }))]}
+                placeholder="Select currency"
+              />
             </div>
             {form.currencyCode !== 'INR' && (
               <div>
@@ -601,14 +601,13 @@ export default function ExpensesPage() {
             )}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Payment Method *</label>
-              <select
+              <AddableSelect
                 value={form.paymentMethod}
-                onChange={(e) => { setForm((f) => ({ ...f, paymentMethod: e.target.value })); clearFieldError('paymentMethod'); }}
-                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.paymentMethod ? 'border-red-400' : 'border-slate-300'}`}
-              >
-                <option value="">Select method</option>
-                {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
-              </select>
+                onChange={(v) => { setForm((f) => ({ ...f, paymentMethod: v })); clearFieldError('paymentMethod'); }}
+                options={PAYMENT_METHODS.map((m) => ({ value: m, label: m.replace('_', ' ') }))}
+                placeholder="Select method"
+                error={!!formErrors.paymentMethod}
+              />
               {formErrors.paymentMethod && <p className="text-xs text-red-600 mt-1">{formErrors.paymentMethod}</p>}
             </div>
             <div>
@@ -617,10 +616,12 @@ export default function ExpensesPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
-              <select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className={inputCls}>
-                <option value="PENDING">Pending</option>
-                <option value="PAID">Paid</option>
-              </select>
+              <AddableSelect
+                value={form.status}
+                onChange={(v) => setForm((f) => ({ ...f, status: v }))}
+                options={[{ value: 'PENDING', label: 'Pending' }, { value: 'PAID', label: 'Paid' }]}
+                placeholder="Select status"
+              />
             </div>
             <div className="col-span-2 sm:col-span-3">
               <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
@@ -811,13 +812,14 @@ export default function ExpensesPage() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <span>Rows per page</span>
-              <select
-                value={size}
-                onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-              >
-                {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <div className="w-28">
+                <AddableSelect
+                  value={String(size)}
+                  onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                  options={[10, 25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
+                  placeholder="Rows"
+                />
+              </div>
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -954,15 +956,13 @@ export default function ExpensesPage() {
               onSubmit={(e) => { e.preventDefault(); if (!subCategoryForm.categoryId || !subCategoryForm.name) { toast.error('Category and name are required'); return; } saveSubCategory.mutate(); }}
               className="grid grid-cols-2 gap-3"
             >
-              <select
+              <AddableSelect
                 value={subCategoryForm.categoryId}
-                onChange={(e) => setSubCategoryForm((f) => ({ ...f, categoryId: e.target.value }))}
+                onChange={(v) => setSubCategoryForm((f) => ({ ...f, categoryId: v }))}
+                options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                placeholder="Select category"
                 disabled={!!editingSubCategoryId}
-                className={`${inputCls} ${editingSubCategoryId ? 'bg-slate-100 text-slate-500' : ''}`}
-              >
-                <option value="">Select category</option>
-                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              />
               <input placeholder="Sub-category name" value={subCategoryForm.name} onChange={(e) => setSubCategoryForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} />
               <div className="col-span-2 flex justify-end gap-2">
                 <button type="button" onClick={closeSubCategoryForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>

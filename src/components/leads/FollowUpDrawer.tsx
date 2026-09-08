@@ -6,6 +6,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import AddableSelect from '@/components/AddableSelect';
 import { FOLLOWUP_METHODS, FOLLOWUP_OUTCOMES, validateFollowUpInput } from '@/lib/leadFollowUp';
 
 interface FollowUpDrawerProps {
@@ -80,10 +81,12 @@ export default function FollowUpDrawer({ isOpen, onClose, leadId }: FollowUpDraw
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Method *</label>
-                        <select required value={form.method} onChange={(e) => setForm((f) => ({ ...f, method: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                          <option value="">Select</option>
-                          {FOLLOWUP_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                        </select>
+                        <AddableSelect
+                          value={form.method}
+                          onChange={(v) => setForm((f) => ({ ...f, method: v }))}
+                          options={FOLLOWUP_METHODS.map((m) => ({ value: m.value, label: m.label }))}
+                          placeholder="Select"
+                        />
                       </div>
                     </div>
                     <div>
@@ -92,10 +95,12 @@ export default function FollowUpDrawer({ isOpen, onClose, leadId }: FollowUpDraw
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Outcome</label>
-                      <select value={form.outcome} onChange={(e) => setForm((f) => ({ ...f, outcome: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                        <option value="">Select</option>
-                        {FOLLOWUP_OUTCOMES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
+                      <AddableSelect
+                        value={form.outcome}
+                        onChange={(v) => setForm((f) => ({ ...f, outcome: v }))}
+                        options={FOLLOWUP_OUTCOMES.map((o) => ({ value: o.value, label: o.label }))}
+                        placeholder="Select"
+                      />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Next Action</label>

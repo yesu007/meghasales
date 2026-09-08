@@ -17,6 +17,7 @@ import {
   isValidMeetingStatusTransition,
 } from '@/lib/meetings/constants';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 const STATUS_COLORS: Record<string, string> = {
   SCHEDULED: 'bg-blue-100 text-blue-700',
@@ -116,23 +117,21 @@ function AddTaskModal({ onClose }: { onClose: () => void }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Type</label>
-              <select
+              <AddableSelect
                 value={form.meetingType}
-                onChange={(e) => setForm((f) => ({ ...f, meetingType: e.target.value as MeetingType }))}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-              >
-                {MEETING_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-              </select>
+                onChange={(v) => setForm((f) => ({ ...f, meetingType: v as MeetingType }))}
+                options={MEETING_TYPES.map((t) => ({ value: t, label: t.replace('_', ' ') }))}
+                placeholder="Select type"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Priority</label>
-              <select
+              <AddableSelect
                 value={form.priority}
-                onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as MeetingPriority }))}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-              >
-                {MEETING_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+                onChange={(v) => setForm((f) => ({ ...f, priority: v as MeetingPriority }))}
+                options={MEETING_PRIORITIES.map((p) => ({ value: p, label: p }))}
+                placeholder="Select priority"
+              />
             </div>
           </div>
           <div>
@@ -185,16 +184,15 @@ function AddTaskModal({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Organizer</label>
-            <select
+            <AddableSelect
               value={form.organizerId}
-              onChange={(e) => setForm((f) => ({ ...f, organizerId: e.target.value }))}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">Unassigned</option>
-              {users.map((u: any) => (
-                <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
-              ))}
-            </select>
+              onChange={(v) => setForm((f) => ({ ...f, organizerId: v }))}
+              options={[
+                { value: '', label: 'Unassigned' },
+                ...users.map((u: any) => ({ value: String(u.id), label: `${u.firstName} ${u.lastName}` })),
+              ]}
+              placeholder="Unassigned"
+            />
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-5">
@@ -354,16 +352,17 @@ export default function TodoListPage() {
               className="pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm w-56"
             />
           </div>
-          <div>
+          <div className="w-full sm:w-48">
             <label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
-            <select
+            <AddableSelect
               value={meetingTypeFilter}
-              onChange={(e) => { setMeetingTypeFilter(e.target.value); setPage(0); }}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">All types</option>
-              {MEETING_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-            </select>
+              onChange={(v) => { setMeetingTypeFilter(v); setPage(0); }}
+              options={[
+                { value: '', label: 'All types' },
+                ...MEETING_TYPES.map((t) => ({ value: t, label: t.replace('_', ' ') })),
+              ]}
+              placeholder="All types"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">From</label>
@@ -477,13 +476,14 @@ export default function TodoListPage() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <span>Rows per page</span>
-              <select
-                value={size}
-                onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-              >
-                {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <div className="w-28">
+                <AddableSelect
+                  value={String(size)}
+                  onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                  options={[10, 20, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
+                  placeholder="Rows"
+                />
+              </div>
             </div>
             <div className="flex items-center gap-1">
               <button

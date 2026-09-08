@@ -6,6 +6,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import AddableSelect from '@/components/AddableSelect';
 import { EVENT_TYPES, validateEventInput } from '@/lib/eventValidation';
 
 export const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -136,10 +137,12 @@ export default function EventDrawer({ isOpen, onClose, leadId, event }: EventDra
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Event Type *</label>
-                        <select required value={form.eventType} onChange={(e) => setForm((f) => ({ ...f, eventType: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                          <option value="">Select</option>
-                          {EVENT_TYPES.map((t) => <option key={t} value={t}>{EVENT_TYPE_LABELS[t]}</option>)}
-                        </select>
+                        <AddableSelect
+                          value={form.eventType}
+                          onChange={(v) => setForm((f) => ({ ...f, eventType: v }))}
+                          options={EVENT_TYPES.map((t) => ({ value: t, label: EVENT_TYPE_LABELS[t] }))}
+                          placeholder="Select"
+                        />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Date &amp; Time *</label>
@@ -154,11 +157,16 @@ export default function EventDrawer({ isOpen, onClose, leadId, event }: EventDra
                       {isEditing && (
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
-                          <select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                            <option value="SCHEDULED">Scheduled</option>
-                            <option value="COMPLETED">Completed</option>
-                            <option value="CANCELLED">Cancelled</option>
-                          </select>
+                          <AddableSelect
+                            value={form.status}
+                            onChange={(v) => setForm((f) => ({ ...f, status: v }))}
+                            options={[
+                              { value: 'SCHEDULED', label: 'Scheduled' },
+                              { value: 'COMPLETED', label: 'Completed' },
+                              { value: 'CANCELLED', label: 'Cancelled' },
+                            ]}
+                            placeholder="Select Status"
+                          />
                         </div>
                       )}
                     </div>

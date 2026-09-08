@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import AddableSelect from '@/components/AddableSelect';
 
 interface LeaveType { id: number; name: string; code: string; isPaid: boolean; annualQuota: string | null; isActive: boolean }
 interface Balance { leaveTypeId: number; name: string; code: string; isPaid: boolean; quota: number | null; usedDays: number; remaining: number | null }
@@ -105,10 +106,12 @@ export default function MyLeavePage() {
           <h2 className="text-base font-semibold text-slate-800">Apply for Leave</h2>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Leave Type</label>
-            <select value={form.leaveTypeId} onChange={(e) => setForm((f) => ({ ...f, leaveTypeId: e.target.value }))} className={inputCls}>
-              <option value="">Select type</option>
-              {leaveTypes.filter((t) => t.isActive).map((t) => <option key={t.id} value={t.id}>{t.name}{!t.isPaid ? ' (unpaid)' : ''}</option>)}
-            </select>
+            <AddableSelect
+              value={form.leaveTypeId}
+              onChange={(v) => setForm((f) => ({ ...f, leaveTypeId: v }))}
+              options={leaveTypes.filter((t) => t.isActive).map((t) => ({ value: String(t.id), label: `${t.name}${!t.isPaid ? ' (unpaid)' : ''}` }))}
+              placeholder="Select type"
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="block text-sm font-medium text-slate-700 mb-1">From</label><input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} className={inputCls} /></div>

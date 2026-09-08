@@ -11,6 +11,7 @@ import { computeReportTotals } from '@/lib/reportTotals';
 import { usePermissions } from '@/hooks/usePermissions';
 import ReportTotalsFooter from '@/components/reports/ReportTotalsFooter';
 import LedgerDetailModal, { LedgerDetailTarget } from '@/components/reports/LedgerDetailModal';
+import AddableSelect from '@/components/AddableSelect';
 
 interface ReportColumn { key: string; label: string; align?: 'left' | 'right'; type?: 'currency' | 'number' | 'text' }
 interface ReportResult { title: string; columns: ReportColumn[]; rows: Record<string, any>[] }
@@ -158,10 +159,14 @@ export default function VerticalLedgerPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-wrap gap-3 items-center print:hidden">
-        <select value={verticalId} onChange={(e) => setVerticalId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-          <option value="">All Verticals</option>
-          {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-        </select>
+        <div className="w-56">
+          <AddableSelect
+            value={verticalId}
+            onChange={setVerticalId}
+            options={[{ value: '', label: 'All Verticals' }, ...verticals.map((v) => ({ value: String(v.id), label: v.name }))]}
+            placeholder="All Verticals"
+          />
+        </div>
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium text-slate-600">From</label>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800" />

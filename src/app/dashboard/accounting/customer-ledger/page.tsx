@@ -7,6 +7,7 @@ import { ArrowDownTrayIcon, BookOpenIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 interface Lead { id: number; companyName: string }
 
@@ -96,10 +97,14 @@ export default function CustomerLedgerPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-wrap gap-3 items-center">
-        <select value={leadId} onChange={(e) => setLeadId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-          <option value="">Select a customer</option>
-          {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-        </select>
+        <div className="w-64">
+          <AddableSelect
+            value={leadId}
+            onChange={(v) => setLeadId(v)}
+            options={leads.map((l) => ({ value: String(l.id), label: l.companyName }))}
+            placeholder="Select a customer"
+          />
+        </div>
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium text-slate-600">From</label>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800" />

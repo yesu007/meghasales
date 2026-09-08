@@ -16,6 +16,7 @@ import {
 } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 const ENTITY_TYPES = [
   { value: 'LEAD', label: 'Lead' },
@@ -195,18 +196,30 @@ export default function AuditLogPage() {
               </button>
             )}
           </div>
-          <select value={entityTypeFilter} onChange={(e) => { setEntityTypeFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-            <option value="">All Entities</option>
-            {ENTITY_TYPES.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
-          </select>
-          <select value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-            <option value="">All Actions</option>
-            {ACTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-          </select>
-          <select value={userFilter} onChange={(e) => { setUserFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-            <option value="">All Users</option>
-            {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-          </select>
+          <div className="w-52">
+            <AddableSelect
+              value={entityTypeFilter}
+              onChange={(v) => { setEntityTypeFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Entities' }, ...ENTITY_TYPES]}
+              placeholder="All Entities"
+            />
+          </div>
+          <div className="w-52">
+            <AddableSelect
+              value={actionFilter}
+              onChange={(v) => { setActionFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Actions' }, ...ACTIONS.map(a => ({ value: a.value, label: a.label }))]}
+              placeholder="All Actions"
+            />
+          </div>
+          <div className="w-52">
+            <AddableSelect
+              value={userFilter}
+              onChange={(v) => { setUserFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Users' }, ...users.map(u => ({ value: String(u.id), label: u.fullName }))]}
+              placeholder="All Users"
+            />
+          </div>
         </div>
         <div className="flex flex-col md:flex-row gap-3 items-center">
           <div className="flex items-center gap-2">
@@ -303,13 +316,14 @@ export default function AuditLogPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(size)}
+                    onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                    options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
