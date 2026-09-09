@@ -25,10 +25,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         lastLoginAt: true,
         createdAt: true,
         roles: { include: { role: { select: { id: true, name: true } } } },
+        // Live off the Employee row — see GET /api/users for why this isn't a copy.
+        employee: { select: { employeeCode: true } },
       },
     });
     if (!user) return NextResponse.json({ message: 'User not found' }, { status: 404 });
-    return NextResponse.json({ ...user, roles: user.roles.map((ur) => ur.role) });
+    return NextResponse.json({ ...user, roles: user.roles.map((ur) => ur.role), employeeCode: user.employee?.employeeCode ?? null });
   } catch (error) {
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }

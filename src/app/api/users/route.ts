@@ -64,6 +64,10 @@ export async function GET(request: NextRequest) {
           lastLoginAt: true,
           createdAt: true,
           roles: { include: { role: { select: { id: true, name: true } } } },
+          // Read live off the Employee row rather than a copy on User, so an
+          // Employee ID change made in Payroll → Employees shows up here
+          // immediately with nothing to keep in sync.
+          employee: { select: { employeeCode: true } },
         },
       }),
       prisma.user.count({ where }),
@@ -80,6 +84,7 @@ export async function GET(request: NextRequest) {
       lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,
       roles: user.roles.map((ur) => ur.role),
+      employeeCode: user.employee?.employeeCode ?? null,
     }));
 
     return NextResponse.json({

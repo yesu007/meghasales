@@ -85,11 +85,41 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       data.verticalId = verticalId;
     }
 
+    // The Employee ID (employeeCode) is normally auto-assigned at onboarding,
+    // but HR sometimes needs to correct it (e.g. migrating a legacy code).
+    // employeeCode is the single source of truth read live through the
+    // Employee<->User relation everywhere it's displayed (Users list, my
+    // payslips, reports, ...) — there's no duplicate copy on User to fall
+    // out of sync, so updating it here is all that's needed for it to be
+    // reflected everywhere else.
+    if (body.employeeCode !== undefined) {
+      const employeeCode = String(body.employeeCode).trim();
+      if (!employeeCode) return NextResponse.json({ message: 'Employee ID cannot be empty' }, { status: 400 });
+      if (employeeCode !== existing.employeeCode) {
+        const conflict = await prisma.employee.findFirst({ where: { employeeCode, id: { not: id } } });
+        if (conflict) return NextResponse.json({ message: 'Another employee already uses this Employee ID' }, { status: 409 });
+      }
+      data.employeeCode = employeeCode;
+    }
+
     const employee = await prisma.employee.update({ where: { id }, data });
-    await logAudit({ action: 'UPDATE', entityType: 'EMPLOYEE', entityId: employee.id, oldValue: existing, newValue: employee, description: `Employee ${employee.employeeCode} profile updated`, request });
+    await logAudit({
+      action: 'UPDATE',
+      entityType: 'EMPLOYEE',
+      entityId: employee.id,
+      oldValue: existing,
+      newValue: employee,
+      description: existing.employeeCode !== employee.employeeCode
+        ? `Employee ID changed from ${existing.employeeCode} to ${employee.employeeCode}`
+        : `Employee ${employee.employeeCode} profile updated`,
+      request,
+    });
 
     return NextResponse.json(employee);
   } catch (error: any) {
+    if (error.code === 'P2002') {
+      return NextResponse.json({ message: 'Another employee already uses this Employee ID' }, { status: 409 });
+    }
     console.error('PATCH /api/payroll/employees/[id] error:', error);
     return NextResponse.json({ message: error.message || 'Failed to update employee' }, { status: 400 });
   }

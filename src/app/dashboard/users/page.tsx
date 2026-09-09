@@ -42,6 +42,7 @@ interface User {
   lastLoginAt: string | null;
   createdAt: string;
   roles: RoleOption[];
+  employeeCode: string | null;
 }
 
 async function fetchUsers(params: Record<string, string>) {
@@ -327,7 +328,10 @@ export default function UsersPage() {
                           <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-sm font-bold">
                             {user.firstName[0]}{user.lastName[0]}
                           </div>
-                          <span className="font-medium text-slate-800">{user.fullName}</span>
+                          <div>
+                            <span className="font-medium text-slate-800">{user.fullName}</span>
+                            {user.employeeCode && <div className="text-xs text-slate-400">{user.employeeCode}</div>}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{user.email}</td>

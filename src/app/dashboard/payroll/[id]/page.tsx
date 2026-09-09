@@ -104,6 +104,7 @@ export default function EmployeeDetailPage() {
   useEffect(() => {
     if (employee) {
       setForm({
+        employeeCode: employee.employeeCode,
         firstName: employee.firstName, lastName: employee.lastName, email: employee.email,
         department: employee.department || '', designation: employee.designation || '',
         role: employee.role || '', managerId: employee.managerId ? String(employee.managerId) : '',
@@ -219,11 +220,23 @@ export default function EmployeeDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
           <form
-            onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(form); }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!String(form.employeeCode || '').trim()) { toast.error('Employee ID cannot be empty'); return; }
+              saveMutation.mutate(form);
+            }}
             className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-4"
           >
             <h2 className="text-base font-semibold text-slate-800">HR &amp; Statutory Profile</h2>
             <div className="grid grid-cols-2 gap-4">
+              <Field label="Employee ID">
+                <input
+                  value={form.employeeCode || ''}
+                  onChange={(e) => setForm((f) => ({ ...f, employeeCode: e.target.value }))}
+                  className={inputCls}
+                  title="Changing this updates the Employee ID everywhere it's shown, including for this person's linked login — it's the same underlying record, not a copy."
+                />
+              </Field>
               <Field label="First Name"><input value={form.firstName || ''} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} className={inputCls} /></Field>
               <Field label="Last Name"><input value={form.lastName || ''} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} className={inputCls} /></Field>
               <Field label="Email"><input type="email" value={form.email || ''} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputCls} /></Field>
