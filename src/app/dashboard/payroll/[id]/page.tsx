@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftIcon, PencilIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import AddableSelect from '@/components/AddableSelect';
 
 interface StructureOption {
   id: number;
@@ -22,6 +23,18 @@ interface Assignment {
   structure: { id: number; name: string };
 }
 
+interface ManagerOption {
+  id: number;
+  firstName: string;
+  lastName: string;
+  employeeCode: string;
+}
+
+interface VerticalOption {
+  id: number;
+  name: string;
+}
+
 interface EmployeeDetail {
   id: number;
   employeeCode: string;
@@ -30,6 +43,9 @@ interface EmployeeDetail {
   email: string;
   department: string | null;
   designation: string | null;
+  role: string | null;
+  managerId: number | null;
+  verticalId: number | null;
   dateOfJoining: string | null;
   dateOfLeaving: string | null;
   employmentType: string;
@@ -61,6 +77,19 @@ async function fetchStructures(): Promise<StructureOption[]> {
   return res.json();
 }
 
+async function fetchManagerOptions(): Promise<ManagerOption[]> {
+  const res = await fetch('/api/payroll/employees?size=200&status=ACTIVE');
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.content;
+}
+
+async function fetchVerticals(): Promise<VerticalOption[]> {
+  const res = await fetch('/api/verticals');
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export default function EmployeeDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -68,6 +97,8 @@ export default function EmployeeDetailPage() {
 
   const { data: employee, isLoading } = useQuery({ queryKey: ['payroll-employee', id], queryFn: () => fetchEmployee(id) });
   const { data: structures = [] } = useQuery({ queryKey: ['payroll-structures'], queryFn: fetchStructures });
+  const { data: managerOptions = [] } = useQuery({ queryKey: ['payroll-employees-manager-options'], queryFn: fetchManagerOptions });
+  const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticals });
 
   const [form, setForm] = useState<Record<string, any>>({});
   useEffect(() => {
@@ -75,6 +106,8 @@ export default function EmployeeDetailPage() {
       setForm({
         firstName: employee.firstName, lastName: employee.lastName, email: employee.email,
         department: employee.department || '', designation: employee.designation || '',
+        role: employee.role || '', managerId: employee.managerId ? String(employee.managerId) : '',
+        verticalId: employee.verticalId ? String(employee.verticalId) : '',
         employmentType: employee.employmentType, panNumber: employee.panNumber || '',
         uanNumber: employee.uanNumber || '', esicNumber: employee.esicNumber || '',
         bankAccountNumber: employee.bankAccountNumber || '', bankIfsc: employee.bankIfsc || '',
@@ -196,29 +229,61 @@ export default function EmployeeDetailPage() {
               <Field label="Email"><input type="email" value={form.email || ''} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputCls} /></Field>
               <Field label="Department"><input value={form.department || ''} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} className={inputCls} /></Field>
               <Field label="Designation"><input value={form.designation || ''} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} className={inputCls} /></Field>
+              <Field label="Role"><input value={form.role || ''} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className={inputCls} /></Field>
+              <Field label="Vertical">
+                <AddableSelect
+                  value={form.verticalId || ''}
+                  onChange={(v) => setForm((f) => ({ ...f, verticalId: v }))}
+                  options={verticalOptions.map((v) => ({ value: String(v.id), label: v.name }))}
+                  placeholder="—"
+                />
+              </Field>
+              <Field label="Manager">
+                <AddableSelect
+                  value={form.managerId || ''}
+                  onChange={(v) => setForm((f) => ({ ...f, managerId: v }))}
+                  options={managerOptions.filter((m) => m.id !== employee.id).map((m) => ({ value: String(m.id), label: `${m.firstName} ${m.lastName} (${m.employeeCode})` }))}
+                  placeholder="—"
+                />
+              </Field>
               <Field label="Employment Type">
-                <select value={form.employmentType || 'FULL_TIME'} onChange={(e) => setForm((f) => ({ ...f, employmentType: e.target.value }))} className={inputCls}>
-                  <option value="FULL_TIME">Full-time</option>
-                  <option value="PART_TIME">Part-time</option>
-                  <option value="CONTRACT">Contract</option>
-                  <option value="INTERN">Intern</option>
-                </select>
+                <AddableSelect
+                  value={form.employmentType || 'FULL_TIME'}
+                  onChange={(v) => setForm((f) => ({ ...f, employmentType: v }))}
+                  options={[
+                    { value: 'FULL_TIME', label: 'Full-time' },
+                    { value: 'PART_TIME', label: 'Part-time' },
+                    { value: 'CONTRACT', label: 'Contract' },
+                    { value: 'INTERN', label: 'Intern' },
+                  ]}
+                  placeholder="Select employment type"
+                />
               </Field>
               <Field label="Status">
-                <select value={form.status || 'ACTIVE'} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className={inputCls}>
-                  <option value="ACTIVE">Active</option>
-                  <option value="ON_NOTICE">On Notice</option>
-                  <option value="EXITED">Exited</option>
-                </select>
+                <AddableSelect
+                  value={form.status || 'ACTIVE'}
+                  onChange={(v) => setForm((f) => ({ ...f, status: v }))}
+                  options={[
+                    { value: 'ACTIVE', label: 'Active' },
+                    { value: 'ON_NOTICE', label: 'On Notice' },
+                    { value: 'EXITED', label: 'Exited' },
+                  ]}
+                  placeholder="Select status"
+                />
               </Field>
               <Field label="PAN"><input value={form.panNumber || ''} onChange={(e) => setForm((f) => ({ ...f, panNumber: e.target.value.toUpperCase() }))} className={inputCls} /></Field>
               <Field label="UAN (PF)"><input value={form.uanNumber || ''} onChange={(e) => setForm((f) => ({ ...f, uanNumber: e.target.value }))} className={inputCls} /></Field>
               <Field label="ESIC Number"><input value={form.esicNumber || ''} onChange={(e) => setForm((f) => ({ ...f, esicNumber: e.target.value }))} className={inputCls} /></Field>
               <Field label="Tax Regime">
-                <select value={form.taxRegime || 'NEW'} onChange={(e) => setForm((f) => ({ ...f, taxRegime: e.target.value }))} className={inputCls}>
-                  <option value="NEW">New Regime</option>
-                  <option value="OLD">Old Regime</option>
-                </select>
+                <AddableSelect
+                  value={form.taxRegime || 'NEW'}
+                  onChange={(v) => setForm((f) => ({ ...f, taxRegime: v }))}
+                  options={[
+                    { value: 'NEW', label: 'New Regime' },
+                    { value: 'OLD', label: 'Old Regime' },
+                  ]}
+                  placeholder="Select tax regime"
+                />
               </Field>
             </div>
             <div className="flex flex-wrap gap-5 pt-1">
@@ -311,10 +376,12 @@ export default function EmployeeDetailPage() {
             className="space-y-3"
           >
             <Field label="Structure">
-              <select value={assignForm.structureId} onChange={(e) => setAssignForm((f) => ({ ...f, structureId: e.target.value }))} className={inputCls}>
-                <option value="">Select structure</option>
-                {structures.filter((s) => s.isActive).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              <AddableSelect
+                value={assignForm.structureId}
+                onChange={(v) => setAssignForm((f) => ({ ...f, structureId: v }))}
+                options={structures.filter((s) => s.isActive).map((s) => ({ value: String(s.id), label: s.name }))}
+                placeholder="Select structure"
+              />
             </Field>
             {editingAssignment ? (
               <Field label="Annual CTC (₹)">

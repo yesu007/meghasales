@@ -7,6 +7,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, XMarkIcon, PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { generatePayslipPDF } from '@/lib/generatePayslipPDF';
+import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 interface LineItem { id: number; label: string; type: string; amount: string; isAdjustment: boolean }
 interface PayslipRow {
@@ -145,6 +147,8 @@ export default function PayrollRunDetailPage() {
 }
 
 function PayslipRowView({ payslip, isDraft, periodLabel, expanded, onToggle, onSaved }: { payslip: PayslipRow; isDraft: boolean; periodLabel: string; expanded: boolean; onToggle: () => void; onSaved: () => void }) {
+  const { has } = usePermissions();
+  const canExport = has('export_payroll');
   const [lopDays, setLopDays] = useState(payslip.lopDays);
   const [adjustments, setAdjustments] = useState<Array<{ label: string; type: string; amount: string }>>(
     payslip.lineItems.filter((li) => li.isAdjustment).map((li) => ({ label: li.label, type: li.type, amount: li.amount }))
@@ -177,30 +181,32 @@ function PayslipRowView({ payslip, isDraft, periodLabel, expanded, onToggle, onS
         <td className="px-4 py-3 text-right font-medium text-slate-800">₹{Number(payslip.netPay).toLocaleString('en-IN')}</td>
         <td className="px-4 py-3">
           <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                generatePayslipPDF({
-                  employeeName: `${payslip.employee.firstName} ${payslip.employee.lastName}`,
-                  employeeCode: payslip.employee.employeeCode,
-                  department: payslip.employee.department,
-                  designation: payslip.employee.designation,
-                  payPeriodLabel: periodLabel,
-                  totalDays: payslip.totalDays,
-                  payableDays: Number(payslip.payableDays),
-                  lopDays: Number(payslip.lopDays),
-                  lineItems: payslip.lineItems.map((li) => ({ label: li.label, type: li.type as 'EARNING' | 'DEDUCTION', amount: Number(li.amount) })),
-                  grossEarnings: Number(payslip.grossEarnings),
-                  totalDeductions: Number(payslip.totalDeductions),
-                  netPay: Number(payslip.netPay),
-                  fileName: `Payslip-${payslip.employee.employeeCode}-${periodLabel.replace(' ', '-')}.pdf`,
-                });
-              }}
-              className="p-1 text-slate-400 hover:text-amber-600"
-              title="Download PDF"
-            >
-              <ArrowDownTrayIcon className="h-4 w-4" />
-            </button>
+            {canExport && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  generatePayslipPDF({
+                    employeeName: `${payslip.employee.firstName} ${payslip.employee.lastName}`,
+                    employeeCode: payslip.employee.employeeCode,
+                    department: payslip.employee.department,
+                    designation: payslip.employee.designation,
+                    payPeriodLabel: periodLabel,
+                    totalDays: payslip.totalDays,
+                    payableDays: Number(payslip.payableDays),
+                    lopDays: Number(payslip.lopDays),
+                    lineItems: payslip.lineItems.map((li) => ({ label: li.label, type: li.type as 'EARNING' | 'DEDUCTION', amount: Number(li.amount) })),
+                    grossEarnings: Number(payslip.grossEarnings),
+                    totalDeductions: Number(payslip.totalDeductions),
+                    netPay: Number(payslip.netPay),
+                    fileName: `Payslip-${payslip.employee.employeeCode}-${periodLabel.replace(' ', '-')}.pdf`,
+                  });
+                }}
+                className="p-1 text-slate-400 hover:text-amber-600"
+                title="Download PDF"
+              >
+                <ArrowDownTrayIcon className="h-4 w-4" />
+              </button>
+            )}
             {expanded ? <ChevronUpIcon className="h-4 w-4 text-slate-400" /> : <ChevronDownIcon className="h-4 w-4 text-slate-400" />}
           </div>
         </td>
@@ -233,10 +239,17 @@ function PayslipRowView({ payslip, isDraft, periodLabel, expanded, onToggle, onS
                     {adjustments.map((a, i) => (
                       <div key={i} className="flex items-center gap-2">
                         <input placeholder="Label" value={a.label} onChange={(e) => setAdjustments((arr) => arr.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} className="flex-1 px-2 py-1 border border-slate-300 rounded text-sm" />
-                        <select value={a.type} onChange={(e) => setAdjustments((arr) => arr.map((x, j) => j === i ? { ...x, type: e.target.value } : x))} className="px-2 py-1 border border-slate-300 rounded text-sm">
-                          <option value="EARNING">+ Earning</option>
-                          <option value="DEDUCTION">- Deduction</option>
-                        </select>
+                        <div className="w-40">
+                          <AddableSelect
+                            value={a.type}
+                            onChange={(v) => setAdjustments((arr) => arr.map((x, j) => j === i ? { ...x, type: v } : x))}
+                            options={[
+                              { value: 'EARNING', label: '+ Earning' },
+                              { value: 'DEDUCTION', label: '- Deduction' },
+                            ]}
+                            placeholder="Select type"
+                          />
+                        </div>
                         <input type="number" placeholder="Amount" value={a.amount} onChange={(e) => setAdjustments((arr) => arr.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} className="w-24 px-2 py-1 border border-slate-300 rounded text-sm" />
                         <button onClick={() => setAdjustments((arr) => arr.filter((_, j) => j !== i))} className="p-1 text-slate-400 hover:text-red-600"><XMarkIcon className="h-4 w-4" /></button>
                       </div>

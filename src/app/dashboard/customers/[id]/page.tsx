@@ -6,10 +6,11 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
-import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, DocumentTextIcon, BanknotesIcon, PhoneIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, DocumentTextIcon, BanknotesIcon, PhoneIcon, Squares2X2Icon, RectangleStackIcon, TagIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
-import { LEAD_STATUSES, leadStatusColor } from '@/lib/leadStatus';
+import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
+import { formatBusinessVerticals } from '@/lib/businessVerticals';
 import EventsTab from '@/components/leads/EventsTab';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
 import FollowUpsTab from '@/components/leads/FollowUpsTab';
@@ -17,6 +18,10 @@ import CustomerKycCard from '@/components/customers/CustomerKycCard';
 import CustomerContractsCard from '@/components/customers/CustomerContractsCard';
 import LeadDocumentsTab from '@/components/leads/LeadDocumentsTab';
 import InvoiceListPage from '@/components/accounting/InvoiceListPage';
+import ProjectsTab from '@/components/leads/ProjectsTab';
+import ProductsTab from '@/components/leads/ProductsTab';
+import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
+import AddableSelect from '@/components/AddableSelect';
 
 // A Customer is a Lead with status = CONFIRMED (see the module note atop
 // src/app/dashboard/customers/page.tsx) — there is no separate Customer
@@ -42,19 +47,30 @@ import InvoiceListPage from '@/components/accounting/InvoiceListPage';
 interface Customer {
   id: number;
   companyName: string;
+  projectName: string | null;
   contactPerson: string;
   email: string | null;
+  // Dedicated recipient for payment reminders — see schema.prisma's
+  // Lead.financeEmail comment.
+  financeEmail: string | null;
   mobile: string | null;
   status: string;
   leadSource: string;
   country: string | null;
   state: string | null;
   city: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
   jewelleryBusinessType: string | null;
   numberOfBranches: number | null;
   existingErp: string | null;
+  businessVerticals: string | null;
   notes: string | null;
   createdAt: string;
+  // Conversion moment (Lead→Customer) — what "Customer Since" below
+  // actually displays. See schema.prisma's Lead.confirmedAt comment. Falls
+  // back to createdAt for any pre-existing row where it's somehow unset.
+  confirmedAt: string | null;
   assignedBa: { firstName: string; lastName: string } | null;
 }
 
@@ -72,7 +88,7 @@ function classNames(...classes: (string | boolean)[]) {
 // query param, so a refresh (or a shared link) lands back on the same tab —
 // the Lead detail page doesn't need this (it's never deep-linked to a
 // specific tab), but the Customer detail page is expected to preserve it.
-const TAB_KEYS = ['overview', 'events', 'documents', 'follow-up', 'activity', 'invoices', 'paid-invoices'] as const;
+const TAB_KEYS = ['overview', 'projects', 'products', 'events', 'documents', 'follow-up', 'activity', 'invoices', 'paid-invoices'] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 export default function CustomerDetailPage() {
@@ -80,6 +96,7 @@ export default function CustomerDetailPage() {
   const id = params.id as string;
   const { data: session } = useSession();
   const queryClient = useQueryClient();
+  const { options: leadStatusOptions } = useLeadStatusOptions();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -120,6 +137,7 @@ export default function CustomerDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customer', id] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      invalidateLeadCustomerData(queryClient);
       toast.success('Status updated');
     },
     onError: () => toast.error('Failed to update status'),
@@ -159,17 +177,19 @@ export default function CustomerDetailPage() {
           </Link>
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">{customer.companyName}</h1>
+            {customer.projectName && <p className="text-sm text-slate-500 mt-0.5 truncate">Project: {customer.projectName}</p>}
             <p className="text-slate-500 mt-1 text-sm sm:text-base truncate">{customer.contactPerson}{customer.email ? ` — ${customer.email}` : ''}</p>
           </div>
         </div>
-        <select
-          value={customer.status}
-          disabled={statusMutation.isPending}
-          onChange={(e) => statusMutation.mutate(e.target.value)}
-          className={`self-start sm:self-auto px-3 py-1.5 min-h-[44px] rounded-lg text-sm font-medium border-0 cursor-pointer disabled:opacity-60 ${leadStatusColor(customer.status)}`}
-        >
-          {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+        <div className="self-start sm:self-auto sm:w-56">
+          <AddableSelect
+            value={customer.status}
+            disabled={statusMutation.isPending}
+            onChange={(v) => statusMutation.mutate(v)}
+            options={leadStatusOptions.map((s) => ({ value: s.code, label: s.label }))}
+            placeholder="Select Status"
+          />
+        </div>
       </div>
 
       {/* Vertical tabs: same Tab/Tab.Panel elements, styling, and behavior as
@@ -188,10 +208,22 @@ export default function CustomerDetailPage() {
         <div className="flex flex-col sm:flex-row gap-4">
           <Tab.List className="flex flex-row sm:flex-col overflow-x-auto sm:overflow-x-visible border-b sm:border-b-0 sm:border-r border-slate-200 sm:w-48 sm:flex-shrink-0">
             <Tab className={({ selected }) => classNames(
-              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px text-left focus:outline-none',
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
               selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             )}>
-              Overview
+              <Squares2X2Icon className="h-4 w-4" /> Overview
+            </Tab>
+            <Tab className={({ selected }) => classNames(
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+              selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}>
+              <RectangleStackIcon className="h-4 w-4" /> Projects
+            </Tab>
+            <Tab className={({ selected }) => classNames(
+              'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 sm:border-b-0 sm:border-r-2 -mb-px sm:mb-0 sm:-mr-px flex items-center gap-1.5 focus:outline-none',
+              selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}>
+              <TagIcon className="h-4 w-4" /> Products
             </Tab>
             <Tab
               disabled={!isConfirmed}
@@ -242,15 +274,23 @@ export default function CustomerDetailPage() {
             <Tab.Panel>
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Mobile</p><p className="text-sm text-slate-800 mt-1">{customer.mobile || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Finance Email ID</p><p className="text-sm text-slate-800 mt-1">{customer.financeEmail || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Lead Source</p><p className="text-sm text-slate-800 mt-1 capitalize">{(customer.leadSource || '').replace(/_/g, ' ').toLowerCase() || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Assigned BA</p><p className="text-sm text-slate-800 mt-1">{customer.assignedBa ? `${customer.assignedBa.firstName} ${customer.assignedBa.lastName}` : 'Unassigned'}</p></div>
-                <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[customer.city, customer.state, customer.country].filter(Boolean).join(', ') || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Location</p><p className="text-sm text-slate-800 mt-1">{[customer.addressLine1, customer.addressLine2, customer.city, customer.state, customer.country].filter(Boolean).join(', ') || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-500 uppercase">Business Type</p><p className="text-sm text-slate-800 mt-1">{customer.jewelleryBusinessType || '—'}</p></div>
-                <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Since</p><p className="text-sm text-slate-800 mt-1">{dayjs(customer.createdAt).format('DD MMM YYYY')}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Business Vertical</p><p className="text-sm text-slate-800 mt-1">{formatBusinessVerticals(customer.businessVerticals) || '—'}</p></div>
+                <div><p className="text-xs font-medium text-slate-500 uppercase">Customer Since</p><p className="text-sm text-slate-800 mt-1">{dayjs(customer.confirmedAt || customer.createdAt).format('DD MMM YYYY')}</p></div>
                 {customer.notes && (
                   <div className="sm:col-span-2"><p className="text-xs font-medium text-slate-500 uppercase">Notes</p><p className="text-sm text-slate-800 mt-1 whitespace-pre-wrap">{customer.notes}</p></div>
                 )}
               </div>
+            </Tab.Panel>
+            <Tab.Panel>
+              <ProjectsTab leadId={customer.id} />
+            </Tab.Panel>
+            <Tab.Panel>
+              <ProductsTab leadId={customer.id} />
             </Tab.Panel>
             <Tab.Panel>
               {isConfirmed && canView ? (

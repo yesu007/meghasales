@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dayjs from 'dayjs';
+import { getServerSession } from 'next-auth/next';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
+import { authOptions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { invoiceFieldsFromQuotation, nextInvoiceNumber } from '@/lib/invoiceFromQuotation';
 import { requirePermission } from '@/lib/rbac';
+import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
+import { materializeQuotationMilestones } from '@/lib/quotationMilestoneInvoicing';
+
+// Prisma Decimal/Date instances aren't plain JSON values; round-tripping
+// through JSON collapses them to the same strings Prisma would render
+// anyway — same convention as src/lib/audit.ts's toJsonSafe.
+function toJsonSafe(value: unknown) {
+  return JSON.parse(JSON.stringify(value));
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +68,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       include: {
         lead: { select: { companyName: true, contactPerson: true, email: true, mobile: true } },
         legalEntity: { select: { companyId: true } },
+        project: { select: { projectName: true } },
+        paymentMilestones: {
+          orderBy: { sequence: 'asc' },
+          include: { invoice: { select: { id: true, invoiceNumber: true, status: true, dueDate: true, totalAmount: true } } },
+        },
       },
     });
     if (!quotation) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
@@ -77,13 +93,79 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.quotation.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Quotation not found' }, { status: 404 });
 
+    // A quotation is for a Project or a Product, never both — same
+    // mutual-exclusion convention as Project/Product's own
+    // customerId/leadId check (see /api/projects, /api/products). Only
+    // trips when this request's own body carries both as truthy — a partial
+    // PUT that omits one entirely (e.g. updateStatus's {status}-only body)
+    // leaves it undefined here and is unaffected.
+    if (body.projectId && body.productId) {
+      return NextResponse.json({ message: 'Select either a Project or a Product, not both' }, { status: 400 });
+    }
+    // A picked Project must actually belong to this quotation's lead (leadId
+    // can't change from here — see the form's own locked client section) —
+    // same check as /api/demos and /api/implementations.
+    if (body.projectId) {
+      const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
+      if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+    // Same check for a picked Product (Product Master's own Budget
+    // Estimation flow — see ProductBudgetPanel).
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: parseInt(body.productId), OR: [{ customerId: existing.leadId }, { leadId: existing.leadId }] } });
+      if (!product) return NextResponse.json({ message: 'Selected product does not belong to this lead' }, { status: 400 });
+    }
+
+    // Overriding the system-calculated total is a distinct, more sensitive
+    // action than ordinary quoting — gated on its own permission rather than
+    // manage_quotations so an authoring role (e.g. SALES) can edit a
+    // quotation without also being able to unilaterally override pricing.
+    // Re-checked on every save that carries an override (not just the one
+    // that first sets it) since the calculator resubmits it unchanged
+    // whenever an already-overridden quotation is edited.
+    if (body.totalAmountOverridden === true) {
+      const overrideDenied = await requirePermission('authorize_quotation_override');
+      if (overrideDenied) return overrideDenied;
+    }
+
+    // Defensive re-validation of the milestone plan the calculator already
+    // validates client-side — pricingSnapshot is accepted verbatim by the
+    // generic spread updater below, so a malformed plan must be rejected
+    // here rather than silently reaching materializeQuotationMilestones on
+    // a later approval.
+    if (body.pricingSnapshot?.paymentMilestones !== undefined) {
+      const milestoneError = validateMilestonePlan(body.pricingSnapshot.paymentMilestones as MilestonePlanInput[]);
+      if (milestoneError) return NextResponse.json({ message: milestoneError }, { status: 400 });
+    }
+
+    // A pure status transition (Draft -> Sent -> Approved) isn't a new
+    // "version" of the quotation's commercial content — only edits that
+    // touch anything besides status bump the counter and get an entry in
+    // QuotationRevision, so version history stays a re-quote trail rather
+    // than noise from every status click.
+    const isContentUpdate = Object.keys(body).some((key) => key !== 'status');
+    const session = isContentUpdate ? await getServerSession(authOptions) : null;
+    const revisedById = session?.user ? parseInt((session.user as any).id, 10) : null;
+
     // Status update and any resulting invoice generation must succeed or
     // fail together — otherwise a failure generating the invoice leaves the
     // quotation marked APPROVED while the request reports an error.
     const { quotation, generatedInvoice } = await prisma.$transaction(async (tx) => {
+      if (isContentUpdate) {
+        await tx.quotationRevision.create({
+          data: {
+            quotationId: id,
+            versionNumber: existing.version,
+            snapshot: toJsonSafe(existing),
+            revisedById: Number.isFinite(revisedById) ? revisedById : null,
+          },
+        });
+      }
+
       const quotation = await tx.quotation.update({
         where: { id },
         data: {
+          ...(isContentUpdate && { version: { increment: 1 } }),
           ...(body.status && { status: body.status }),
           ...(body.softwareModules !== undefined && { softwareModules: body.softwareModules }),
           ...(body.businessModule !== undefined && { businessModule: body.businessModule }),
@@ -104,6 +186,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           ...(body.addons !== undefined && { addons: body.addons }),
           ...(body.pricingSnapshot !== undefined && { pricingSnapshot: body.pricingSnapshot }),
           ...(body.notes !== undefined && { notes: body.notes }),
+          ...(body.additionalTerms !== undefined && { additionalTerms: body.additionalTerms }),
           ...(body.validUntil !== undefined && { validUntil: body.validUntil ? new Date(body.validUntil) : null }),
           // Resource-based (Quotation Calculator) fields — see POST above for
           // where these are computed. This PUT stays a generic spread updater
@@ -111,6 +194,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           // freshly server-recomputed values for all of these at once.
           ...(body.costingMode !== undefined && { costingMode: body.costingMode }),
           ...(body.projectName !== undefined && { projectName: body.projectName }),
+          ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
+          ...(body.productId !== undefined && { productId: body.productId ? parseInt(body.productId) : null }),
           ...(body.verticalId !== undefined && { verticalId: body.verticalId ? parseInt(body.verticalId) : null }),
           ...(body.legalEntityId !== undefined && { legalEntityId: body.legalEntityId ? parseInt(body.legalEntityId) : null }),
           ...(body.resourceCostTotal !== undefined && { resourceCostTotal: body.resourceCostTotal }),
@@ -128,8 +213,16 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       let generatedInvoice = null;
       if (body.status === 'APPROVED' && existing.status !== 'APPROVED') {
         const existingInvoice = await tx.invoice.findFirst({ where: { quotationId: id, deletedAt: null } });
-        if (!existingInvoice) {
-          generatedInvoice = await generateInvoiceForQuotation(tx, quotation);
+        const existingMilestones = await tx.quotationPaymentMilestone.count({ where: { quotationId: id } });
+        const plan = (quotation.pricingSnapshot as any)?.paymentMilestones as MilestonePlanInput[] | undefined;
+
+        if (!existingInvoice && !existingMilestones) {
+          if (Array.isArray(plan) && plan.length > 0 && !validateMilestonePlan(plan)) {
+            const { firstInvoice } = await materializeQuotationMilestones(tx, quotation, plan);
+            generatedInvoice = firstInvoice;
+          } else {
+            generatedInvoice = await generateInvoiceForQuotation(tx, quotation);
+          }
         }
       }
 

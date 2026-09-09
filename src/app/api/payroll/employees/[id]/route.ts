@@ -17,6 +17,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       where: { id },
       include: {
         user: { select: { phone: true } }, // only for a linked login's phone — name/email live on Employee itself
+        manager: { select: { id: true, firstName: true, lastName: true, employeeCode: true } },
+        vertical: { select: { id: true, name: true, code: true } },
         salaryAssignments: {
           orderBy: { effectiveFrom: 'desc' },
           include: { structure: { select: { id: true, name: true } } },
@@ -32,7 +34,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 const EDITABLE_FIELDS = [
-  'firstName', 'lastName', 'department', 'designation', 'employmentType', 'panNumber', 'uanNumber', 'esicNumber',
+  'firstName', 'lastName', 'department', 'designation', 'role', 'employmentType', 'panNumber', 'uanNumber', 'esicNumber',
   'bankAccountNumber', 'bankIfsc', 'bankAccountHolder', 'bankName', 'taxRegime',
   'pfApplicable', 'esiApplicable', 'ptApplicable', 'status',
 ] as const;
@@ -64,6 +66,23 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         if (conflict) return NextResponse.json({ message: 'Another employee already uses this email' }, { status: 409 });
       }
       data.email = email;
+    }
+    if (body.managerId !== undefined) {
+      const managerId = body.managerId === '' || body.managerId === null ? null : parseInt(body.managerId);
+      if (managerId !== null) {
+        if (managerId === id) return NextResponse.json({ message: 'An employee cannot be their own manager' }, { status: 400 });
+        const manager = await prisma.employee.findUnique({ where: { id: managerId } });
+        if (!manager) return NextResponse.json({ message: 'Manager not found' }, { status: 400 });
+      }
+      data.managerId = managerId;
+    }
+    if (body.verticalId !== undefined) {
+      const verticalId = body.verticalId === '' || body.verticalId === null ? null : parseInt(body.verticalId);
+      if (verticalId !== null) {
+        const vertical = await prisma.vertical.findUnique({ where: { id: verticalId } });
+        if (!vertical) return NextResponse.json({ message: 'Vertical not found' }, { status: 400 });
+      }
+      data.verticalId = verticalId;
     }
 
     const employee = await prisma.employee.update({ where: { id }, data });

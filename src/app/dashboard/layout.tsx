@@ -22,8 +22,13 @@ import {
   CalendarDaysIcon,
   ReceiptPercentIcon,
   ChartPieIcon,
+  ChartBarSquareIcon,
   BuildingOffice2Icon,
   CubeIcon,
+  MegaphoneIcon,
+  FlagIcon,
+  QueueListIcon,
+  TagIcon,
   IdentificationIcon,
   ChevronDownIcon,
   Bars3Icon,
@@ -34,6 +39,7 @@ import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
 import { isMeetingsModuleEnabled } from '@/lib/meetings/featureFlag';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { hasAnyPermission } from '@/lib/permissions';
+import { REPORTS } from '@/lib/reports/registry';
 
 interface NavChild {
   href: string;
@@ -72,10 +78,25 @@ function getNavItems(): NavSection[] {
       ],
     },
     {
-      title: 'Sales',
+      // Admin-configurable lookup tables other modules draw their picklists
+      // from — grouped here as their own section (instead of scattered
+      // inline among the modules that consume them) since they're setup/
+      // reference data an admin configures once, not day-to-day workflow
+      // items like Leads/Quotations below.
+      title: 'Masters',
       items: [
         { href: '/dashboard/verticals', label: 'Verticals', icon: BuildingOffice2Icon, permission: 'view_verticals' },
+        { href: '/dashboard/projects', label: 'Project', icon: ClipboardDocumentListIcon, permission: 'view_projects' },
+        { href: '/dashboard/products', label: 'Product', icon: TagIcon, permission: 'view_products' },
         { href: '/dashboard/packages', label: 'Packages', icon: CubeIcon, permission: 'view_packages' },
+        { href: '/dashboard/lead-sources', label: 'Lead Sources', icon: MegaphoneIcon, permission: 'view_lead_sources' },
+        { href: '/dashboard/lead-statuses', label: 'Lead Statuses', icon: FlagIcon, permission: 'view_lead_status_options' },
+        { href: '/dashboard/stages', label: 'Stages', icon: QueueListIcon, permission: 'view_stages' },
+      ],
+    },
+    {
+      title: 'Sales',
+      items: [
         { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon, permission: 'view_leads' },
         // Customers are Leads with status=Converted — no separate entity —
         // so this reuses the exact same view_leads/manage_leads permissions
@@ -104,8 +125,12 @@ function getNavItems(): NavSection[] {
           href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon, permission: 'view_accounting',
           children: [
             { href: '/dashboard/accounting', label: 'Dashboard' },
-            { href: '/dashboard/accounting/pending-invoices', label: 'Pending Invoices' },
-            { href: '/dashboard/accounting/paid-invoices', label: 'Paid Invoices' },
+            // "Invoices" module — Pending/Paid Invoices are tabs within this
+            // one page now (src/app/dashboard/accounting/invoices/page.tsx),
+            // not two separate sidebar entries. The old
+            // pending-invoices/paid-invoices routes still work — they
+            // redirect here — for any old bookmarks/links.
+            { href: '/dashboard/accounting/invoices', label: 'Invoices' },
             { href: '/dashboard/accounting/payment-reminders', label: 'Payment Reminders' },
             { href: '/dashboard/accounting/customer-ledger', label: 'Customer Ledger' },
             { href: '/dashboard/accounting/reports', label: 'Reports' },
@@ -125,11 +150,36 @@ function getNavItems(): NavSection[] {
                 { href: '/dashboard/payroll/runs', label: 'Payroll Runs' },
                 { href: '/dashboard/payroll/timesheet', label: 'Time & Attendance' },
                 { href: '/dashboard/payroll/loans', label: 'Loans & Advances' },
+                { href: '/dashboard/payroll/salary-allocation', label: 'Salary Allocation' },
                 { href: '/dashboard/payroll/reports', label: 'Reports' },
                 { href: '/dashboard/payroll/statutory', label: 'Statutory Settings' },
               ],
             }]
           : []),
+      ],
+    },
+    // Cross-module reporting. Deliberately its own section rather than a
+    // child of Finance: reports here span Sales/Finance/People, and the
+    // module-owned report pages (Accounting → Reports, Payroll → Reports,
+    // Meetings → Reports, Audit Report) stay exactly where they are — this
+    // section only ever lists reports built under /dashboard/reports. The
+    // hub page filters its own catalog by permission, so a viewer holding
+    // view_reports but nothing else sees an empty catalog rather than a 403.
+    {
+      title: 'Reports',
+      items: [
+        {
+          href: '/dashboard/reports', label: 'Reports', icon: ChartBarSquareIcon, permission: 'view_reports',
+          // Driven by the same registry as the hub page (src/lib/reports/
+          // registry.ts) rather than a second hardcoded list, so a report
+          // added there shows up here too with no nav edit — "All Reports"
+          // keeps the searchable hub reachable, same convention as
+          // Accounting/Payroll relisting their own root as the first child.
+          children: [
+            { href: '/dashboard/reports', label: 'All Reports' },
+            ...REPORTS.filter((r) => r.status === 'available').map((r) => ({ href: r.href, label: r.name, permission: r.permission })),
+          ],
+        },
       ],
     },
     {
@@ -276,9 +326,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setMobileNavOpen(false)} />
       )}
 
-      {/* Sidebar — static in-flow column at md+ (unchanged from before),
-          a slide-in overlay drawer below md */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out overflow-y-auto md:static md:z-auto md:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      {/* Sidebar — sticky, viewport-height column at md+ (was `md:static`,
+          which let it scroll away with the page on a long main-content
+          page since it just stretched to match the flex row's height);
+          a slide-in overlay drawer below md, unchanged. `overflow-hidden`
+          here (was `overflow-y-auto`) — the <nav> below is the only part
+          that scrolls now, so the logo/header above it never moves. */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out overflow-hidden md:sticky md:top-0 md:h-screen md:self-start md:z-auto md:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-4 border-b border-slate-700 flex items-start justify-between">
           <div>
             <div className="bg-white rounded-lg px-2.5 py-1.5 inline-block">
@@ -292,7 +346,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
 
-        <nav className="flex-1 py-2 overflow-y-auto">
+        {/* min-h-0 overrides the flex item's default min-height:auto — without
+            it, a flex-1 child can't shrink below its own content's height,
+            so it just grows past the aside's bounded height instead of
+            triggering this overflow-y-auto and scrolling internally.
+            no-scrollbar (globals.css) hides the scrollbar track/thumb —
+            wheel/trackpad/touch scrolling still works exactly the same. */}
+        <nav className="flex-1 min-h-0 py-2 overflow-y-auto no-scrollbar">
           {navSections.map((section, sectionIdx) => (
             <div key={section.title ?? 'top'} className={sectionIdx > 0 ? 'mt-1 pt-1 border-t border-slate-800/70' : ''}>
               {section.title && (

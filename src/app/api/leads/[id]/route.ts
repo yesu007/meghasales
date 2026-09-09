@@ -4,9 +4,10 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
-import { leadStatusLabel } from '@/lib/leadStatus';
+import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
 import { CUSTOMER_STATUSES, customerStatusLabel } from '@/lib/customerStatus';
 import { requirePermission } from '@/lib/rbac';
+import { isValidEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       include: {
         assignedBa: { select: { firstName: true, lastName: true } },
         company: { select: { id: true, name: true } },
+        // This Lead/Customer's own Project/Product "picker" fields (see
+        // schema.prisma's Lead.projectId/productId comments) — included so
+        // the Edit form can show which Vertical each is currently under,
+        // same convention as the Create form's own Vertical display.
+        linkedProject: { select: { id: true, projectName: true, verticalId: true, vertical: { select: { name: true } } } },
+        linkedProduct: { select: { id: true, productName: true, verticalId: true, vertical: { select: { name: true } } } },
+        // Only meaningful for a directly-created Customer's own Edit form
+        // (CustomerFormDrawer's fetchCustomerForEdit) — a plain Lead has no
+        // legalEntityId set, so this is simply null/omitted there.
+        legalEntity: { select: { legalName: true, taxRegistrationNumber: true, addressLine1: true, addressLine2: true, postalCode: true } },
+        // Same "most-recently-created Implementation" convention as
+        // GET /api/leads/GET /api/projects' own includeImplementation —
+        // CustomerFormDrawer's own Stage field (fetchCustomerForEdit)
+        // reads/writes through this, same as POST /api/customers creates
+        // it against at creation time.
+        implementations: { orderBy: { createdAt: 'desc' as const }, take: 1, select: { id: true, currentStage: true } },
       },
     });
     if (!lead) return NextResponse.json({ message: 'Lead not found' }, { status: 404 });
@@ -47,6 +64,21 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
     const customerStatusChanged = !!body.customerStatus && body.customerStatus !== existing.customerStatus;
 
+    // Finance email — required on every Lead, not just once it becomes a
+    // Customer. Only checked when the caller actually touches it (same
+    // partial-update convention every other field on this endpoint
+    // follows), so e.g. the Lead detail page's own quick status-change
+    // PUT — which never sends financeEmail — is unaffected. See
+    // schema.prisma's Lead.financeEmail comment.
+    if (body.financeEmail !== undefined) {
+      if (!body.financeEmail) {
+        return NextResponse.json({ message: 'Finance email is required' }, { status: 400 });
+      }
+      if (!isValidEmail(body.financeEmail)) {
+        return NextResponse.json({ message: 'Enter a valid finance email address' }, { status: 400 });
+      }
+    }
+
     const session = await getServerSession(authOptions);
     const performedById = session?.user ? parseInt(session.user.id, 10) : null;
 
@@ -60,34 +92,136 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       }
     }
 
-    const lead = await prisma.lead.update({
-      where: { id },
-      data: {
-        ...(body.companyName && { companyName: body.companyName }),
-        ...(body.contactPerson && { contactPerson: body.contactPerson }),
-        ...(body.designation !== undefined && { designation: body.designation || null }),
-        ...(body.mobile !== undefined && { mobile: body.mobile }),
-        ...(body.whatsapp !== undefined && { whatsapp: body.whatsapp }),
-        ...(body.email !== undefined && { email: body.email }),
-        ...(body.leadSource && { leadSource: body.leadSource }),
-        ...(body.status && { status: body.status }),
-        ...(body.customerStatus && { customerStatus: body.customerStatus }),
-        ...(body.assignedBaId !== undefined && { assignedBaId: body.assignedBaId ? parseInt(body.assignedBaId) : null }),
-        ...(body.notes !== undefined && { notes: body.notes }),
-        ...(body.city !== undefined && { city: body.city }),
-        ...(body.state !== undefined && { state: body.state }),
-        ...(countryFields && {
-          country: countryFields.country,
-          countryId: countryFields.countryId,
-          currencyCode: countryFields.currencyCode,
-          currencySymbol: countryFields.currencySymbol,
-          taxType: countryFields.taxType,
-        }),
-        ...(body.businessVerticals !== undefined && { businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null }),
-        ...(body.companyId !== undefined && { companyId: body.companyId ? parseInt(body.companyId) : null }),
-      },
-      include: { company: { select: { id: true, name: true } } },
-    });
+    if (body.projectId !== undefined && body.projectId !== null && body.projectId !== '') {
+      const project = await prisma.project.findUnique({ where: { id: parseInt(body.projectId) }, select: { id: true } });
+      if (!project) return NextResponse.json({ message: 'Selected project not found' }, { status: 404 });
+    }
+    // Same shape as projectId above, for this Lead/Customer's own "Product"
+    // picker field (see schema.prisma's Lead.productId comment).
+    if (body.productId !== undefined && body.productId !== null && body.productId !== '') {
+      const product = await prisma.product.findUnique({ where: { id: parseInt(body.productId) }, select: { id: true } });
+      if (!product) return NextResponse.json({ message: 'Selected product not found' }, { status: 404 });
+    }
+
+    let businessVerticals: string | null | undefined;
+    if (body.businessVerticals !== undefined) {
+      try {
+        businessVerticals = await resolveBusinessVerticals(body.businessVerticals);
+      } catch (e: any) {
+        return NextResponse.json({ message: e.message || 'Invalid business vertical' }, { status: 400 });
+      }
+    }
+
+    // Legal Entity — only touched when the caller actually sends one of
+    // these fields, which today only CustomerFormDrawer's own Edit does
+    // (for a directly-created Customer — see that form's own
+    // fetchCustomerForEdit comment); the Leads module's own use of this
+    // same endpoint never sends them, so it's unaffected. Update-only (a
+    // plain Lead has no legalEntityId to update) — matches the realistic
+    // case, since every directly-created Customer already has one from
+    // POST /api/customers' own find-or-create.
+    const legalEntityFields = ['legalName', 'taxRegistrationNumber', 'legalAddressLine1', 'legalAddressLine2', 'postalCode'];
+    if (legalEntityFields.some((f) => body[f] !== undefined) && existing.legalEntityId) {
+      await prisma.companyLegalEntity.update({
+        where: { id: existing.legalEntityId },
+        data: {
+          ...(body.legalName !== undefined && { legalName: body.legalName || existing.companyName }),
+          ...(body.taxRegistrationNumber !== undefined && { taxRegistrationNumber: body.taxRegistrationNumber || null }),
+          ...(body.legalAddressLine1 !== undefined && { addressLine1: body.legalAddressLine1 || null }),
+          ...(body.legalAddressLine2 !== undefined && { addressLine2: body.legalAddressLine2 || null }),
+          ...(body.postalCode !== undefined && { postalCode: body.postalCode || null }),
+        },
+      });
+    }
+
+    // Lead -> Customer conversion: "Customer" is this same Lead row once
+    // status reaches CONFIRMED (see src/app/api/customers/route.ts's own
+    // module note — there is no separate Customer table), so the update
+    // below already *is* Customer creation; nothing else needs to be
+    // inserted for that half of the requirement. This block additionally
+    // auto-creates the linked Implementation entry (leadId FK) the
+    // Lead->Customer->Implementation flow requires. Both writes run in one
+    // transaction so a failed Implementation create rolls back the status
+    // change too, instead of leaving a Lead marked CONFIRMED with no
+    // Implementation behind it.
+    const isConverting = !!body.status && body.status === 'CONFIRMED' && existing.status !== 'CONFIRMED';
+
+    const updateData = {
+      ...(body.companyName && { companyName: body.companyName }),
+      ...(body.projectName !== undefined && { projectName: body.projectName || null }),
+      ...(body.projectId !== undefined && { projectId: body.projectId ? parseInt(body.projectId) : null }),
+      ...(body.productId !== undefined && { productId: body.productId ? parseInt(body.productId) : null }),
+      ...(body.contactPerson && { contactPerson: body.contactPerson }),
+      ...(body.designation !== undefined && { designation: body.designation || null }),
+      ...(body.mobile !== undefined && { mobile: body.mobile }),
+      ...(body.whatsapp !== undefined && { whatsapp: body.whatsapp }),
+      ...(body.email !== undefined && { email: body.email }),
+      ...(body.financeEmail !== undefined && { financeEmail: body.financeEmail || null }),
+      ...(body.leadSource && { leadSource: body.leadSource }),
+      ...(body.status && { status: body.status }),
+      // Customer module's "Created"/"Customer Since" date — the moment of
+      // conversion, not the Lead's original createdAt. See schema.prisma's
+      // Lead.confirmedAt comment.
+      ...(isConverting && { confirmedAt: new Date() }),
+      ...(body.customerStatus && { customerStatus: body.customerStatus }),
+      ...(body.assignedBaId !== undefined && { assignedBaId: body.assignedBaId ? parseInt(body.assignedBaId) : null }),
+      ...(body.notes !== undefined && { notes: body.notes }),
+      ...(body.city !== undefined && { city: body.city }),
+      ...(body.state !== undefined && { state: body.state }),
+      ...(body.addressLine1 !== undefined && { addressLine1: body.addressLine1 }),
+      ...(body.addressLine2 !== undefined && { addressLine2: body.addressLine2 }),
+      ...(body.nextFollowUpDate !== undefined && { nextFollowUpDate: body.nextFollowUpDate ? new Date(body.nextFollowUpDate) : null }),
+      ...(countryFields && {
+        country: countryFields.country,
+        countryId: countryFields.countryId,
+        currencyCode: countryFields.currencyCode,
+        currencySymbol: countryFields.currencySymbol,
+        taxType: countryFields.taxType,
+      }),
+      ...(body.businessVerticals !== undefined && { businessVerticals }),
+      ...(body.companyId !== undefined && { companyId: body.companyId ? parseInt(body.companyId) : null }),
+    };
+
+    let lead;
+    let autoImplementation: { id: number } | null = null;
+
+    if (isConverting) {
+      const result = await prisma.$transaction(async (tx) => {
+        const updatedLead = await tx.lead.update({
+          where: { id },
+          data: updateData,
+          include: { company: { select: { id: true, name: true } } },
+        });
+
+        // Duplicate guard — re-converting a lead (e.g. moved off CONFIRMED
+        // and back), or a lead that already has an Implementation for any
+        // other reason, must not create a second one.
+        const existingImpl = await tx.implementation.findFirst({ where: { leadId: id }, select: { id: true } });
+        let createdImpl: { id: number } | null = null;
+        if (!existingImpl) {
+          createdImpl = await tx.implementation.create({
+            data: {
+              leadId: id,
+              sourceType: 'CUSTOMER',
+              projectName: updatedLead.projectName,
+              projectId: updatedLead.projectId,
+              status: 'PLANNING',
+            },
+            select: { id: true },
+          });
+        }
+
+        return { updatedLead, createdImpl };
+      });
+      lead = result.updatedLead;
+      autoImplementation = result.createdImpl;
+    } else {
+      lead = await prisma.lead.update({
+        where: { id },
+        data: updateData,
+        include: { company: { select: { id: true, name: true } } },
+      });
+    }
 
     // Log every status transition (not just ->Converted) so the activity
     // timeline is a complete status-change history, not a partial one.
@@ -95,13 +229,19 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     // specifically since it has its own icon/meaning; every other
     // transition gets a generic 'STATUS_CHANGED' entry.
     if (statusChanged) {
+      let statusChangeDescription = `Lead confirmed: ${lead.companyName}`;
+      if (lead.status !== 'CONFIRMED') {
+        const [fromOption, toOption] = await Promise.all([
+          prisma.leadStatusOption.findUnique({ where: { code: existing.status } }),
+          prisma.leadStatusOption.findUnique({ where: { code: lead.status } }),
+        ]);
+        statusChangeDescription = `Status changed from ${fromOption?.label || existing.status} to ${toOption?.label || lead.status}`;
+      }
       await prisma.leadActivity.create({
         data: {
           leadId: id,
           activityType: lead.status === 'CONFIRMED' ? 'LEAD_CONFIRMED' : 'STATUS_CHANGED',
-          description: lead.status === 'CONFIRMED'
-            ? `Lead confirmed: ${lead.companyName}`
-            : `Status changed from ${leadStatusLabel(existing.status)} to ${leadStatusLabel(lead.status)}`,
+          description: statusChangeDescription,
           performedById: Number.isFinite(performedById) ? performedById : null,
         },
       });
@@ -116,6 +256,18 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           performedById: Number.isFinite(performedById) ? performedById : null,
         },
       });
+    }
+
+    if (autoImplementation) {
+      await prisma.leadActivity.create({
+        data: {
+          leadId: id,
+          activityType: 'CREATED',
+          description: `Implementation created for converted customer: ${lead.companyName}`,
+          performedById: Number.isFinite(performedById) ? performedById : null,
+        },
+      });
+      await logAudit({ action: 'CREATE', entityType: 'IMPLEMENTATION', entityId: autoImplementation.id, newValue: autoImplementation, description: `Implementation auto-created on Lead conversion: ${lead.companyName}`, request });
     }
 
     await logAudit({ action: 'UPDATE', entityType: 'LEAD', entityId: id, oldValue: existing, newValue: lead, description: `Lead updated: ${lead.companyName}`, request });

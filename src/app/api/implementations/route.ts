@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
+import { GO_LIVE_STAGES, POST_GO_LIVE_STAGES } from '@/lib/implementationStages';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,11 @@ export async function GET(request: NextRequest) {
     const size = parseInt(searchParams.get('size') || '10');
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
+    const currentStage = searchParams.get('currentStage') || '';
+    const stageCategory = searchParams.get('stageCategory') || '';
+    const projectManagerId = searchParams.get('projectManagerId') || '';
+    const businessVertical = searchParams.get('businessVertical') || '';
+    const productId = searchParams.get('productId') || '';
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortDir = searchParams.get('sortDir') || 'desc';
 
@@ -36,6 +42,21 @@ export async function GET(request: NextRequest) {
     }
 
     if (status) AND.push({ status: status.toUpperCase() });
+    if (currentStage) AND.push({ currentStage });
+    // Top-level Go Live / Post Go Live tabs — a record with no stage set yet
+    // counts as Go Live (see GO_LIVE_STAGES's own comment), so that bucket
+    // also matches a null currentStage.
+    if (stageCategory === 'POST_GO_LIVE') AND.push({ currentStage: { in: POST_GO_LIVE_STAGES } });
+    else if (stageCategory === 'GO_LIVE') AND.push({ OR: [{ currentStage: { in: GO_LIVE_STAGES } }, { currentStage: null }] });
+    if (projectManagerId) AND.push({ projectManagerId: parseInt(projectManagerId) });
+    // Same relation-filter approach as /api/leads's own businessVertical
+    // filter — businessVerticals is a JSON-encoded name on Lead, matched
+    // via `contains` through the existing lead relation, not a new field.
+    if (businessVertical) AND.push({ lead: { businessVerticals: { contains: businessVertical, mode: 'insensitive' } } });
+    // Filters to this Implementation's own linked Product (its productId),
+    // not any Lead-level mapping — same distinction as the Business Vertical
+    // column fix (see the table's own comment).
+    if (productId) AND.push({ productId: parseInt(productId) });
 
     if (AND.length > 0) where.AND = AND;
 
@@ -50,8 +71,18 @@ export async function GET(request: NextRequest) {
         skip: page * size,
         take: size,
         include: {
-          lead: { select: { companyName: true, contactPerson: true } },
+          // businessVerticals is Lead's own field (see the schema note on
+          // Vertical/ExpenseBudget) — this list's own "Business Vertical"
+          // column/filter still reads that, unchanged; verticalId/headId
+          // below are this Implementation's own separately-picked Vertical
+          // and its derived Head, surfaced only for the edit drawer's
+          // locked, read-only display of what was saved at creation.
+          lead: { select: { companyName: true, contactPerson: true, businessVerticals: true } },
           projectManager: { select: { firstName: true, lastName: true } },
+          project: { select: { projectName: true } },
+          product: { select: { productName: true } },
+          vertical: { select: { name: true } },
+          head: { select: { firstName: true, lastName: true } },
         },
       }),
       prisma.implementation.count({ where }),
@@ -60,9 +91,19 @@ export async function GET(request: NextRequest) {
     const content = implementations.map((impl) => ({
       id: impl.id,
       leadId: impl.leadId,
+      sourceType: impl.sourceType,
       projectName: impl.projectName,
+      projectId: impl.projectId,
+      linkedProjectName: impl.project?.projectName || null,
+      productId: impl.productId,
+      linkedProductName: impl.product?.productName || null,
       companyName: impl.lead.companyName,
       contactPerson: impl.lead.contactPerson,
+      businessVerticals: impl.lead.businessVerticals,
+      verticalId: impl.verticalId,
+      verticalName: impl.vertical?.name || null,
+      headId: impl.headId,
+      headName: impl.head ? `${impl.head.firstName} ${impl.head.lastName}` : null,
       projectManagerId: impl.projectManagerId,
       projectManagerName: impl.projectManager ? `${impl.projectManager.firstName} ${impl.projectManager.lastName}` : null,
       status: impl.status,
@@ -98,11 +139,57 @@ export async function POST(request: NextRequest) {
     if (!body.leadId) {
       return NextResponse.json({ message: 'leadId is required' }, { status: 400 });
     }
+    if (!body.sourceType || !['LEAD', 'CUSTOMER'].includes(body.sourceType)) {
+      return NextResponse.json({ message: 'Source Type is required' }, { status: 400 });
+    }
+
+    const leadId = parseInt(body.leadId);
+
+    // An implementation is for a Project or a Product, never both — same
+    // mutual-exclusion convention as the Quotation module's own
+    // projectId/productId check (see /api/quotations).
+    if (body.projectId && body.productId) {
+      return NextResponse.json({ message: 'Select either a Project or a Product, not both' }, { status: 400 });
+    }
+    // A picked Project must actually belong to the selected Lead/Customer —
+    // same check as /api/demos.
+    if (body.projectId) {
+      const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: leadId }, { leadId }] } });
+      if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+    // Same check for a picked Product (the Customer main table's own
+    // CustomerProductsPanel).
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: parseInt(body.productId), OR: [{ customerId: leadId }, { leadId }] } });
+      if (!product) return NextResponse.json({ message: 'Selected product does not belong to this lead' }, { status: 400 });
+    }
+
+    // Business Vertical is auto-derived client-side from whichever of
+    // Project/Product is selected (see the form's own effect) — optional
+    // here too (an implementation with neither sends none). Head is derived
+    // server-side from the selected Vertical's own Head assignment, never
+    // taken from the client, same convention as Project.headId — but unlike
+    // Project, a Vertical with no Head assigned is not an error here, it
+    // just leaves headId null (the existing "Unassigned" display
+    // convention).
+    let verticalId: number | null = null;
+    let headId: number | null = null;
+    if (body.verticalId) {
+      const vertical = await prisma.vertical.findUnique({ where: { id: parseInt(body.verticalId) }, select: { id: true, headId: true } });
+      if (!vertical) return NextResponse.json({ message: 'Selected vertical not found' }, { status: 404 });
+      verticalId = vertical.id;
+      headId = vertical.headId;
+    }
 
     const impl = await prisma.implementation.create({
       data: {
-        leadId: parseInt(body.leadId),
+        leadId,
+        sourceType: body.sourceType,
         projectName: body.projectName || null,
+        projectId: body.projectId ? parseInt(body.projectId) : null,
+        productId: body.productId ? parseInt(body.productId) : null,
+        verticalId,
+        headId,
         projectManagerId: body.projectManagerId ? parseInt(body.projectManagerId) : null,
         status: 'PLANNING',
         startDate: body.startDate ? new Date(body.startDate) : null,

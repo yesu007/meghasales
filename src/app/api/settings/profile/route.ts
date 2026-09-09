@@ -84,6 +84,8 @@ export async function PUT(request: NextRequest) {
         ...(body.termsAndConditions !== undefined && { termsAndConditions: body.termsAndConditions }),
         ...(body.paymentTerms !== undefined && { paymentTerms: body.paymentTerms }),
         ...(body.warrantyTerms !== undefined && { warrantyTerms: body.warrantyTerms }),
+        ...(body.defaultAdminOverheadMode !== undefined && { defaultAdminOverheadMode: body.defaultAdminOverheadMode === 'FIXED' ? 'FIXED' : 'PCT' }),
+        ...(body.defaultAdminOverheadValue !== undefined && { defaultAdminOverheadValue: Number(body.defaultAdminOverheadValue) || 0 }),
         ...(body.defaultCountryId !== undefined && { defaultCountryId: body.defaultCountryId ? parseInt(body.defaultCountryId) : null }),
       },
     });

@@ -27,6 +27,7 @@ import {
   FollowUpFrequency,
 } from '@/lib/meetings/constants';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-500',
@@ -209,12 +210,12 @@ function AssignActionItemModal({ actionItem, users, onClose }: { actionItem: any
         <h2 className="text-lg font-semibold text-slate-800 mb-4">{actionItem.assignedToId ? 'Reassign' : 'Assign'} Action Item</h2>
         <div>
           <label className="block text-sm font-medium text-slate-600 mb-1">Assign To</label>
-          <select value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
-            <option value="">Select user</option>
-            {users.map((u: any) => (
-              <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
-            ))}
-          </select>
+          <AddableSelect
+            value={assignedToId}
+            onChange={(v) => setAssignedToId(v)}
+            options={users.map((u: any) => ({ value: String(u.id), label: `${u.firstName} ${u.lastName}` }))}
+            placeholder="Select user"
+          />
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
@@ -297,13 +298,12 @@ function EditActionItemModal({ actionItem, otherActionItems, onClose }: { action
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Priority</label>
-              <select
+              <AddableSelect
                 value={form.priority}
-                onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as ActionItemPriority }))}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-              >
-                {ACTION_ITEM_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+                onChange={(v) => setForm((f) => ({ ...f, priority: v as ActionItemPriority }))}
+                options={ACTION_ITEM_PRIORITIES.map((p) => ({ value: p, label: p }))}
+                placeholder="Select priority"
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -328,16 +328,15 @@ function EditActionItemModal({ actionItem, otherActionItems, onClose }: { action
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Depends On</label>
-            <select
+            <AddableSelect
               value={form.dependsOnActionItemId}
-              onChange={(e) => setForm((f) => ({ ...f, dependsOnActionItemId: e.target.value }))}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">No dependency</option>
-              {otherActionItems.map((a: any) => (
-                <option key={a.id} value={a.id}>{a.description}</option>
-              ))}
-            </select>
+              onChange={(v) => setForm((f) => ({ ...f, dependsOnActionItemId: v }))}
+              options={[
+                { value: '', label: 'No dependency' },
+                ...otherActionItems.map((a: any) => ({ value: String(a.id), label: a.description })),
+              ]}
+              placeholder="No dependency"
+            />
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-5">
@@ -509,13 +508,12 @@ function AddFollowUpForm({ actionItemId, users, onDone }: { actionItemId: number
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-500 mb-1">Frequency</label>
-          <select
+          <AddableSelect
             value={frequency}
-            onChange={(e) => setFrequency(e.target.value as FollowUpFrequency)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-          >
-            {FOLLOWUP_FREQUENCIES.map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
+            onChange={(v) => setFrequency(v as FollowUpFrequency)}
+            options={FOLLOWUP_FREQUENCIES.map((f) => ({ value: f, label: f }))}
+            placeholder="Select frequency"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-500 mb-1">Next Follow-up (optional)</label>
@@ -528,12 +526,15 @@ function AddFollowUpForm({ actionItemId, users, onDone }: { actionItemId: number
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm">
-          <option value="">Owner: me</option>
-          {users.map((u: any) => (
-            <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
-          ))}
-        </select>
+        <AddableSelect
+          value={ownerId}
+          onChange={(v) => setOwnerId(v)}
+          options={[
+            { value: '', label: 'Owner: me' },
+            ...users.map((u: any) => ({ value: String(u.id), label: `${u.firstName} ${u.lastName}` })),
+          ]}
+          placeholder="Owner: me"
+        />
         <input
           value={remarks}
           onChange={(e) => setRemarks(e.target.value)}

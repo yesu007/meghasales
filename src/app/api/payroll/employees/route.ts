@@ -39,6 +39,8 @@ export async function GET(request: NextRequest) {
       prisma.employee.findMany({
         where,
         include: {
+          manager: { select: { id: true, firstName: true, lastName: true } },
+          vertical: { select: { id: true, name: true } },
           salaryAssignments: { where: { effectiveTo: null }, take: 1, include: { structure: { select: { name: true } } } },
         },
         orderBy: { createdAt: 'desc' },
@@ -104,6 +106,20 @@ export async function POST(request: NextRequest) {
       if (alreadyLinked) return NextResponse.json({ message: 'This email belongs to a system user who already has an employee profile' }, { status: 409 });
     }
 
+    let managerId: number | null = null;
+    if (body.managerId !== undefined && body.managerId !== '' && body.managerId !== null) {
+      managerId = parseInt(body.managerId);
+      const manager = await prisma.employee.findUnique({ where: { id: managerId } });
+      if (!manager) return NextResponse.json({ message: 'Manager not found' }, { status: 400 });
+    }
+
+    let verticalId: number | null = null;
+    if (body.verticalId !== undefined && body.verticalId !== '' && body.verticalId !== null) {
+      verticalId = parseInt(body.verticalId);
+      const vertical = await prisma.vertical.findUnique({ where: { id: verticalId } });
+      if (!vertical) return NextResponse.json({ message: 'Vertical not found' }, { status: 400 });
+    }
+
     const employee = await prisma.$transaction(async (tx) => {
       const employeeCode = await nextEmployeeCode(tx);
       return tx.employee.create({
@@ -115,6 +131,9 @@ export async function POST(request: NextRequest) {
           email,
           department: body.department || null,
           designation: body.designation || null,
+          role: body.role || null,
+          managerId,
+          verticalId,
           dateOfJoining: body.dateOfJoining ? new Date(body.dateOfJoining) : null,
           employmentType: body.employmentType || 'FULL_TIME',
           panNumber: body.panNumber || null,

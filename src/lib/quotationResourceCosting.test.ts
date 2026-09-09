@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { computeResourceCosting, dayRateFromAnnualCtc } from './quotationResourceCosting';
 
 describe('dayRateFromAnnualCtc', () => {
-  it('divides annual CTC by the 260-working-day convention', () => {
-    expect(dayRateFromAnnualCtc(1300000)).toBe(5000);
+  it('divides annual CTC by 12 months x 30 days (360)', () => {
+    expect(dayRateFromAnnualCtc(1200000)).toBe(3333.33);
   });
 
   it('rounds to 2 decimal places', () => {
-    expect(dayRateFromAnnualCtc(1000000)).toBeCloseTo(3846.15, 2);
+    expect(dayRateFromAnnualCtc(1000000)).toBeCloseTo(2777.78, 2);
   });
 });
 

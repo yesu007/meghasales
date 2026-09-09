@@ -2,23 +2,32 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, TrashIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/quotationResourceCosting';
+import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useProjectsForLead } from '@/hooks/useProjectsForLead';
+import { useProductsForLead } from '@/hooks/useProductsForLead';
+import AddableSelect from '@/components/AddableSelect';
 
-interface ExistingLead { id: number; companyName: string; contactPerson: string; email: string | null; mobile: string | null }
+interface ExistingLead { id: number; companyName: string; projectName: string | null; contactPerson: string; email: string | null; mobile: string | null }
 interface Vertical { id: number; name: string; headName?: string | null }
 interface CurrencyOption { currencyCode: string; currencySymbol: string }
 interface ResourceEmployee { id: number; firstName: string; lastName: string; employeeCode: string; designation: string | null; department: string | null; dayRate: number | null }
 interface CompanyOption { id: number; name: string }
 interface LegalEntityOption { id: number; legalName: string; taxRegistrationNumber: string | null; isActive: boolean; country: { countryName: string; flagEmoji: string | null } }
 interface CompanyDetailForQuotation { id: number; legalEntities: LegalEntityOption[] }
+interface CompanyProfileTerms { termsAndConditions: string | null; paymentTerms: string | null; warrantyTerms: string | null; defaultAdminOverheadMode: string | null; defaultAdminOverheadValue: number | string | null }
 
 const employeeLabel = (e: ResourceEmployee) => `${e.firstName} ${e.lastName} — ${e.designation || 'Employee'} (${e.employeeCode})`;
+// The Designation column's content once an employee is picked — just who
+// they are (name + code), since their job title already lives in Role.
+const employeeRefLabel = (e: ResourceEmployee) => `${e.firstName} ${e.lastName} (${e.employeeCode})`;
 
 const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
 const blankResource = (): ResourceLine => ({ role: '', qty: 1, durationDays: 10, dayRate: 5000 });
@@ -34,7 +43,17 @@ function ModeToggle({ mode, onChange, pctLabel, fixedLabel }: { mode: CostMode; 
 
 export default function QuotationCalculatorForm({ quotationId }: { quotationId?: number }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Deep-link from the Projects page's "New Quotation" action
+  // (/dashboard/quotations/calculator?projectId=..&leadId=..) — leadId is
+  // whichever of Project.customerId/leadId is set (see that model's own
+  // comment: a Project is tied to exactly one). Only consulted for a
+  // brand-new quotation; editing an existing one always keeps its own lead.
+  const prefillProjectId = searchParams.get('projectId');
+  const prefillLeadId = searchParams.get('leadId');
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canAuthorizeOverride = has('authorize_quotation_override');
 
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
   const [selectedLeadId, setSelectedLeadId] = useState('');
@@ -43,7 +62,26 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [clientEmail, setClientEmail] = useState('');
   const [clientPhone, setClientPhone] = useState('');
 
+  // Which project (Project master) this quotation is for — the dropdown is
+  // scoped to selectedLeadId (create) or the loaded quotation's leadId
+  // (edit) via useProjectsForLead below. `projectName` is kept in sync from
+  // whichever project is picked (see the sync effect below) so the legacy
+  // text column still gets written on save. Kept separate from
+  // newClientProjectName so Existing Client <-> New Client never copies one
+  // into the other (New Client has no lead yet, so it keeps its own
+  // free-text field instead of a dropdown).
+  const [projectId, setProjectId] = useState('');
   const [projectName, setProjectName] = useState('');
+  const [newClientProjectName, setNewClientProjectName] = useState('');
+  // Which product (Product Master) this quotation is for — same convention
+  // as projectId/leadProjects just above, next to it in the Opportunity
+  // Details section, scoped to the same activeLeadIdForProjects. Unlike
+  // Project, there's no legacy free-text column on Quotation for this, so
+  // in New Client mode (no lead to scope a dropdown to yet) newClientProductName
+  // is carried only inside pricingSnapshot.productName — informational only,
+  // same convention as packageName/projectManagerName below.
+  const [productId, setProductId] = useState('');
+  const [newClientProductName, setNewClientProductName] = useState('');
   const [verticalId, setVerticalId] = useState('');
   const [projectManagerName, setProjectManagerName] = useState('');
   const [packageName, setPackageName] = useState('');
@@ -68,9 +106,26 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const [validityDays, setValidityDays] = useState('30');
   const [overrideAmount, setOverrideAmount] = useState('');
   const [notes, setNotes] = useState('');
+  const [additionalTerms, setAdditionalTerms] = useState('');
+
+  // Payment Milestones plan — optional (empty = the existing one lump-sum
+  // invoice on approval, unchanged). Only percentage + gapDays are edited
+  // here; milestone 1's gapDays is meaningless (it's always invoiced
+  // immediately on approval) so its input is disabled rather than shown as
+  // a live field. Turned into dated, invoiced QuotationPaymentMilestone rows
+  // server-side once the quotation is approved — see
+  // materializeQuotationMilestones.
+  const [milestones, setMilestones] = useState<{ percentage: string; gapDays: string }[]>([]);
 
   const [status, setStatus] = useState('DRAFT');
   const [quotationNumber, setQuotationNumber] = useState('');
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — handleSave only runs validation again on the next
+  // submit, so without this a message set by a failed submit attempt would
+  // otherwise keep showing even after the field now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
 
   const { data: existing } = useQuery({
     queryKey: ['quotation', quotationId],
@@ -88,6 +143,10 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const { data: currencies = [] } = useQuery<CurrencyOption[]>({
     queryKey: ['currencies'],
     queryFn: async () => { const r = await fetch('/api/currencies?activeOnly=true'); if (!r.ok) throw new Error('Failed to fetch currencies'); return r.json(); },
+  });
+  const { data: companyProfile } = useQuery<CompanyProfileTerms | null>({
+    queryKey: ['company-profile-terms'],
+    queryFn: async () => { const r = await fetch('/api/quotation-config?type=company-profile'); if (!r.ok) throw new Error('Failed to fetch company profile'); return r.json(); },
   });
   const currencySymbol = currencies.find((c) => c.currencyCode === currencyCode)?.currencySymbol || currencyCode;
   const { data: resourceEmployees = [] } = useQuery<ResourceEmployee[]>({
@@ -107,15 +166,77 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   });
   const legalEntityOptions = (billingCompanyDetail?.legalEntities || []).filter((e) => e.isActive);
 
+  // Project dropdown, scoped to whichever Lead/Customer is active — create
+  // uses selectedLeadId, editing uses the loaded quotation's own leadId. See
+  // useProjectsForLead's own comment for the relation this filters on.
+  const activeLeadIdForProjects = quotationId ? (existing?.leadId ? String(existing.leadId) : '') : (clientMode === 'existing' ? selectedLeadId : '');
+  const { data: leadProjects = [], isLoading: projectsLoading } = useProjectsForLead(activeLeadIdForProjects);
+  // Product dropdown, scoped the same way — same activeLeadIdForProjects
+  // (create uses selectedLeadId, editing uses the loaded quotation's own
+  // leadId), just against Product Master instead of Project Master.
+  const { data: leadProducts = [], isLoading: productsLoading } = useProductsForLead(activeLeadIdForProjects);
+  // Project and Product are mutually exclusive on a quotation — a customer
+  // picks one or the other, never both (enforced again server-side, see
+  // POST/PUT /api/quotations); neither is auto-selected, even when a
+  // customer has only one Project or Product — the user always picks
+  // explicitly (see the disabled/placeholder logic on each <select> below).
+  // Keeps the legacy free-text projectName column (still used for
+  // display/PDF/search) in sync with whichever project is selected.
+  useEffect(() => {
+    const p = leadProjects.find((x) => String(x.id) === projectId);
+    if (p) setProjectName(p.projectName);
+  }, [projectId, leadProjects]);
+  // Auto-fill Vertical (and Project Manager) from whichever Project is
+  // selected — Project Master already ties every project to one Vertical
+  // (and that vertical's Head, via Project.headId — see that model's own
+  // comment), so there's no reason to make the user re-pick it here on a
+  // brand-new quotation. Keyed only on [projectId, leadProjects], not
+  // verticalId, so a later manual change to Vertical is never fought back.
+  // Skipped when editing (quotationId set) — the effect above already
+  // restores that quotation's own saved verticalId, which must win even if
+  // the linked project's vertical has since changed.
+  useEffect(() => {
+    if (quotationId) return;
+    const p = leadProjects.find((x) => String(x.id) === projectId);
+    if (!p) return;
+    setVerticalId(String(p.verticalId));
+    if (p.headName) setProjectManagerName(p.headName);
+  }, [quotationId, projectId, leadProjects]);
+
+  // Deep-link prefill (create only): pick the client the linked Project
+  // belongs to as soon as the leads list has loaded. Guarded on
+  // `!selectedLeadId` so it only ever fires once, on landing — it must not
+  // fight a client the user deliberately changes afterward.
+  useEffect(() => {
+    if (quotationId || !prefillLeadId || selectedLeadId || existingLeads.length === 0) return;
+    if (existingLeads.some((l) => String(l.id) === prefillLeadId)) {
+      setClientMode('existing');
+      selectExistingLead(prefillLeadId);
+    }
+  }, [quotationId, prefillLeadId, selectedLeadId, existingLeads]);
+  // Once that client's Project dropdown has loaded, select the specific
+  // linked Project (the generic "auto-select if there's exactly one" effect
+  // above already covers the single-project case; this handles multi-project
+  // clients by matching the id explicitly).
+  useEffect(() => {
+    if (quotationId || !prefillProjectId || !prefillLeadId) return;
+    if (leadProjects.some((p) => String(p.id) === prefillProjectId)) {
+      setProjectId(prefillProjectId);
+    }
+  }, [quotationId, prefillProjectId, prefillLeadId, leadProjects]);
+
   useEffect(() => {
     if (!existing) return;
     setProjectName(existing.projectName || '');
+    setProjectId(existing.projectId ? String(existing.projectId) : '');
+    setProductId(existing.productId ? String(existing.productId) : '');
     setVerticalId(existing.verticalId ? String(existing.verticalId) : '');
     setCurrencyCode(existing.currencyCode || 'INR');
     setOutsourcingCost(String(Number(existing.outsourcingCost) || 0));
     setTravelCost(String(Number(existing.travelCost) || 0));
     setTaxPercentage(String(Number(existing.taxPercentage) || 0));
     setNotes(existing.notes || '');
+    setAdditionalTerms(existing.additionalTerms || '');
     setStatus(existing.status);
     setQuotationNumber(existing.quotationNumber);
     setClientName(existing.lead?.contactPerson || '');
@@ -133,9 +254,24 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setDiscountValue(String(Number(snap.discountValue) || 0));
     setProjectManagerName(snap.projectManagerName || '');
     setPackageName(snap.packageName || '');
+    setNewClientProductName(snap.productName || '');
     setValidityDays(String(Number(snap.validityDays) || 30));
+    setMilestones(
+      Array.isArray(snap.paymentMilestones)
+        ? snap.paymentMilestones.map((m: any) => ({ percentage: String(m.percentage ?? ''), gapDays: String(m.gapDays ?? '') }))
+        : []
+    );
     setOverrideAmount(existing.totalAmountOverridden ? String(Number(existing.totalAmount)) : '');
   }, [existing]);
+
+  // Pre-fill Admin/Overhead from the company-wide default — only for a
+  // brand-new quotation. An existing one already had its own value restored
+  // by the effect above, which must win regardless of fetch timing.
+  useEffect(() => {
+    if (!companyProfile || quotationId) return;
+    setAdminMode(companyProfile.defaultAdminOverheadMode === 'FIXED' ? 'FIXED' : 'PCT');
+    setAdminValue(String(Number(companyProfile.defaultAdminOverheadValue) || 0));
+  }, [companyProfile, quotationId]);
 
   const selectVertical = (id: string) => {
     setVerticalId(id);
@@ -150,6 +286,11 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     setCompanyName(lead?.companyName || '');
     setClientEmail(lead?.email || '');
     setClientPhone(lead?.mobile || '');
+    // Reset the Project/Product selections — the previous picks belonged to
+    // whichever lead was selected before, and must not carry over. Both
+    // dropdowns (scoped to this new leadId) repopulate via the query above.
+    setProjectId(''); setProjectName('');
+    setProductId('');
   };
 
   const selectBillingCompany = (id: string) => { setBillingCompanyId(id); setLegalEntityId(''); };
@@ -162,19 +303,42 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     }));
   };
 
-  // Typing/selecting a role that exactly matches an autocomplete suggestion
+  // Typing/selecting a value that exactly matches an autocomplete suggestion
   // (see the datalist in the Resources table) auto-fills that row's day
   // rate from the employee's derived rate — mirrors the vertical-head and
-  // existing-lead auto-fill patterns elsewhere in this form. Free typing
-  // that doesn't match any employee just sets the role text, unchanged.
+  // existing-lead auto-fill patterns elsewhere in this form. The datalist
+  // option itself has to read "Name — Designation (EMP-code)" (that's the
+  // only way to pick one employee out of several sharing a designation),
+  // but once picked, Role and Designation split into their own columns:
+  // Role becomes the job title (what actually prints on the quotation/
+  // invoice line item — see lineItemsFromQuotation), Designation becomes
+  // "Name (EMP-code)" for internal reference only. Free typing that doesn't
+  // match any suggestion (a contractor, a new hire not yet in the system,
+  // or just a plain role title) just sets the role text as typed, leaving
+  // Designation whatever it already was — this was already fully supported
+  // for costing (see validResources below and buildResourceBasedCosting
+  // server-side, neither requires an employee match), it just wasn't
+  // obvious from this field's behavior.
   const updateResourceRole = (idx: number, value: string) => {
     const matched = employeeByLabel.get(value);
     setResources((prev) => prev.map((r, i) => {
       if (i !== idx) return r;
-      if (matched?.dayRate != null) return { ...r, role: value, dayRate: matched.dayRate };
+      if (matched) {
+        return {
+          ...r,
+          role: matched.designation || `${matched.firstName} ${matched.lastName}`,
+          employeeRef: employeeRefLabel(matched),
+          dayRate: matched.dayRate ?? r.dayRate,
+        };
+      }
       return { ...r, role: value };
     }));
   };
+  // Designation is otherwise a plain, independently editable field — e.g.
+  // to correct it, or clear it if a row that used to be staffed by a
+  // specific employee no longer is.
+  const updateResourceEmployeeRef = (idx: number, value: string) =>
+    setResources((prev) => prev.map((r, i) => (i === idx ? { ...r, employeeRef: value } : r)));
   const addResource = () => setResources((prev) => [...prev, blankResource()]);
   const removeResource = (idx: number) => setResources((prev) => prev.filter((_, i) => i !== idx));
 
@@ -197,6 +361,18 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
     overrideAmount: Number(overrideAmount) || 0,
   }), [validResources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, discountMode, discountValue, taxPercentage, overrideAmount]);
 
+  const addMilestone = () => setMilestones((prev) => [...prev, { percentage: '', gapDays: prev.length === 0 ? '0' : '15' }]);
+  const removeMilestone = (idx: number) => setMilestones((prev) => prev.filter((_, i) => i !== idx));
+  const updateMilestone = (idx: number, field: 'percentage' | 'gapDays', value: string) =>
+    setMilestones((prev) => prev.map((m, i) => (i === idx ? { ...m, [field]: value } : m)));
+
+  const milestonePlan: MilestonePlanInput[] = useMemo(
+    () => milestones.map((m, idx) => ({ percentage: Number(m.percentage) || 0, gapDays: idx === 0 ? 0 : Number(m.gapDays) || 0 })),
+    [milestones]
+  );
+  const milestonesTotalPct = useMemo(() => Math.round(milestonePlan.reduce((sum, m) => sum + m.percentage, 0) * 100) / 100, [milestonePlan]);
+  const milestoneError = useMemo(() => validateMilestonePlan(milestonePlan), [milestonePlan]);
+
   const fmt = (n: number) => formatCurrency(n, currencyCode, { symbol: currencySymbol });
 
   const marginBand = costing.marginPercent >= 30 ? 'healthy' : costing.marginPercent >= 15 ? 'caution' : 'risk';
@@ -209,13 +385,30 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // Existing-client mode (and editing) use `projectName`; a brand-new
+      // client being created here uses its own, separate state — never mix
+      // the two up when saving.
+      const effectiveProjectName = (!quotationId && clientMode === 'new') ? newClientProjectName : projectName;
+      // New-client mode has no lead yet to scope a Project dropdown to, so
+      // it never sets projectId — only the free-text projectName above.
+      const effectiveProjectId = (!quotationId && clientMode === 'new') ? null : (projectId ? parseInt(projectId) : null);
+      // Same reasoning for productId/productName — New Client mode has no
+      // lead to scope a Product dropdown to either, so it only ever carries
+      // the free-text newClientProductName (into pricingSnapshot below, not
+      // a dedicated column — see its own state comment).
+      const effectiveProductId = (!quotationId && clientMode === 'new') ? null : (productId ? parseInt(productId) : null);
+      const effectiveProductName = (!quotationId && clientMode === 'new') ? (newClientProductName || null) : null;
       const body: Record<string, unknown> = {
         costingMode: 'RESOURCE_BASED',
-        projectName: projectName || null,
+        projectName: effectiveProjectName || null,
+        projectId: effectiveProjectId,
+        productId: effectiveProductId,
+        productName: effectiveProductName,
         verticalId: verticalId || null,
         legalEntityId: legalEntityId || null,
         currencyCode,
         notes: notes || null,
+        additionalTerms: additionalTerms || null,
         resources: validResources,
         adminMode,
         adminValue: Number(adminValue) || 0,
@@ -230,6 +423,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
         overrideAmount: Number(overrideAmount) || 0,
         projectManagerName: projectManagerName || null,
         packageName: packageName || null,
+        paymentMilestones: milestonePlan,
       };
 
       if (quotationId) {
@@ -261,7 +455,13 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             discountValue: Number(discountValue) || 0,
             projectManagerName: projectManagerName || null,
             packageName: packageName || null,
+            // Preserves whatever New Client-mode free text this quotation
+            // was originally created with (restored into state on load,
+            // above) — there's no UI to edit it once a real lead/productId
+            // exists, so it just carries through unchanged.
+            productName: newClientProductName || null,
             validityDays: Number(validityDays) || 30,
+            paymentMilestones: milestonePlan,
           },
         });
       } else if (clientMode === 'existing') {
@@ -276,21 +476,69 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || 'Failed to save quotation'); }
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
       if (quotationId) queryClient.invalidateQueries({ queryKey: ['quotation', quotationId] });
       toast.success(quotationId ? 'Quotation updated' : 'Quotation created');
-      if (!quotationId) router.push(`/dashboard/quotations/calculator/${data.id}`);
+      if (!quotationId) {
+        // Where to land after creating a brand-new Budget Estimation depends
+        // on where the calculator was opened from: the Projects page's "+
+        // New Estimation" link (carries ?projectId=) sends the user back to
+        // that project's expanded panel; Quotations' own "New (Resource
+        // Calculator)" link (no projectId) sends them to the Quotations list
+        // instead of into edit-mode on the row they just created.
+        if (prefillProjectId) router.push(`/dashboard/projects?expand=${prefillProjectId}`);
+        else router.push('/dashboard/quotations');
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const handleSave = () => {
-    if (!quotationId) {
-      if (clientMode === 'existing' && !selectedLeadId) { toast.error('Select a client'); return; }
-      if (clientMode === 'new' && (!clientName || !companyName)) { toast.error('Client name and company are required'); return; }
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ milestoneId, newScheduledDate, reason }: { milestoneId: number; newScheduledDate: string; reason?: string }) => {
+      const res = await fetch(`/api/quotations/${quotationId}/milestones/${milestoneId}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newScheduledDate, reason }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || 'Failed to reschedule milestone'); }
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['quotation', quotationId] }); toast.success('Milestone rescheduled'); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  // A milestone whose invoice has already been partially paid needs a reason
+  // on record (enforced again server-side — see the reschedule route) since
+  // money has already moved against the date being changed; one that's
+  // unpaid or not yet invoiced needs no such friction.
+  const handleRescheduleMilestone = (milestone: any, newDateStr: string) => {
+    let reason: string | undefined;
+    if (milestone.invoice?.status === 'PARTIALLY_PAID') {
+      const entered = window.prompt('This milestone has already been partially paid — enter a reason for rescheduling it:');
+      if (!entered || !entered.trim()) { toast.error('A reason is required to reschedule a partially paid milestone'); return; }
+      reason = entered.trim();
     }
+    rescheduleMutation.mutate({ milestoneId: milestone.id, newScheduledDate: newDateStr, reason });
+  };
+
+  const handleSave = () => {
+    const errs: Record<string, string> = {};
+    if (!quotationId) {
+      if (clientMode === 'existing' && !selectedLeadId) errs.client = 'Select a client';
+      if (clientMode === 'new' && !clientName) errs.clientName = 'Client name is required';
+      if (clientMode === 'new' && !companyName) errs.companyName = 'Company is required';
+      // Existing-client quotations must be tied to a Project or a Product
+      // (mutually exclusive — see their own disabled fields above); New
+      // Client mode has no real Project/Product to pick yet (only the free-
+      // text Project Name/Product Name, informational only — see their own
+      // state comment), so this only applies once a real Client is picked.
+      if (clientMode === 'existing' && !projectId && !productId) errs.project = 'Select a Project or Product';
+    }
+    setFormErrors(errs);
+    if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
     if (validResources.length === 0) { toast.error('At least one resource line item is required'); return; }
+    if (milestoneError) { toast.error(milestoneError); return; }
     saveMutation.mutate();
   };
 
@@ -322,35 +570,95 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               </div>
             )}
             {!quotationId && clientMode === 'existing' ? (
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
-                <select value={selectedLeadId} onChange={(e) => selectExistingLead(e.target.value)} className={inputCls}>
-                  <option value="">Select a client</option>
-                  {existingLeads.map((l) => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}</option>)}
-                </select>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
+                  <AddableSelect
+                    value={selectedLeadId}
+                    onChange={(v) => { selectExistingLead(v); clearFieldError('client'); }}
+                    options={existingLeads.map((l) => ({ value: String(l.id), label: l.companyName }))}
+                    placeholder="Select a client"
+                    error={!!formErrors.client}
+                  />
+                  {formErrors.client && <p className="text-xs text-red-600 mt-1">{formErrors.client}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                  <AddableSelect
+                    value={projectId}
+                    onChange={(v) => { setProjectId(v); clearFieldError('project'); }}
+                    options={leadProjects.map((p) => ({ value: String(p.id), label: p.projectName }))}
+                    placeholder={!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
+                    disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0 || !!productId}
+                    error={!!formErrors.project}
+                  />
+                  {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                  <AddableSelect
+                    value={productId}
+                    onChange={(v) => { setProductId(v); clearFieldError('project'); }}
+                    options={leadProducts.map((p) => ({ value: String(p.id), label: p.productName }))}
+                    placeholder={!selectedLeadId ? 'Select a client first' : productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
+                    disabled={!selectedLeadId || productsLoading || leadProducts.length === 0 || !!projectId}
+                    error={!!formErrors.project}
+                  />
+                  {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
+                </div>
               </div>
             ) : !quotationId ? (
               <div className="grid grid-cols-2 gap-3 mb-3">
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input value={clientName} onChange={(e) => setClientName(e.target.value)} className={inputCls} /></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input value={companyName} onChange={(e) => setCompanyName(e.target.value)} className={inputCls} /></div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label>
+                  <input value={clientName} onChange={(e) => { setClientName(e.target.value); clearFieldError('clientName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.clientName ? 'border-red-400' : 'border-slate-300'}`} />
+                  {formErrors.clientName && <p className="text-xs text-red-600 mt-1">{formErrors.clientName}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Company *</label>
+                  <input value={companyName} onChange={(e) => { setCompanyName(e.target.value); clearFieldError('companyName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />
+                  {formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}
+                </div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} className={inputCls} /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className={inputCls} /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label><input value={newClientProjectName} onChange={(e) => setNewClientProjectName(e.target.value)} className={inputCls} /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Product Name</label><input value={newClientProductName} onChange={(e) => setNewClientProductName(e.target.value)} className={inputCls} /></div>
               </div>
             ) : (
-              <div className="mb-3 text-sm text-slate-700 font-medium">{companyName} — {clientName}</div>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="flex items-end pb-2 text-sm text-slate-700 font-medium">{companyName} — {clientName}</div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                  <AddableSelect
+                    value={projectId}
+                    onChange={(v) => setProjectId(v)}
+                    options={leadProjects.map((p) => ({ value: String(p.id), label: p.projectName }))}
+                    placeholder={projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
+                    disabled={projectsLoading || leadProjects.length === 0 || !!productId}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                  <AddableSelect
+                    value={productId}
+                    onChange={(v) => setProductId(v)}
+                    options={leadProducts.map((p) => ({ value: String(p.id), label: p.productName }))}
+                    placeholder={productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
+                    disabled={productsLoading || leadProducts.length === 0 || !!projectId}
+                  />
+                </div>
+              </div>
             )}
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div className="col-span-2 sm:col-span-1">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
-                <input value={projectName} onChange={(e) => setProjectName(e.target.value)} className={inputCls} />
-              </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
-                <select value={verticalId} onChange={(e) => selectVertical(e.target.value)} className={inputCls}>
-                  <option value="">Company-wide</option>
-                  {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
+                <AddableSelect
+                  value={verticalId}
+                  onChange={(v) => selectVertical(v)}
+                  options={[{ value: '', label: 'Company-wide' }, ...verticals.map((v) => ({ value: String(v.id), label: v.name }))]}
+                  placeholder="Select vertical"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Project Manager</label>
@@ -362,24 +670,31 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-                <select value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)} className={inputCls}>
-                  <option value="INR">INR</option>
-                  {currencies.filter((c) => c.currencyCode !== 'INR').map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
-                </select>
+                <AddableSelect
+                  value={currencyCode}
+                  onChange={(v) => setCurrencyCode(v)}
+                  options={[{ value: 'INR', label: 'INR' }, ...currencies.filter((c) => c.currencyCode !== 'INR').map((c) => ({ value: c.currencyCode, label: c.currencyCode }))]}
+                  placeholder="Select currency"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Bill To (Company)</label>
-                <select value={billingCompanyId} onChange={(e) => selectBillingCompany(e.target.value)} className={inputCls}>
-                  <option value="">Not linked to a Company</option>
-                  {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <AddableSelect
+                  value={billingCompanyId}
+                  onChange={(v) => selectBillingCompany(v)}
+                  options={[{ value: '', label: 'Not linked to a Company' }, ...companies.map((c) => ({ value: String(c.id), label: c.name }))]}
+                  placeholder="Select company"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Legal Entity</label>
-                <select value={legalEntityId} onChange={(e) => setLegalEntityId(e.target.value)} disabled={!billingCompanyId} className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}>
-                  <option value="">{billingCompanyId ? 'Select entity' : 'Pick a Company first'}</option>
-                  {legalEntityOptions.map((e) => <option key={e.id} value={e.id}>{e.country.flagEmoji ? `${e.country.flagEmoji} ` : ''}{e.country.countryName} — {e.legalName}</option>)}
-                </select>
+                <AddableSelect
+                  value={legalEntityId}
+                  onChange={(v) => setLegalEntityId(v)}
+                  options={legalEntityOptions.map((e) => ({ value: String(e.id), label: `${e.country.flagEmoji ? `${e.country.flagEmoji} ` : ''}${e.country.countryName} — ${e.legalName}` }))}
+                  placeholder={billingCompanyId ? 'Select entity' : 'Pick a Company first'}
+                  disabled={!billingCompanyId}
+                />
                 {billingCompanyId && legalEntityOptions.length === 0 && (
                   <p className="text-xs text-slate-400 mt-1">This company has no legal entities yet — add one from the Company tab on a linked customer&apos;s detail page.</p>
                 )}
@@ -398,7 +713,8 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-xs text-slate-400 uppercase tracking-wide">
-                    <th className="text-left pb-2 pr-2 min-w-[200px]">Role</th>
+                    <th className="text-left pb-2 pr-2 min-w-[180px]">Role</th>
+                    <th className="text-left pb-2 px-2 min-w-[180px]">Designation</th>
                     <th className="text-left pb-2 px-2 w-16">Qty</th>
                     <th className="text-left pb-2 px-2 w-24">Duration (days)</th>
                     <th className="text-left pb-2 px-2 w-28">Unit Cost / day</th>
@@ -409,12 +725,20 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 <tbody className="divide-y divide-slate-100">
                   {resources.map((r, idx) => (
                     <tr key={idx}>
-                      <td className="py-1.5 pr-2 min-w-[200px]">
+                      <td className="py-1.5 pr-2 min-w-[180px]">
                         <input
                           value={r.role}
                           onChange={(e) => updateResourceRole(idx, e.target.value)}
                           list="resource-employee-options"
                           placeholder="Type a role, or pick an employee"
+                          className={inputCls}
+                        />
+                      </td>
+                      <td className="py-1.5 px-2 min-w-[180px]">
+                        <input
+                          value={r.employeeRef || ''}
+                          onChange={(e) => updateResourceEmployeeRef(idx, e.target.value)}
+                          placeholder="—"
                           className={inputCls}
                         />
                       </td>
@@ -435,10 +759,81 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             <button type="button" onClick={addResource} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-sm font-medium text-amber-700 hover:bg-amber-50">
               <PlusIcon className="h-4 w-4" /> Add resource
             </button>
-            <p className="text-xs text-slate-400 mt-2">Picking an employee from the role suggestions fills in a day rate estimated from their CTC — still editable afterward.</p>
             <datalist id="resource-employee-options">
               {resourceEmployees.map((e) => <option key={e.id} value={employeeLabel(e)} />)}
             </datalist>
+          </div>
+
+          {/* Payment Milestones */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Payment Milestones</h2>
+
+            {status === 'APPROVED' && Array.isArray(existing?.paymentMilestones) && existing.paymentMilestones.length > 0 ? (
+              <div className="space-y-2">
+                {existing.paymentMilestones.map((m: any) => (
+                  <div key={m.id} className="flex items-center justify-between gap-3 py-2 border-b border-dashed border-slate-100 last:border-0">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Milestone {m.sequence} — {Number(m.percentage)}% ({fmt(Number(m.amount))})</p>
+                      {m.invoice && (
+                        <p className="text-xs text-slate-400">
+                          <Link href={`/dashboard/accounting/invoices/${m.invoice.id}`} className="text-amber-700 hover:underline">{m.invoice.invoiceNumber}</Link> — {m.invoice.status}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        // Keyed on scheduledDate too (not just m.id) so a
+                        // successful reschedule — which invalidates and
+                        // refetches this quotation — fully remounts this
+                        // uncontrolled input instead of leaving the old
+                        // date showing in an unchanged DOM node.
+                        key={`${m.id}-${m.scheduledDate}`}
+                        type="date"
+                        defaultValue={dayjs(m.scheduledDate).format('YYYY-MM-DD')}
+                        disabled={m.invoice?.status === 'PAID'}
+                        onBlur={(e) => {
+                          if (e.target.value && e.target.value !== dayjs(m.scheduledDate).format('YYYY-MM-DD')) handleRescheduleMilestone(m, e.target.value);
+                        }}
+                        className="px-2 py-1 border border-slate-300 rounded text-xs text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                        title={m.invoice?.status === 'PAID' ? 'Fully paid — date is locked' : 'Reschedule this milestone'}
+                      />
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${m.status === 'INVOICED' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{m.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : status === 'APPROVED' ? (
+              <p className="text-xs text-slate-400">No payment milestones were configured — the full amount was invoiced on approval.</p>
+            ) : (
+              <>
+                <p className="text-xs text-slate-400 mb-3">Optional — split the quoted amount into staged invoices instead of one lump sum on approval. Leave empty to invoice the full amount once approved.</p>
+                <div className="space-y-2">
+                  {milestones.map((m, idx) => (
+                    <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-0.5">Milestone {idx + 1} — % of total</label>
+                        <input type="number" min="0" step="0.01" value={m.percentage} onChange={(e) => updateMilestone(idx, 'percentage', e.target.value)} className={inputCls} placeholder="e.g. 50" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-0.5">{idx === 0 ? 'Invoiced on approval' : 'Days after previous milestone'}</label>
+                        <input type="number" min="0" value={idx === 0 ? '0' : m.gapDays} disabled={idx === 0} onChange={(e) => updateMilestone(idx, 'gapDays', e.target.value)} className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`} placeholder="e.g. 15" />
+                      </div>
+                      <button type="button" onClick={() => removeMilestone(idx)} className="p-2 text-slate-400 hover:text-red-600" title="Remove milestone">
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={addMilestone} className="mt-2 flex items-center gap-1 text-sm text-amber-700 hover:text-amber-800 font-medium">
+                  <PlusIcon className="h-4 w-4" /> Add Milestone
+                </button>
+                {milestones.length > 0 && (
+                  <p className={`text-xs mt-2 ${milestoneError ? 'text-red-600' : 'text-green-600'}`}>
+                    Total: {milestonesTotalPct}% {milestoneError ? `— ${milestoneError}` : '— OK'}
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           {/* Other Project Costs */}
@@ -479,6 +874,27 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
             </div>
           </div>
+
+          {/* Terms & Conditions */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Terms &amp; Conditions</h2>
+            {(companyProfile?.termsAndConditions || companyProfile?.paymentTerms || companyProfile?.warrantyTerms) && (
+              <div className="mb-3">
+                <p className="text-xs font-medium text-slate-500 mb-1">Standard Template (from Settings — applies to every quotation)</p>
+                <div className="text-xs text-slate-600 whitespace-pre-wrap bg-slate-50 border border-slate-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                  {[companyProfile.termsAndConditions, companyProfile.paymentTerms, companyProfile.warrantyTerms].filter(Boolean).join('\n\n')}
+                </div>
+              </div>
+            )}
+            <label className="block text-sm font-medium text-slate-700 mb-1">Additional Clauses (specific to this quotation)</label>
+            <textarea
+              value={additionalTerms}
+              onChange={(e) => setAdditionalTerms(e.target.value)}
+              rows={4}
+              placeholder="Any extra terms or clauses that apply only to this quotation"
+              className={inputCls}
+            />
+          </div>
         </div>
 
         {/* Right: live quotation summary */}
@@ -505,17 +921,31 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Resource cost</span><span className="font-mono font-medium text-slate-700">{fmt(costing.resourceCostTotal)}</span></div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Outsourcing</span><span className="font-mono font-medium text-slate-700">{fmt(Number(outsourcingCost) || 0)}</span></div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Travel / other</span><span className="font-mono font-medium text-slate-700">{fmt(Number(travelCost) || 0)}</span></div>
-              <div className="flex justify-between py-1 border-b border-dashed border-slate-100"><span className="text-slate-500">Admin / overhead</span><span className="font-mono font-medium text-slate-700">{fmt(costing.adminCost)}{adminMode === 'PCT' && ` (${adminValue}%)`}</span></div>
+              <div className="flex items-center justify-between py-1 border-b border-dashed border-slate-100">
+                <span className="text-slate-500">Admin / overhead</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-medium text-slate-700">{fmt(costing.adminCost)}</span>
+                  <input type="number" min="0" value={adminValue} onChange={(e) => setAdminValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
+                  <AddableSelect
+                    value={adminMode}
+                    onChange={(v) => setAdminMode(v as CostMode)}
+                    options={[{ value: 'PCT', label: '%' }, { value: 'FIXED', label: '₹' }]}
+                    placeholder="Mode"
+                  />
+                </div>
+              </div>
               <div className="flex justify-between py-1 border-b border-dashed border-slate-100 font-semibold"><span className="text-slate-800">Base project cost</span><span className="font-mono text-slate-800">{fmt(costing.baseCost)}</span></div>
               <div className="flex items-center justify-between py-1 border-b border-dashed border-slate-100">
                 <span className="text-slate-500">Markup</span>
                 <div className="flex items-center gap-1.5">
                   <span className="font-mono font-medium text-slate-700">{fmt(costing.markupAmount)}</span>
                   <input type="number" min="0" value={markupValue} onChange={(e) => setMarkupValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
-                  <select value={markupMode} onChange={(e) => setMarkupMode(e.target.value as CostMode)} className="px-1 py-0.5 border border-slate-300 rounded text-xs text-slate-700">
-                    <option value="PCT">%</option>
-                    <option value="FIXED">₹</option>
-                  </select>
+                  <AddableSelect
+                    value={markupMode}
+                    onChange={(v) => setMarkupMode(v as CostMode)}
+                    options={[{ value: 'PCT', label: '%' }, { value: 'FIXED', label: '₹' }]}
+                    placeholder="Mode"
+                  />
                 </div>
               </div>
               <div className="flex items-center justify-between py-1 border-b border-dashed border-slate-100">
@@ -523,10 +953,12 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                 <div className="flex items-center gap-1.5">
                   <span className={`font-mono font-medium ${costing.discountAmount > 0 ? 'text-red-600' : 'text-slate-700'}`}>{costing.discountAmount > 0 ? '-' : ''}{fmt(costing.discountAmount)}</span>
                   <input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs text-right text-slate-800" />
-                  <select value={discountMode} onChange={(e) => setDiscountMode(e.target.value as CostMode)} className="px-1 py-0.5 border border-slate-300 rounded text-xs text-slate-700">
-                    <option value="PCT">%</option>
-                    <option value="FIXED">₹</option>
-                  </select>
+                  <AddableSelect
+                    value={discountMode}
+                    onChange={(v) => setDiscountMode(v as CostMode)}
+                    options={[{ value: 'PCT', label: '%' }, { value: 'FIXED', label: '₹' }]}
+                    placeholder="Mode"
+                  />
                 </div>
               </div>
               <div className="flex items-center justify-between py-1">
@@ -548,9 +980,13 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4">
               <div className="flex items-center justify-between gap-2">
                 <label className="text-xs font-medium text-slate-600">Final amount (override)</label>
-                <input type="number" min="0" value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} placeholder={fmt(costing.calculatedTotalAmount)} className="w-32 px-2 py-1.5 border border-slate-300 rounded text-sm text-right text-slate-800" />
+                <input type="number" min="0" value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} disabled={!canAuthorizeOverride} placeholder={fmt(costing.calculatedTotalAmount)} className="w-32 px-2 py-1.5 border border-slate-300 rounded text-sm text-right text-slate-800 disabled:bg-slate-100 disabled:text-slate-400" />
               </div>
-              <p className="text-xs text-slate-400 mt-1.5">Leave blank to publish the system-calculated amount.</p>
+              <p className="text-xs text-slate-400 mt-1.5">
+                {canAuthorizeOverride
+                  ? 'Leave blank to publish the system-calculated amount.'
+                  : 'Requires authorization to override the calculated amount — ask a manager.'}
+              </p>
             </div>
 
             <button onClick={handleSave} disabled={saveMutation.isPending} className="w-full px-4 py-2.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">

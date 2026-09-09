@@ -58,13 +58,49 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       }
     }
 
+    // Same resolve-then-denormalize pattern as POST — see the comment there.
+    let vendorUpdate: { vendorLeadId: number | null; vendor: string | null } | undefined;
+    if (body.vendorLeadId !== undefined) {
+      if (body.vendorLeadId === null || body.vendorLeadId === '') {
+        vendorUpdate = { vendorLeadId: null, vendor: null };
+      } else {
+        const vendorLead = await prisma.lead.findUnique({ where: { id: parseInt(body.vendorLeadId) } });
+        if (!vendorLead) return NextResponse.json({ message: 'Selected vendor (customer) not found' }, { status: 404 });
+        vendorUpdate = { vendorLeadId: vendorLead.id, vendor: vendorLead.companyName };
+      }
+    }
+
+    let projectId: number | null | undefined = undefined;
+    if (body.projectId !== undefined) {
+      if (body.projectId === null || body.projectId === '') {
+        projectId = null;
+      } else {
+        const project = await prisma.project.findUnique({ where: { id: parseInt(body.projectId) } });
+        if (!project) return NextResponse.json({ message: 'Selected project not found' }, { status: 404 });
+        projectId = project.id;
+      }
+    }
+
+    let productId: number | null | undefined = undefined;
+    if (body.productId !== undefined) {
+      if (body.productId === null || body.productId === '') {
+        productId = null;
+      } else {
+        const product = await prisma.product.findUnique({ where: { id: parseInt(body.productId) } });
+        if (!product) return NextResponse.json({ message: 'Selected product not found' }, { status: 404 });
+        productId = product.id;
+      }
+    }
+
     const nextStatus = body.status !== undefined ? body.status : existing.status;
     const expense = await prisma.expense.update({
       where: { id },
       data: {
         ...(body.categoryId !== undefined && { categoryId: parseInt(body.categoryId) }),
         ...(subCategoryId !== undefined && { subCategoryId }),
-        ...(body.vendor !== undefined && { vendor: body.vendor || null }),
+        ...(vendorUpdate !== undefined && vendorUpdate),
+        ...(projectId !== undefined && { projectId }),
+        ...(productId !== undefined && { productId }),
         ...(body.expenseDate !== undefined && { expenseDate: new Date(body.expenseDate) }),
         ...(body.amount !== undefined && { amount: Number(body.amount) }),
         ...(body.currencyCode !== undefined && { currencyCode: body.currencyCode }),

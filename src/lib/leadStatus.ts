@@ -1,16 +1,26 @@
-// Underlying status values (CONFIRMED / DISQUALIFIED) are unchanged from the
-// original pipeline — several routes/pages branch on `status === 'CONFIRMED'`
-// (e.g. Events/Documents tab unlock in the lead detail page, event creation
-// gating) so the enum values stay stable. Only labels/colors/order changed to
-// match the requested New → Contacted → Follow-up Scheduled → Qualified →
-// Converted → Lost/Dropped pipeline, plus the new FOLLOW_UP_SCHEDULED stage.
-export const LEAD_STATUSES = [
-  { value: 'NEW', label: 'New', color: 'bg-slate-100 text-slate-700' },
-  { value: 'CONTACTED', label: 'Contacted', color: 'bg-blue-100 text-blue-700' },
-  { value: 'FOLLOW_UP_SCHEDULED', label: 'Follow-up Scheduled', color: 'bg-orange-100 text-orange-700' },
-  { value: 'QUALIFIED', label: 'Qualified', color: 'bg-purple-100 text-purple-700' },
-  { value: 'CONFIRMED', label: 'Converted', color: 'bg-green-100 text-green-700' },
-  { value: 'DISQUALIFIED', label: 'Lost / Dropped', color: 'bg-red-100 text-red-700' },
+// Labels/colors/order for the lead pipeline are admin-editable — see the
+// LeadStatusOption model in schema.prisma and GET/PATCH
+// /api/lead-status-options. This file only keeps the parts of "status" that
+// are NOT admin-editable: the underlying pipeline *codes* themselves
+// (several routes/pages branch on `status === 'CONFIRMED'` — e.g. the
+// Customers list, Events/Documents tab unlock — so those values stay fixed
+// in code) and the pure ranking logic that depends on them.
+
+// Curated Tailwind badge presets offered in the Lead Status admin screen —
+// a free-text color field would let a typo silently break every status
+// badge on the site, so PATCH /api/lead-status-options/[id] validates
+// `color` against this same list server-side.
+export const STATUS_COLOR_PRESETS = [
+  { value: 'bg-slate-100 text-slate-700', label: 'Slate' },
+  { value: 'bg-blue-100 text-blue-700', label: 'Blue' },
+  { value: 'bg-orange-100 text-orange-700', label: 'Orange' },
+  { value: 'bg-purple-100 text-purple-700', label: 'Purple' },
+  { value: 'bg-green-100 text-green-700', label: 'Green' },
+  { value: 'bg-red-100 text-red-700', label: 'Red' },
+  { value: 'bg-amber-100 text-amber-700', label: 'Amber' },
+  { value: 'bg-teal-100 text-teal-700', label: 'Teal' },
+  { value: 'bg-pink-100 text-pink-700', label: 'Pink' },
+  { value: 'bg-indigo-100 text-indigo-700', label: 'Indigo' },
 ];
 
 // Pipeline rank used to decide whether a follow-up's auto status-suggestion
@@ -25,14 +35,6 @@ const STATUS_RANK: Record<string, number> = {
   CONFIRMED: 4,
   DISQUALIFIED: 4,
 };
-
-export function leadStatusColor(status: string): string {
-  return LEAD_STATUSES.find((s) => s.value === status)?.color || 'bg-slate-100 text-slate-700';
-}
-
-export function leadStatusLabel(status: string): string {
-  return LEAD_STATUSES.find((s) => s.value === status)?.label || status;
-}
 
 export function isTerminalLeadStatus(status: string): boolean {
   return status === 'CONFIRMED' || status === 'DISQUALIFIED';

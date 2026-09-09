@@ -14,6 +14,7 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import AddableSelect from '@/components/AddableSelect';
 
 dayjs.extend(relativeTime);
 
@@ -145,22 +146,26 @@ export default function NotificationsPage() {
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
         <div className="flex flex-col sm:flex-row gap-3">
-          <select
-            value={typeFilter}
-            onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            {NOTIFICATION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
-          <select
-            value={readFilter}
-            onChange={(e) => { setReadFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All</option>
-            <option value="false">Unread</option>
-            <option value="true">Read</option>
-          </select>
+          <div className="w-full sm:w-48">
+            <AddableSelect
+              value={typeFilter}
+              onChange={(v) => { setTypeFilter(v); setPage(0); }}
+              options={NOTIFICATION_TYPES}
+              placeholder="All Types"
+            />
+          </div>
+          <div className="w-full sm:w-40">
+            <AddableSelect
+              value={readFilter}
+              onChange={(v) => { setReadFilter(v); setPage(0); }}
+              options={[
+                { value: '', label: 'All' },
+                { value: 'false', label: 'Unread' },
+                { value: 'true', label: 'Read' },
+              ]}
+              placeholder="All"
+            />
+          </div>
           {(typeFilter || readFilter) && (
             <button onClick={() => { setTypeFilter(''); setReadFilter(''); setPage(0); }} className="text-sm text-slate-500 hover:text-red-500">
               Clear Filters

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, Fragment, forwardRef, useImperativeHandle } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, Transition } from '@headlessui/react';
 import Link from 'next/link';
@@ -19,11 +19,15 @@ import {
   EyeIcon,
   ArrowDownTrayIcon,
   BanknotesIcon,
+  CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import PaymentEntryDrawer from './PaymentEntryDrawer';
 import { formatCurrency } from '@/lib/currency';
+import { usePermissions } from '@/hooks/usePermissions';
+import { invalidateInvoiceData } from '@/lib/queryInvalidation';
+import AddableSelect from '@/components/AddableSelect';
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-green-100 text-green-700',
@@ -59,6 +63,10 @@ interface InvoiceRow {
   status: string;
   displayStatus: string;
   daysOverdue: number;
+  // Next Follow Ups — same field/shape as Lead.nextFollowUpDate /
+  // Lead.isOverdue in the Leads module, reused verbatim here.
+  nextFollowUpDate: string | null;
+  isFollowUpOverdue: boolean;
   accountManagerId: number | null;
   accountManagerName: string | null;
   latestPaymentDate: string | null;
@@ -107,9 +115,26 @@ function fmt(amount: string | number, currencyCode = 'INR'): string {
 // leadId is optional and only passed when this is embedded in a specific
 // customer's Invoices/Paid Invoices tab (Customer Detail page) — it pins
 // the list to that customer and hides the standalone "All Customers"
-// filter below. The two Accounting pages (pending-invoices, paid-invoices)
-// don't pass it, so their behavior is unchanged.
-export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid'; leadId?: number }) {
+// filter below. hideHeading is likewise optional, passed only by the
+// Accounting module's own Invoices page
+// (src/app/dashboard/accounting/invoices/page.tsx) — that page renders its
+// own "Invoices" title + Pending/Paid pill-tabs + Export/New Invoice
+// buttons, all on one row (Leads page style), so this component's own
+// header row (title, subtitle, AND those two buttons) would otherwise
+// duplicate/misplace it; every other caller (Customer detail page) omits
+// the prop and keeps seeing this component's own full header exactly as
+// before. When hideHeading is set, the parent instead drives those two
+// buttons itself via the forwarded ref (openCreateDrawer/exportCsv) —
+// same underlying state/handlers, just triggered from outside so they can
+// sit in the parent's own header row instead of a separate one below it.
+export interface InvoiceListPageHandle {
+  openCreateDrawer: () => void;
+  exportCsv: () => void;
+}
+
+const InvoiceListPage = forwardRef<InvoiceListPageHandle, { mode: 'open' | 'paid'; leadId?: number; hideHeading?: boolean }>(function InvoiceListPage({ mode, leadId, hideHeading }, ref) {
+  const { has } = usePermissions();
+  const canExport = has('export_accounting');
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -119,8 +144,11 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
   const [dueDateFrom, setDueDateFrom] = useState('');
   const [dueDateTo, setDueDateTo] = useState('');
   const [overdueOnly, setOverdueOnly] = useState(false);
-  const [sortBy, setSortBy] = useState('dueDate');
-  const [sortDir, setSortDir] = useState('asc');
+  // Pending Invoices defaults to newest-created-first so a freshly generated
+  // invoice is immediately visible at the top without changing sort; Paid
+  // Invoices keeps the original due-date ordering (unaffected by this ask).
+  const [sortBy, setSortBy] = useState(mode === 'open' ? 'createdAt' : 'dueDate');
+  const [sortDir, setSortDir] = useState(mode === 'open' ? 'desc' : 'asc');
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
 
@@ -193,6 +221,7 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
+      invalidateInvoiceData(queryClient);
       toast.success(editingId ? 'Invoice updated!' : 'Invoice created!');
       closeDrawer();
     },
@@ -217,7 +246,17 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
     const res = await fetch(`/api/accounting/invoices/${id}`, { method: 'DELETE' });
     if (!res.ok) { const err = await res.json(); toast.error(err.message || 'Failed to delete invoice'); return; }
     queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
+    invalidateInvoiceData(queryClient);
     toast.success('Invoice deleted');
+  };
+
+  // Same inline partial-update pattern as updateNextFollowUp in the Leads
+  // module (src/app/dashboard/leads/page.tsx) — reused verbatim here.
+  const updateNextFollowUp = async (id: number, nextFollowUpDate: string) => {
+    const res = await fetch(`/api/accounting/invoices/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nextFollowUpDate: nextFollowUpDate || null }) });
+    if (!res.ok) { toast.error('Failed to update next follow-up'); return; }
+    queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
+    toast.success('Next follow-up updated');
   };
 
   const exportCsv = () => {
@@ -240,6 +279,15 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  // Exposed so a parent rendering this with hideHeading (the Accounting
+  // module's own Invoices page) can trigger these from its own header row
+  // instead of the row below — same handlers/state, just invoked from
+  // outside. No-op for every other caller, which never attaches a ref.
+  useImperativeHandle(ref, () => ({
+    openCreateDrawer: () => { setEditingId(null); setForm(blankForm); setLineItems([]); setDrawerOpen(true); },
+    exportCsv,
+  }));
 
   const handleSort = (col: string) => {
     if (sortBy === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -267,22 +315,26 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">{mode === 'paid' ? 'Paid Invoices' : 'Pending Invoices'}</h1>
-          <p className="text-slate-500 mt-1">{mode === 'paid' ? 'Fully settled invoices and payment history' : 'Invoices awaiting full payment'}</p>
+      {!hideHeading && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">{mode === 'paid' ? 'Paid Invoices' : 'Pending Invoices'}</h1>
+            <p className="text-slate-500 mt-1">{mode === 'paid' ? 'Fully settled invoices and payment history' : 'Invoices awaiting full payment'}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {canExport && (
+              <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
+                <ArrowDownTrayIcon className="h-4 w-4" /> Export
+              </button>
+            )}
+            {mode === 'open' && (
+              <button onClick={() => { setEditingId(null); setForm(blankForm); setLineItems([]); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+                <PlusIcon className="h-4 w-4" /> New Invoice
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
-            <ArrowDownTrayIcon className="h-4 w-4" /> Export
-          </button>
-          {mode === 'open' && (
-            <button onClick={() => { setEditingId(null); setForm(blankForm); setLineItems([]); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-              <PlusIcon className="h-4 w-4" /> New Invoice
-            </button>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Sticky Search & Filters */}
       <div className="sticky top-0 z-10 bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
@@ -303,10 +355,14 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
             )}
           </div>
           {!leadId && (
-            <select value={leadFilter} onChange={(e) => { setLeadFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-              <option value="">All Customers</option>
-              {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-            </select>
+            <div className="w-56">
+              <AddableSelect
+                value={leadFilter}
+                onChange={(v) => { setLeadFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All Customers' }, ...leads.map((l) => ({ value: String(l.id), label: l.companyName }))]}
+                placeholder="All Customers"
+              />
+            </div>
           )}
           <div className="flex items-center gap-2">
             <label className="text-xs font-medium text-slate-600">Due From</label>
@@ -355,6 +411,7 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
                         <th className="px-4 py-3 text-right font-semibold text-white hidden lg:table-cell">Balance</th>
                         <th className="px-4 py-3 text-left"><button onClick={() => handleSort('dueDate')} className="flex items-center gap-1 font-semibold text-white">Due Date <SortIcon col="dueDate" /></button></th>
                         <th className="px-4 py-3 text-center font-semibold text-white hidden lg:table-cell">Days Overdue</th>
+                        <th className="px-4 py-3 text-left hidden lg:table-cell"><button onClick={() => handleSort('nextFollowUpDate')} className="flex items-center gap-1 font-semibold text-white">Next Follow Ups <SortIcon col="nextFollowUpDate" /></button></th>
                         <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                         <th className="px-4 py-3 text-left font-semibold text-white hidden xl:table-cell">Manager</th>
                       </>
@@ -387,6 +444,18 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
                           <td className="px-4 py-3 text-right text-slate-600 hidden lg:table-cell">{fmt(inv.balanceDue, inv.currencyCode)}</td>
                           <td className="px-4 py-3 text-slate-600">{dayjs(inv.dueDate).format('DD MMM YYYY')}</td>
                           <td className="px-4 py-3 text-center hidden lg:table-cell">{inv.daysOverdue > 0 ? <span className="text-red-600 font-medium">{inv.daysOverdue}</span> : '—'}</td>
+                          <td className="px-4 py-3 hidden lg:table-cell">
+                            <div className={`relative inline-flex items-center rounded-lg border ${inv.isFollowUpOverdue ? 'border-red-300 bg-red-50' : inv.nextFollowUpDate ? 'border-slate-200 bg-white' : 'border-dashed border-slate-300 bg-white'}`}>
+                              <CalendarDaysIcon className={`pointer-events-none absolute left-2 h-3.5 w-3.5 ${inv.isFollowUpOverdue ? 'text-red-500' : 'text-slate-400'}`} />
+                              <input
+                                type="date"
+                                value={inv.nextFollowUpDate ? dayjs(inv.nextFollowUpDate).format('YYYY-MM-DD') : ''}
+                                onChange={(e) => updateNextFollowUp(inv.id, e.target.value)}
+                                className={`w-[9.5rem] pl-7 pr-2 py-1.5 text-xs bg-transparent border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${inv.isFollowUpOverdue ? 'text-red-700 font-semibold' : inv.nextFollowUpDate ? 'text-slate-700' : 'text-slate-400'}`}
+                              />
+                            </div>
+                            {inv.isFollowUpOverdue && <p className="mt-1 text-[10px] font-semibold text-red-600 uppercase tracking-wide">Overdue</p>}
+                          </td>
                           <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[inv.displayStatus] || 'bg-slate-100 text-slate-700'}`}>{STATUS_LABELS[inv.displayStatus] || inv.displayStatus}</span></td>
                           <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{inv.accountManagerName || '—'}</td>
                         </>
@@ -438,13 +507,14 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(size)}
+                    onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                    options={[10, 25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
@@ -499,21 +569,27 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
                     <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="flex-1 px-6 py-4 space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Customer / Lead *</label>
-                        <select required disabled={!!editingId} value={form.leadId} onChange={(e) => setForm((f) => ({ ...f, leadId: e.target.value, quotationId: '' }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500">
-                          <option value="">Select a customer</option>
-                          {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}</option>)}
-                        </select>
+                        <AddableSelect
+                          disabled={!!editingId}
+                          value={form.leadId}
+                          onChange={(v) => setForm((f) => ({ ...f, leadId: v, quotationId: '' }))}
+                          options={leads.map((l) => ({ value: String(l.id), label: `${l.companyName} — ${l.contactPerson}` }))}
+                          placeholder="Select a customer"
+                        />
                       </div>
 
                       {!editingId && (
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Generate from Approved Quotation</label>
-                          <select value={form.quotationId} onChange={(e) => setForm((f) => ({ ...f, quotationId: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                            <option value="">None — enter line items manually</option>
-                            {approvedQuotations.filter((q) => !form.leadId || q.leadId === Number(form.leadId)).map((q) => (
-                              <option key={q.id} value={q.id}>{q.quotationNumber} — {q.businessModule || 'Custom'}</option>
-                            ))}
-                          </select>
+                          <AddableSelect
+                            value={form.quotationId}
+                            onChange={(v) => setForm((f) => ({ ...f, quotationId: v }))}
+                            options={[
+                              { value: '', label: 'None — enter line items manually' },
+                              ...approvedQuotations.filter((q) => !form.leadId || q.leadId === Number(form.leadId)).map((q) => ({ value: String(q.id), label: `${q.quotationNumber} — ${q.businessModule || 'Custom'}` })),
+                            ]}
+                            placeholder="Select quotation"
+                          />
                         </div>
                       )}
 
@@ -552,10 +628,12 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Account Manager</label>
-                          <select value={form.accountManagerId} onChange={(e) => setForm((f) => ({ ...f, accountManagerId: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-                            <option value="">Unassigned</option>
-                            {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-                          </select>
+                          <AddableSelect
+                            value={form.accountManagerId}
+                            onChange={(v) => setForm((f) => ({ ...f, accountManagerId: v }))}
+                            options={[{ value: '', label: 'Unassigned' }, ...users.map((u) => ({ value: String(u.id), label: u.fullName }))]}
+                            placeholder="Select account manager"
+                          />
                         </div>
                       </div>
 
@@ -591,4 +669,6 @@ export default function InvoiceListPage({ mode, leadId }: { mode: 'open' | 'paid
       )}
     </div>
   );
-}
+});
+
+export default InvoiceListPage;

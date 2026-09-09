@@ -5,7 +5,9 @@ import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { ArrowDownTrayIcon, PrinterIcon, DocumentChartBarIcon } from '@heroicons/react/24/outline';
 import { generateReportPDF } from '@/lib/generateReportPDF';
+import { usePermissions } from '@/hooks/usePermissions';
 import { formatCurrency } from '@/lib/currency';
+import AddableSelect from '@/components/AddableSelect';
 
 const REPORT_TYPES = [
   { value: 'outstanding', label: 'Outstanding' },
@@ -39,6 +41,8 @@ function fmtCell(value: any, type: string | undefined, currencyCode: string): st
 }
 
 export default function AccountingReportsPage() {
+  const { has } = usePermissions();
+  const canExport = has('export_accounting');
   const [type, setType] = useState('outstanding');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -85,12 +89,16 @@ export default function AccountingReportsPage() {
           <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
             <PrinterIcon className="h-4 w-4" /> Print
           </button>
-          <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
-            <ArrowDownTrayIcon className="h-4 w-4" /> CSV
-          </button>
-          <button onClick={exportPdf} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-            <ArrowDownTrayIcon className="h-4 w-4" /> PDF
-          </button>
+          {canExport && (
+            <>
+              <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
+                <ArrowDownTrayIcon className="h-4 w-4" /> CSV
+              </button>
+              <button onClick={exportPdf} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+                <ArrowDownTrayIcon className="h-4 w-4" /> PDF
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -117,10 +125,14 @@ export default function AccountingReportsPage() {
           <label className="text-xs font-medium text-slate-600">To</label>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800" />
         </div>
-        <select value={leadId} onChange={(e) => setLeadId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-          <option value="">All Customers</option>
-          {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-        </select>
+        <div className="w-56">
+          <AddableSelect
+            value={leadId}
+            onChange={(v) => setLeadId(v)}
+            options={[{ value: '', label: 'All Customers' }, ...leads.map((l) => ({ value: String(l.id), label: l.companyName }))]}
+            placeholder="All Customers"
+          />
+        </div>
         {(from || to || leadId) && (
           <button onClick={() => { setFrom(''); setTo(''); setLeadId(''); }} className="text-sm text-slate-500 hover:text-red-500">Clear</button>
         )}

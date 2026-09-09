@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { STATUSES, PRIORITIES, isValidStatusTransition, TicketStatus, Priority } from '@/lib/adminTicket/constants';
 import PushNotificationToggle from '@/components/PushNotificationToggle';
+import AddableSelect from '@/components/AddableSelect';
 
 const STATUS_COLORS: Record<string, string> = {
   OPEN: 'bg-blue-100 text-blue-700',
@@ -143,16 +144,12 @@ function NewTicketModal({ onClose }: { onClose: () => void }) {
         <div className="space-y-3">
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Category</label>
-            <select
+            <AddableSelect
               value={form.categoryId}
-              onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">Select category</option>
-              {categories.map((c: any) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+              onChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}
+              options={categories.map((c: any) => ({ value: String(c.id), label: c.name }))}
+              placeholder="Select category"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Title</label>
@@ -175,13 +172,12 @@ function NewTicketModal({ onClose }: { onClose: () => void }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Priority</label>
-              <select
+              <AddableSelect
                 value={form.priority}
-                onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-              >
-                {['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+                onChange={(v) => setForm((f) => ({ ...f, priority: v }))}
+                options={['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].map((p) => ({ value: p, label: p }))}
+                placeholder="Select priority"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">Due Date</label>
@@ -195,16 +191,15 @@ function NewTicketModal({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Assign To</label>
-            <select
+            <AddableSelect
               value={form.assignedToId}
-              onChange={(e) => setForm((f) => ({ ...f, assignedToId: e.target.value }))}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">Unassigned</option>
-              {users.map((u: any) => (
-                <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
-              ))}
-            </select>
+              onChange={(v) => setForm((f) => ({ ...f, assignedToId: v }))}
+              options={[
+                { value: '', label: 'Unassigned' },
+                ...users.map((u: any) => ({ value: String(u.id), label: `${u.firstName} ${u.lastName}` })),
+              ]}
+              placeholder="Unassigned"
+            />
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-5">

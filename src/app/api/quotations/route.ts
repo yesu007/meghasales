@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/quotationResourceCosting';
+import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
 
 // Validates and normalizes the raw request body for a resource-based
 // (Quotation Calculator) quotation, then runs it through the shared pure
@@ -24,7 +25,8 @@ function buildResourceBasedCosting(body: any) {
     if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Resource #${idx + 1} must have a quantity greater than 0`);
     if (!Number.isFinite(durationDays) || durationDays <= 0) throw new Error(`Resource #${idx + 1} must have a duration greater than 0`);
     if (!Number.isFinite(dayRate) || dayRate <= 0) throw new Error(`Resource #${idx + 1} must have a day rate greater than 0`);
-    return { role, qty, durationDays, dayRate };
+    const employeeRef = r.employeeRef ? String(r.employeeRef).trim() : null;
+    return { role, qty, durationDays, dayRate, employeeRef };
   });
 
   const adminMode: CostMode = body.adminMode === 'FIXED' ? 'FIXED' : 'PCT';
@@ -47,6 +49,18 @@ function buildResourceBasedCosting(body: any) {
   if (taxPercentage < 0) throw new Error('Tax percentage cannot be negative');
   if (overrideAmount < 0) throw new Error('Override amount cannot be negative');
   if (validityDays < 1) throw new Error('Quotation validity must be at least 1 day');
+
+  // Milestone 1 is always immediate (invoiced the moment the quotation is
+  // approved — see materializeMilestonePlan), so its own gapDays is
+  // meaningless input; normalized to 0 here rather than trusted from the
+  // client, same as the rest of this function's inputs.
+  const rawMilestones = Array.isArray(body.paymentMilestones) ? body.paymentMilestones : [];
+  const paymentMilestones: MilestonePlanInput[] = rawMilestones.map((m: any, idx: number) => ({
+    percentage: Number(m.percentage),
+    gapDays: idx === 0 ? 0 : Number(m.gapDays),
+  }));
+  const milestoneError = validateMilestonePlan(paymentMilestones);
+  if (milestoneError) throw new Error(milestoneError);
 
   const costing = computeResourceCosting({
     resources, adminMode, adminValue, outsourcingCost, travelCost, markupMode, markupValue, discountMode, discountValue, taxPercentage, overrideAmount,
@@ -81,7 +95,13 @@ function buildResourceBasedCosting(body: any) {
       discountValue,
       projectManagerName: body.projectManagerName ? String(body.projectManagerName).trim() : null,
       packageName: body.packageName ? String(body.packageName).trim() : null,
+      // New Client mode's free-text Product Name — see the Calculator
+      // form's own comment for why this has no dedicated column the way
+      // projectName does (a Product always needs an existing lead, which a
+      // brand-new client doesn't have yet).
+      productName: body.productName ? String(body.productName).trim() : null,
       validityDays,
+      paymentMilestones,
     },
   };
 }
@@ -112,6 +132,7 @@ export async function GET(request: NextRequest) {
           { lead: { companyName: { contains: searchTerm, mode: 'insensitive' } } },
           { lead: { contactPerson: { contains: searchTerm, mode: 'insensitive' } } },
           { businessModule: { contains: searchTerm, mode: 'insensitive' } },
+          { projectName: { contains: searchTerm, mode: 'insensitive' } },
         ],
       });
     }
@@ -121,6 +142,14 @@ export async function GET(request: NextRequest) {
     // auto-generates an invoice, only quotations still missing one (e.g.
     // approved before that existed) should show up as pickable there.
     if (searchParams.get('withoutInvoice') === 'true') AND.push({ invoices: { none: { deletedAt: null } } });
+    // Used by the Projects page's Budget Estimation panel to list a single
+    // project's quotations.
+    const projectId = searchParams.get('projectId') || '';
+    if (projectId) AND.push({ projectId: parseInt(projectId) });
+    // Same, for Product Master's own Budget Estimation panel
+    // (ProductBudgetPanel).
+    const productId = searchParams.get('productId') || '';
+    if (productId) AND.push({ productId: parseInt(productId) });
 
     if (AND.length > 0) where.AND = AND;
 
@@ -136,6 +165,7 @@ export async function GET(request: NextRequest) {
         take: size,
         include: {
           lead: { select: { companyName: true, contactPerson: true } },
+          product: { select: { productName: true } },
           legalEntity: {
             select: {
               legalName: true, taxRegistrationNumber: true,
@@ -164,6 +194,11 @@ export async function GET(request: NextRequest) {
       pricingSnapshot: q.pricingSnapshot,
       costingMode: q.costingMode,
       projectName: q.projectName,
+      // Real Product Master link wins; falls back to the New Client-mode
+      // free text carried only in pricingSnapshot.productName (there's no
+      // typed productName column — see that field's own comment on the
+      // Quotation model/QuotationCalculatorForm's state for why).
+      productName: q.product?.productName || (q.pricingSnapshot as any)?.productName || null,
       outsourcingCost: q.outsourcingCost ? Number(q.outsourcingCost) : 0,
       travelCost: q.travelCost ? Number(q.travelCost) : 0,
       adminCost: q.adminCost ? Number(q.adminCost) : 0,
@@ -174,6 +209,7 @@ export async function GET(request: NextRequest) {
       // what was persisted on save.
       discountPercentage: q.discountPercentage ? Number(q.discountPercentage) : 0,
       discountAmount: q.discountAmount ? Number(q.discountAmount) : 0,
+      additionalTerms: q.additionalTerms,
       legalEntityId: q.legalEntityId,
       legalEntity: q.legalEntity
         ? {
@@ -216,6 +252,14 @@ export async function POST(request: NextRequest) {
     // auto-created Lead with no quotation to show for it.
     let resourceBasedFields: ReturnType<typeof buildResourceBasedCosting> | null = null;
     if (body.costingMode === 'RESOURCE_BASED') {
+      // Overriding the system-calculated total is a distinct, more sensitive
+      // action than ordinary quoting — gated on its own permission rather
+      // than manage_quotations so an authoring role (e.g. SALES) can create
+      // quotations without also being able to unilaterally override pricing.
+      if (Number(body.overrideAmount) > 0) {
+        const overrideDenied = await requirePermission('authorize_quotation_override');
+        if (overrideDenied) return overrideDenied;
+      }
       resourceBasedFields = buildResourceBasedCosting(body);
       if (body.verticalId) {
         const vertical = await prisma.vertical.findUnique({ where: { id: parseInt(body.verticalId) } });
@@ -274,26 +318,57 @@ export async function POST(request: NextRequest) {
       clientState = clientState || lead?.state || null;
     }
 
-    // Generate quotation number
-    const count = await prisma.quotation.count();
-    const quotationNumber = `QTN-${String(count + 1).padStart(5, '0')}`;
+    // A quotation is for a Project or a Product, never both — same
+    // mutual-exclusion convention as Project/Product's own
+    // customerId/leadId check (see /api/projects, /api/products).
+    if (body.projectId && body.productId) {
+      return NextResponse.json({ message: 'Select either a Project or a Product, not both' }, { status: 400 });
+    }
+    // A picked Project must actually belong to the resolved lead — same
+    // check as /api/demos and /api/implementations.
+    if (body.projectId) {
+      const project = await prisma.project.findFirst({ where: { id: parseInt(body.projectId), OR: [{ customerId: leadId! }, { leadId: leadId! }] } });
+      if (!project) return NextResponse.json({ message: 'Selected project does not belong to this lead' }, { status: 400 });
+    }
+    // Same check for a picked Product (Product Master's own Budget
+    // Estimation flow — see ProductBudgetPanel).
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: parseInt(body.productId), OR: [{ customerId: leadId! }, { leadId: leadId! }] } });
+      if (!product) return NextResponse.json({ message: 'Selected product does not belong to this lead' }, { status: 400 });
+    }
 
     const data: Prisma.QuotationUncheckedCreateInput = {
       leadId: leadId!,
-      quotationNumber,
+      quotationNumber: '',
       clientCountry,
       clientState,
       currencyCode,
       exchangeRate: body.exchangeRate || 1,
       notes: body.notes || null,
+      additionalTerms: body.additionalTerms || null,
+      projectId: body.projectId ? parseInt(body.projectId) : null,
+      productId: body.productId ? parseInt(body.productId) : null,
       status: 'DRAFT',
     };
     if (resourceBasedFields) {
       Object.assign(data, resourceBasedFields, { verticalId: body.verticalId ? parseInt(body.verticalId) : null });
     } else {
+      // Same Payment Milestones plan as the Calculator's own RESOURCE_BASED
+      // create above (buildResourceBasedCosting already ran
+      // validateMilestonePlan on body.paymentMilestones for that branch) —
+      // here it arrives nested under body.pricingSnapshot.paymentMilestones
+      // instead (see quotations/page.tsx's own save payload), since a
+      // CATALOG-mode quotation has no separate resourceBasedFields step to
+      // validate it in. Same validation, same shape, just a different
+      // caller — not a separate milestone system.
+      if (body.pricingSnapshot?.paymentMilestones !== undefined) {
+        const milestoneError = validateMilestonePlan(body.pricingSnapshot.paymentMilestones as MilestonePlanInput[]);
+        if (milestoneError) return NextResponse.json({ message: milestoneError }, { status: 400 });
+      }
       Object.assign(data, {
         softwareModules: body.softwareModules || null,
         businessModule: body.businessModule || null,
+        projectName: body.projectName || null,
         implementationCost: body.implementationCost || null,
         trainingCost: body.trainingCost || null,
         annualMaintenance: body.annualMaintenance || null,
@@ -310,12 +385,42 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const quotation = await prisma.quotation.create({
-      data,
-      include: {
-        lead: { select: { companyName: true } },
-      },
-    });
+    // The number derives from the highest existing *numeric suffix* across
+    // every QTN-##### row, via MAX() rather than "whichever row has the
+    // highest id" — the latest-inserted row isn't necessarily the
+    // highest-numbered one (a legacy/imported row out of sequence, or one
+    // fixed up manually, breaks that assumption) and reading the wrong "last"
+    // row means the very first candidate collides with some earlier row.
+    // Also, a failed create() never inserts anything, so the seed must
+    // advance by `attempt` on every retry — recomputing from the same query
+    // would regenerate the identical doomed number forever instead of
+    // actually resolving the collision.
+    const [{ maxSeq }] = await prisma.$queryRaw<{ maxSeq: number | null }[]>`
+      SELECT MAX(CAST(SUBSTRING(quotation_number FROM 5) AS INTEGER)) AS "maxSeq"
+      FROM quotations
+      WHERE quotation_number ~ '^QTN-[0-9]+$'
+    `;
+    const lastSeq = Number(maxSeq) || 0;
+
+    let quotation;
+    for (let attempt = 0; ; attempt++) {
+      data.quotationNumber = `QTN-${String(lastSeq + 1 + attempt).padStart(5, '0')}`;
+
+      try {
+        quotation = await prisma.quotation.create({
+          data,
+          include: {
+            lead: { select: { companyName: true } },
+          },
+        });
+        break;
+      } catch (error: any) {
+        const isCollision = error instanceof Prisma.PrismaClientKnownRequestError
+          && error.code === 'P2002'
+          && (error.meta?.target as string[] | undefined)?.includes('quotation_number');
+        if (!isCollision || attempt >= 9) throw error;
+      }
+    }
 
     await logAudit({ action: 'CREATE', entityType: 'QUOTATION', entityId: quotation.id, newValue: quotation, description: `Quotation ${quotation.quotationNumber} created for ${quotation.lead.companyName}`, request });
 

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, XMarkIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import AddableSelect from '@/components/AddableSelect';
 
 interface SalaryComponent {
   id: number;
@@ -151,20 +152,35 @@ export default function SalaryStructuresPage() {
           >
             <input placeholder="Name (e.g. Basic)" value={componentForm.name} onChange={(e) => setComponentForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} />
             <input placeholder="Code (e.g. BASIC)" value={componentForm.code} onChange={(e) => setComponentForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} className={inputCls} />
-            <select value={componentForm.type} onChange={(e) => setComponentForm((f) => ({ ...f, type: e.target.value }))} className={inputCls}>
-              <option value="EARNING">Earning</option>
-              <option value="DEDUCTION">Deduction</option>
-            </select>
-            <select value={componentForm.calculationType} onChange={(e) => setComponentForm((f) => ({ ...f, calculationType: e.target.value }))} className={inputCls}>
-              <option value="FLAT">Flat amount</option>
-              <option value="PERCENT_OF_BASIC">% of Basic</option>
-            </select>
-            <select value={componentForm.statutoryType} onChange={(e) => setComponentForm((f) => ({ ...f, statutoryType: e.target.value }))} className={inputCls} title="Applies the matching statutory rule from Statutory Settings when this component is resolved">
-              <option value="">Not statutory</option>
-              <option value="PF">PF — capped at wage ceiling</option>
-              <option value="ESI">ESI — gated by gross threshold</option>
-              <option value="PT">PT — resolved by slab, ignores this row&apos;s value</option>
-            </select>
+            <AddableSelect
+              value={componentForm.type}
+              onChange={(v) => setComponentForm((f) => ({ ...f, type: v }))}
+              options={[
+                { value: 'EARNING', label: 'Earning' },
+                { value: 'DEDUCTION', label: 'Deduction' },
+              ]}
+              placeholder="Select type"
+            />
+            <AddableSelect
+              value={componentForm.calculationType}
+              onChange={(v) => setComponentForm((f) => ({ ...f, calculationType: v }))}
+              options={[
+                { value: 'FLAT', label: 'Flat amount' },
+                { value: 'PERCENT_OF_BASIC', label: '% of Basic' },
+              ]}
+              placeholder="Select calculation type"
+            />
+            <AddableSelect
+              value={componentForm.statutoryType}
+              onChange={(v) => setComponentForm((f) => ({ ...f, statutoryType: v }))}
+              options={[
+                { value: '', label: 'Not statutory' },
+                { value: 'PF', label: 'PF — capped at wage ceiling' },
+                { value: 'ESI', label: 'ESI — gated by gross threshold' },
+                { value: 'PT', label: "PT — resolved by slab, ignores this row's value" },
+              ]}
+              placeholder="Not statutory"
+            />
             <div className="col-span-2 sm:col-span-4 flex justify-end gap-2">
               <button type="button" onClick={() => setShowComponentForm(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
               <button type="submit" disabled={createComponent.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">Add</button>
@@ -215,10 +231,14 @@ export default function SalaryStructuresPage() {
             <div className="space-y-2">
               {structureRows.map((row, i) => (
                 <div key={i} className="flex gap-2">
-                  <select value={row.componentId} onChange={(e) => setStructureRows((rows) => rows.map((r, j) => j === i ? { ...r, componentId: e.target.value } : r))} className={inputCls}>
-                    <option value="">Select component</option>
-                    {activeComponents.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.calculationType === 'FLAT' ? '₹' : '%'})</option>)}
-                  </select>
+                  <div className="flex-1">
+                    <AddableSelect
+                      value={row.componentId}
+                      onChange={(v) => setStructureRows((rows) => rows.map((r, j) => j === i ? { ...r, componentId: v } : r))}
+                      options={activeComponents.map((c) => ({ value: String(c.id), label: `${c.name} (${c.calculationType === 'FLAT' ? '₹' : '%'})` }))}
+                      placeholder="Select component"
+                    />
+                  </div>
                   <input type="number" min="0" step="0.01" placeholder="Value" value={row.value} onChange={(e) => setStructureRows((rows) => rows.map((r, j) => j === i ? { ...r, value: e.target.value } : r))} className={`${inputCls} max-w-[140px]`} />
                   <button type="button" onClick={() => setStructureRows((rows) => rows.filter((_, j) => j !== i))} className="p-2 text-slate-400 hover:text-red-600"><XMarkIcon className="h-4 w-4" /></button>
                 </div>

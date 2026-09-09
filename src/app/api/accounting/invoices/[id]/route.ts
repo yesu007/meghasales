@@ -52,6 +52,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(body.status !== undefined && { status: body.status }),
         ...(body.accountManagerId !== undefined && { accountManagerId: body.accountManagerId ? parseInt(body.accountManagerId) : null }),
         ...(body.notes !== undefined && { notes: body.notes }),
+        // Same partial-update pattern as Lead.nextFollowUpDate in
+        // src/app/api/leads/[id]/route.ts — inline date edits from the table
+        // PUT just this one field.
+        ...(body.nextFollowUpDate !== undefined && { nextFollowUpDate: body.nextFollowUpDate ? new Date(body.nextFollowUpDate) : null }),
         ...(body.lineItems !== undefined && { lineItems: body.lineItems }),
         ...(body.subtotal !== undefined && { subtotal: body.subtotal }),
         ...(body.discountPercentage !== undefined && { discountPercentage: body.discountPercentage }),

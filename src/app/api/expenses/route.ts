@@ -50,6 +50,23 @@ export async function GET(request: NextRequest) {
     if (subCategoryId) AND.push({ subCategoryId: parseInt(subCategoryId) });
     if (dateFrom) AND.push({ expenseDate: { gte: new Date(dateFrom) } });
     if (dateTo) AND.push({ expenseDate: { lte: new Date(dateTo) } });
+    // Used by the Projects page's Budget vs Actual panel to total a single
+    // project's actual expenses.
+    const projectId = searchParams.get('projectId') || '';
+    if (projectId) AND.push({ projectId: parseInt(projectId) });
+    // Same, for a single Product's Product Expenses tab.
+    const productId = searchParams.get('productId') || '';
+    if (productId) AND.push({ productId: parseInt(productId) });
+    // Overall / Project / Product Expenses list tabs — same three-way split
+    // as the create form's own Expense Type toggle (both FKs null = Overall,
+    // projectId set = Project, productId set = Product) and the Expense
+    // Report's own projectOnly filter (see expenseReports.ts). OVERALL must
+    // exclude Product Expenses too, or a Product-linked row (which has no
+    // projectId) would wrongly count as Overall spend.
+    const expenseType = searchParams.get('expenseType') || '';
+    if (expenseType === 'PROJECT') AND.push({ projectId: { not: null } });
+    else if (expenseType === 'PRODUCT') AND.push({ productId: { not: null } });
+    else if (expenseType === 'OVERALL') AND.push({ projectId: null, productId: null });
 
     if (AND.length > 0) where.AND = AND;
 
@@ -80,6 +97,9 @@ export async function GET(request: NextRequest) {
       subCategoryId: e.subCategoryId,
       subCategoryName: e.subCategory?.name ?? null,
       vendor: e.vendor,
+      vendorLeadId: e.vendorLeadId,
+      projectId: e.projectId,
+      productId: e.productId,
       expenseDate: e.expenseDate,
       amount: e.amount,
       currencyCode: e.currencyCode,
@@ -165,6 +185,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Vendor is now picked from the Customer module (a Lead row) via
+    // vendorLeadId, same as any other Lead-referencing dropdown in the app
+    // (e.g. Invoice.leadId). vendor (text) is kept in sync from the
+    // resolved companyName so existing vendor-text search/CSV consumers
+    // keep working unchanged — see the schema comment on Expense.vendor.
+    let vendorLeadId: number | null = null;
+    let vendorName: string | null = null;
+    if (body.vendorLeadId !== undefined && body.vendorLeadId !== null && body.vendorLeadId !== '') {
+      const vendorLead = await prisma.lead.findUnique({ where: { id: parseInt(body.vendorLeadId) } });
+      if (!vendorLead) return NextResponse.json({ message: 'Selected vendor (customer) not found' }, { status: 404 });
+      vendorLeadId = vendorLead.id;
+      vendorName = vendorLead.companyName;
+    }
+
+    // Project Expense vs Overall Expense (the create form's toggle) —
+    // projectId is set only for a Project Expense; Overall stays null.
+    let projectId: number | null = null;
+    if (body.projectId !== undefined && body.projectId !== null && body.projectId !== '') {
+      const project = await prisma.project.findUnique({ where: { id: parseInt(body.projectId) } });
+      if (!project) return NextResponse.json({ message: 'Selected project not found' }, { status: 404 });
+      projectId = project.id;
+    }
+
+    // Same, for a Product Expense.
+    let productId: number | null = null;
+    if (body.productId !== undefined && body.productId !== null && body.productId !== '') {
+      const product = await prisma.product.findUnique({ where: { id: parseInt(body.productId) } });
+      if (!product) return NextResponse.json({ message: 'Selected product not found' }, { status: 404 });
+      productId = product.id;
+    }
+
     const session = await getServerSession(authOptions);
     const recordedById = session?.user ? parseInt((session.user as any).id, 10) : null;
 
@@ -175,7 +226,10 @@ export async function POST(request: NextRequest) {
         expenseNumber,
         categoryId: category.id,
         subCategoryId,
-        vendor: body.vendor || null,
+        vendorLeadId,
+        vendor: vendorName,
+        projectId,
+        productId,
         expenseDate,
         amount: Number(body.amount),
         currencyCode,

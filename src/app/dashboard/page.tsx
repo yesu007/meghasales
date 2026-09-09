@@ -9,7 +9,7 @@ import dayjs from 'dayjs';
 import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import LeadPickerCombobox, { type LeadOption } from '@/components/leads/LeadPickerCombobox';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
-import { leadStatusColor, leadStatusLabel } from '@/lib/leadStatus';
+import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
 
 interface LeadDetail {
   id: number;
@@ -63,6 +63,7 @@ async function fetchDashboardStats() {
 export default function DashboardPage() {
   const { data: session } = useSession();
   const [selectedLead, setSelectedLead] = useState<LeadOption | null>(null);
+  const { label: leadStatusLabel, color: leadStatusColor } = useLeadStatusOptions();
 
   const { data: stats, isLoading, isError } = useQuery({
     queryKey: ['dashboard-stats'],

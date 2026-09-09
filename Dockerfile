@@ -18,6 +18,23 @@ COPY . .
 # generator still wants the env var present to read schema.prisma cleanly.
 ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# NEXT_PUBLIC_* vars are inlined into the client bundle at build time, not
+# read at container runtime — so they must arrive as build args here rather
+# than through docker-compose's env_file (which only reaches the running
+# container, too late for Next.js to have baked them in). Without these,
+# isAdminTicketModuleEnabled()/isMeetingsModuleEnabled()/isPayrollModuleEnabled()
+# always read undefined in this image regardless of .env.production, and
+# their nav entries silently disappear.
+ARG NEXT_PUBLIC_FEATURE_ADMIN_TICKET
+ARG NEXT_PUBLIC_FEATURE_MEETINGS
+ARG NEXT_PUBLIC_FEATURE_PAYROLL
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
+ENV NEXT_PUBLIC_FEATURE_ADMIN_TICKET=$NEXT_PUBLIC_FEATURE_ADMIN_TICKET
+ENV NEXT_PUBLIC_FEATURE_MEETINGS=$NEXT_PUBLIC_FEATURE_MEETINGS
+ENV NEXT_PUBLIC_FEATURE_PAYROLL=$NEXT_PUBLIC_FEATURE_PAYROLL
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
+
 RUN npm run build
 
 # ---- runner: minimal image, only standalone output + static assets ----

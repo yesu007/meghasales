@@ -4,8 +4,8 @@
 // field rather than reusing `status`.
 export const CUSTOMER_STATUSES = [
   { value: 'ACTIVE', label: 'Active', color: 'bg-green-100 text-green-700' },
-  { value: 'INACTIVE', label: 'Inactive', color: 'bg-slate-200 text-slate-600' },
-  { value: 'ON_HOLD', label: 'On Hold', color: 'bg-amber-100 text-amber-700' },
+  { value: 'INACTIVE', label: 'In-Active', color: 'bg-slate-200 text-slate-600' },
+  { value: 'ON_HOLD', label: 'Hold', color: 'bg-amber-100 text-amber-700' },
 ];
 
 export function customerStatusColor(status: string): string {

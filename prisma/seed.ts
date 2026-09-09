@@ -87,6 +87,8 @@ async function main() {
     { currencyCode: 'THB', currencyName: 'Thai Baht', currencySymbol: '฿', exchangeRateToInr: 2.35 },
     { currencyCode: 'SGD', currencyName: 'Singapore Dollar', currencySymbol: 'SGD', exchangeRateToInr: 62 },
     { currencyCode: 'SAR', currencyName: 'Saudi Riyal', currencySymbol: 'SAR', exchangeRateToInr: 22.27 },
+    { currencyCode: 'CNY', currencyName: 'Chinese Yuan', currencySymbol: '¥', exchangeRateToInr: 11.6 },
+    { currencyCode: 'HKD', currencyName: 'Hong Kong Dollar', currencySymbol: '$', exchangeRateToInr: 10.71 },
   ];
   for (const c of currencies) {
     // update only isBase (not the rate/name/symbol) — an existing row's rate
@@ -129,7 +131,7 @@ async function main() {
   }
   console.log('  ✓ Exchange rate history backfilled');
 
-  // Rest-of-world currencies — CurrencyMaster previously only had the 7
+  // Rest-of-world currencies — CurrencyMaster previously only had the 9
   // currencies above, which meant the "Override currency (Administrator
   // only)" select on the Lead form (and the Country Master's own Currency
   // select) couldn't offer any currency outside that list, even though the

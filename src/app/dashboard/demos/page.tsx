@@ -13,13 +13,17 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   ArrowsUpDownIcon,
-  FunnelIcon,
   PencilIcon,
   TrashIcon,
+  CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { TIMEZONES, DEFAULT_TIMEZONE, timezoneShortLabel } from '@/lib/timezones';
+import { useProjectsForLead } from '@/hooks/useProjectsForLead';
+import { useProductsForLead } from '@/hooks/useProductsForLead';
+import { invalidateDemoData } from '@/lib/queryInvalidation';
+import AddableSelect from '@/components/AddableSelect';
 
 const DEMO_TYPES = [
   { value: 'ONLINE', label: 'Online' },
@@ -60,6 +64,18 @@ interface Demo {
   demoType: string;
   packageId: number | null;
   packageName: string | null;
+  projectId: number | null;
+  projectName: string | null;
+  productId: number | null;
+  productName: string | null;
+  // Business Vertical + its snapshot Head — see schema.prisma's
+  // Demo.verticalId/headId comment. Older demos created before this field
+  // existed simply have both as null, which the New Demo Project form's
+  // own edit-population/display handles as "not set"/"Unassigned".
+  verticalId: number | null;
+  verticalName: string | null;
+  headId: number | null;
+  headName: string | null;
   scheduledDate: string | null;
   timezone: string | null;
   actualDate: string | null;
@@ -72,6 +88,8 @@ interface Demo {
   feedback: string | null;
   nextAction: string | null;
   approvalStatus: string | null;
+  nextFollowUpDate: string | null;
+  isOverdue: boolean;
   createdAt: string;
 }
 
@@ -104,9 +122,15 @@ async function fetchPackages(): Promise<PackageOption[]> {
   return res.json();
 }
 
-async function fetchLeads(): Promise<Lead[]> {
-  const res = await fetch('/api/leads?size=100&sortBy=companyName&sortDir=asc');
-  if (!res.ok) throw new Error('Failed to fetch leads');
+// Reuses the exact same Lead/Customer split query the Implementations
+// module's own Source Type picker already uses (src/app/dashboard/
+// implementations/page.tsx's fetchLeads) — LEAD = excludeDirectCustomers
+// (the Leads tab's own convention), CUSTOMER = status=CONFIRMED (the
+// Customers tab's own convention).
+async function fetchLeadsBySourceType(sourceType: 'LEAD' | 'CUSTOMER'): Promise<Lead[]> {
+  const query = sourceType === 'CUSTOMER' ? 'status=CONFIRMED' : 'excludeDirectCustomers=true';
+  const res = await fetch(`/api/leads?size=100&sortBy=companyName&sortDir=asc&${query}`);
+  if (!res.ok) throw new Error(`Failed to fetch ${sourceType === 'CUSTOMER' ? 'customers' : 'leads'}`);
   const data = await res.json();
   return data.content;
 }
@@ -121,7 +145,6 @@ async function fetchUsers(): Promise<UserOption[]> {
 export default function DemosPage() {
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Search, filter, sort, pagination
   const [searchInput, setSearchInput] = useState('');
@@ -153,10 +176,20 @@ export default function DemosPage() {
     placeholderData: (prev: any) => prev,
   });
 
-  // Fetch leads for the create form
+  // New Demo Project form's own Source Type (Lead | Company) — first field
+  // in the form, purely a client-side picker deciding which list backs the
+  // Lead/Company dropdown right below it (never persisted on the Demo
+  // record itself, same as the Implementations module's own Source Type
+  // doesn't need to be re-derived — Demo has no stored sourceType column,
+  // see openEdit's own re-derivation comment below).
+  const [sourceType, setSourceType] = useState<'LEAD' | 'CUSTOMER'>('LEAD');
+
+  // Fetch leads/customers for the create form — keyed on sourceType so
+  // switching Lead <-> Company refetches the right list, same convention
+  // as the Implementations module's own fetchLeads(sourceType).
   const { data: leads = [], isError: isLeadsError } = useQuery({
-    queryKey: ['leads-for-demo'],
-    queryFn: fetchLeads,
+    queryKey: ['leads-for-demo', sourceType],
+    queryFn: () => fetchLeadsBySourceType(sourceType),
   });
 
   // Fetch users for the Assigned To dropdown
@@ -188,16 +221,64 @@ export default function DemosPage() {
   }, [isUsersError]);
 
   // Create/edit demo form
-  const blankForm = { leadId: '', demoType: '', packageId: '', scheduledDate: '', timezone: DEFAULT_TIMEZONE, assignedToId: '', attendees: '', modulesDemonstrated: '' };
+  const blankForm = { leadId: '', verticalId: '', demoType: '', packageId: '', projectId: '', productId: '', scheduledDate: '', timezone: DEFAULT_TIMEZONE, assignedToId: '', attendees: '', modulesDemonstrated: '' };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  // Clears one field's stale "required" message as soon as the user
+  // actually changes it — validateForm only runs again on the next submit,
+  // so without this a message set by a failed submit attempt would
+  // otherwise keep showing even after the field now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+  // Business Vertical (and its derived Head) are locked once a demo is
+  // created — same as Source Type/Lead/Project/Product — so editing shows
+  // the value actually saved at creation time (server-joined, via the demo
+  // row's own verticalName/headName) rather than a live re-lookup, which
+  // would show the wrong thing for a since-deactivated/reassigned Vertical.
+  // See openEdit below — same convention as Implementation's own
+  // editingVerticalInfo.
+  const [editingVerticalInfo, setEditingVerticalInfo] = useState<{ verticalName: string | null; headName: string | null }>({ verticalName: null, headName: null });
 
-  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
+  // Project and Product both scoped to whichever Lead/Company was already
+  // chosen above (same convention as Quotations/Implementation's own
+  // pickers — see useProjectsForLead/useProductsForLead's own comments),
+  // mutually exclusive with each other (enforced in the API too — see
+  // POST/PUT /api/demos). Neither is auto-selected.
+  const { data: projectsForLead = [] } = useProjectsForLead(form.leadId);
+  const { data: productsForLead = [] } = useProductsForLead(form.leadId);
+  const selectedProject = projectsForLead.find((p) => String(p.id) === form.projectId);
+  const selectedProduct = productsForLead.find((p) => String(p.id) === form.productId);
+
+  // Business Vertical (and the Head derived from it) are auto-populated
+  // from whichever of Project/Product is selected — each already carries
+  // exactly one Vertical (LeadProjectOption/LeadProductOption's own
+  // verticalId/verticalName/headId/headName), so this reuses that existing
+  // data rather than a new lookup, same pattern as the Implementation
+  // module's own effect. The user never picks Vertical/Head manually here
+  // anymore — see their own read-only display below. Skipped once editing
+  // (editingId set): Source Type/Lead/Project/Product are all locked then,
+  // and the Vertical/Head actually saved at creation time —
+  // editingVerticalInfo — must keep showing regardless of whether the
+  // linked Project/Product's own Vertical has since changed.
+  useEffect(() => {
+    if (editingId) return;
+    const source = selectedProject || selectedProduct;
+    const nextVerticalId = source ? String(source.verticalId) : '';
+    setForm((f) => (f.verticalId === nextVerticalId ? f : { ...f, verticalId: nextVerticalId }));
+  }, [selectedProject, selectedProduct, editingId]);
+  const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(blankForm); setSourceType('LEAD'); setFormErrors({}); setEditingVerticalInfo({ verticalName: null, headName: null }); };
 
   const validateForm = (data: typeof form) => {
     const errs: Record<string, string> = {};
     if (!data.leadId) errs.leadId = 'Lead / company is required';
+    // Project and/or Product required (at least one) — same rule as the
+    // Quotation/Implementation modules' own Project/Product validation.
+    // Business Vertical is derived from whichever is picked (see the effect
+    // above), so this one check covers both. Only checked on create: both
+    // are locked once editingId is set, so a legacy record with neither
+    // (and thus no Vertical) could never be saved again if this also
+    // applied there.
+    if (!editingId && !data.projectId && !data.productId) errs.project = 'Select a Project or Product';
     if (!data.demoType) errs.demoType = 'Demo type is required';
     if (!data.scheduledDate) errs.scheduledDate = 'Scheduled date & time is required';
     return errs;
@@ -213,23 +294,44 @@ export default function DemosPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['demos'] });
+      invalidateDemoData(queryClient);
       toast.success(editingId ? 'Demo updated!' : 'Demo scheduled successfully!');
       closeDrawer();
     },
     onError: () => toast.error(editingId ? 'Failed to update demo' : 'Failed to schedule demo'),
   });
 
-  const openEdit = (demo: Demo) => {
+  const openEdit = async (demo: Demo) => {
+    // Guards against a still-open drawer's stale validation messages from a
+    // previous failed create attempt bleeding into this edit (see
+    // clearFieldError's own comment) — closeDrawer already clears this on
+    // the normal Cancel/X path, this is just defense in depth.
+    setFormErrors({});
     setForm({
       leadId: String(demo.leadId),
+      verticalId: demo.verticalId ? String(demo.verticalId) : '',
       demoType: demo.demoType,
       packageId: demo.packageId ? String(demo.packageId) : '',
+      projectId: demo.projectId ? String(demo.projectId) : '',
+      productId: demo.productId ? String(demo.productId) : '',
       scheduledDate: demo.scheduledDate ? dayjs(demo.scheduledDate).format('YYYY-MM-DDTHH:mm') : '',
       timezone: demo.timezone || DEFAULT_TIMEZONE,
       assignedToId: demo.assignedToId ? String(demo.assignedToId) : '',
       attendees: demo.attendees || '',
       modulesDemonstrated: demo.modulesDemonstrated || '',
     });
+    setEditingVerticalInfo({ verticalName: demo.verticalName, headName: demo.headName });
+    // Demo has no stored sourceType (see schema.prisma's own comment) —
+    // re-derive which list (Lead vs Company) this demo's lead currently
+    // belongs to, purely so the locked Lead/Company dropdown below shows
+    // the right option; a lookup failure just falls back to 'LEAD'.
+    try {
+      const res = await fetch(`/api/leads/${demo.leadId}`);
+      const lead = res.ok ? await res.json() : null;
+      setSourceType(lead?.status === 'CONFIRMED' ? 'CUSTOMER' : 'LEAD');
+    } catch {
+      setSourceType('LEAD');
+    }
     setEditingId(demo.id);
     setDrawerOpen(true);
   };
@@ -239,6 +341,7 @@ export default function DemosPage() {
     const res = await fetch(`/api/demos/${id}`, { method: 'DELETE' });
     if (!res.ok) { toast.error('Failed to delete demo'); return; }
     queryClient.invalidateQueries({ queryKey: ['demos'] });
+    invalidateDemoData(queryClient);
     toast.success('Demo deleted');
   };
 
@@ -253,6 +356,7 @@ export default function DemosPage() {
       return;
     }
     queryClient.invalidateQueries({ queryKey: ['demos'] });
+    invalidateDemoData(queryClient);
     toast.success(successMsg);
   };
 
@@ -260,6 +364,7 @@ export default function DemosPage() {
   const assignTo = (id: number, assignedToId: string) => updateDemo(id, { assignedToId: assignedToId || null }, 'Assigned to updated');
   const updateInterest = (id: number, customerInterestLevel: string) => updateDemo(id, { customerInterestLevel: customerInterestLevel || null }, 'Interest level updated');
   const updateNextAction = (id: number, nextAction: string) => updateDemo(id, { nextAction: nextAction || null }, 'Next action updated');
+  const updateNextFollowUp = (id: number, nextFollowUpDate: string) => updateDemo(id, { nextFollowUpDate: nextFollowUpDate || null }, 'Next follow-up updated');
   const rescheduleDemo = (id: number, scheduledDate: string) => {
     if (!scheduledDate) return;
     updateDemo(id, { scheduledDate: new Date(scheduledDate).toISOString(), status: 'RESCHEDULED' }, 'Demo rescheduled');
@@ -309,8 +414,8 @@ export default function DemosPage() {
 
       {/* Search & Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-col md:flex-row md:flex-wrap gap-3">
+          <div className="relative flex-1 min-w-[220px]">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
@@ -325,36 +430,30 @@ export default function DemosPage() {
               </button>
             )}
           </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Statuses</option>
-            {DEMO_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-          <select
-            value={typeFilter}
-            onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Types</option>
-            {DEMO_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
-          <select
-            value={packageFilter}
-            onChange={(e) => { setPackageFilter(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          >
-            <option value="">All Packages</option>
-            {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <button
-            onClick={() => setFiltersOpen(!filtersOpen)}
-            className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium ${activeFilters > 0 ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600'}`}
-          >
-            <FunnelIcon className="h-4 w-4" /> Filters {activeFilters > 0 && <span className="bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{activeFilters}</span>}
-          </button>
+          <div className="w-full md:w-48">
+            <AddableSelect
+              value={statusFilter}
+              onChange={(v) => { setStatusFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Statuses' }, ...DEMO_STATUSES.map(s => ({ value: s.value, label: s.label }))]}
+              placeholder="All Statuses"
+            />
+          </div>
+          <div className="w-full md:w-48">
+            <AddableSelect
+              value={typeFilter}
+              onChange={(v) => { setTypeFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Types' }, ...DEMO_TYPES.map(t => ({ value: t.value, label: t.label }))]}
+              placeholder="All Types"
+            />
+          </div>
+          <div className="w-full md:w-48">
+            <AddableSelect
+              value={packageFilter}
+              onChange={(v) => { setPackageFilter(v); setPage(0); }}
+              options={[{ value: '', label: 'All Packages' }, ...packages.map(p => ({ value: String(p.id), label: p.name }))]}
+              placeholder="All Packages"
+            />
+          </div>
           {(searchInput || activeFilters > 0) && (
             <button onClick={clearFilters} className="text-sm text-slate-500 hover:text-red-500">Clear All</button>
           )}
@@ -407,9 +506,12 @@ export default function DemosPage() {
                         Company <SortIcon col="createdAt" />
                       </button>
                     </th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Project</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Product</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Business Vertical</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Package</th>
                     <th className="px-4 py-3 text-left font-semibold text-white">Contact</th>
                     <th className="px-4 py-3 text-left font-semibold text-white">Type</th>
-                    <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Package</th>
                     <th className="px-4 py-3 text-left">
                       <button onClick={() => handleSort('scheduledDate')} className="flex items-center gap-1 font-semibold text-white">
                         Scheduled <SortIcon col="scheduledDate" />
@@ -423,6 +525,11 @@ export default function DemosPage() {
                     <th className="px-4 py-3 text-left font-semibold text-white hidden lg:table-cell">Assigned To</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden xl:table-cell">Interest</th>
                     <th className="px-4 py-3 text-left font-semibold text-white hidden xl:table-cell">Next Action</th>
+                    <th className="px-4 py-3 text-left hidden lg:table-cell">
+                      <button onClick={() => handleSort('nextFollowUpDate')} className="flex items-center gap-1 font-semibold text-white">
+                        Next Follow-up <SortIcon col="nextFollowUpDate" />
+                      </button>
+                    </th>
                     <th className="px-4 py-3 text-right font-semibold text-white">Actions</th>
                   </tr>
                 </thead>
@@ -430,13 +537,16 @@ export default function DemosPage() {
                   {demos.map((demo, idx) => (
                     <tr key={demo.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                       <td className="px-4 py-3 font-medium text-slate-800">{demo.companyName}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{demo.projectName || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{demo.productName || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{demo.verticalName || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{demo.packageName || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{demo.contactPerson}</td>
                       <td className="px-4 py-3">
                         <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
                           {DEMO_TYPES.find(t => t.value === demo.demoType)?.label || demo.demoType}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{demo.packageName || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">
                         {isReschedulable(demo.status) ? (
                           <input
@@ -498,6 +608,18 @@ export default function DemosPage() {
                           {NEXT_ACTIONS.map(n => <option key={n.value} value={n.value}>{n.label}</option>)}
                         </select>
                       </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <div className={`relative inline-flex items-center rounded-lg border ${demo.isOverdue ? 'border-red-300 bg-red-50' : demo.nextFollowUpDate ? 'border-slate-200 bg-white' : 'border-dashed border-slate-300 bg-white'}`}>
+                          <CalendarDaysIcon className={`pointer-events-none absolute left-2 h-3.5 w-3.5 ${demo.isOverdue ? 'text-red-500' : 'text-slate-400'}`} />
+                          <input
+                            type="date"
+                            value={demo.nextFollowUpDate ? dayjs(demo.nextFollowUpDate).format('YYYY-MM-DD') : ''}
+                            onChange={(e) => updateNextFollowUp(demo.id, e.target.value)}
+                            className={`w-[9.5rem] pl-7 pr-2 py-1.5 text-xs bg-transparent border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${demo.isOverdue ? 'text-red-700 font-semibold' : demo.nextFollowUpDate ? 'text-slate-700' : 'text-slate-400'}`}
+                          />
+                        </div>
+                        {demo.isOverdue && <p className="mt-1 text-[10px] font-semibold text-red-600 uppercase tracking-wide">Overdue</p>}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => openEdit(demo)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
@@ -516,13 +638,14 @@ export default function DemosPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(size)}
+                    onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                    options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows per page"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
@@ -587,35 +710,111 @@ export default function DemosPage() {
                       className="flex-1 px-6 py-4 space-y-4"
                     >
                       <div className="space-y-4">
+                        {/* Required order: Source Type -> Lead/Company ->
+                            Project/Product -> Business Vertical (auto) ->
+                            Head (auto) -> remaining fields. Source Type is a
+                            pure UI picker (not persisted on Demo — see
+                            schema.prisma's own comment) that only decides
+                            which list backs the Lead/Company dropdown right
+                            below it; switching it clears any already-picked
+                            Lead/Company (and the Project/Product scoped to
+                            it) since those records belong to the other
+                            list. */}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Source Type *</label>
+                          <AddableSelect
+                            disabled={!!editingId}
+                            value={sourceType}
+                            onChange={(v) => {
+                              const next = v === 'CUSTOMER' ? 'CUSTOMER' : 'LEAD';
+                              setSourceType(next);
+                              setForm(f => ({ ...f, leadId: '', projectId: '', productId: '' }));
+                            }}
+                            options={[{ value: 'LEAD', label: 'Lead' }, { value: 'CUSTOMER', label: 'Company' }]}
+                            placeholder="Select Source Type"
+                          />
+                        </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Lead / Company *</label>
-                          <select
+                          <AddableSelect
                             disabled={!!editingId}
-                            title={editingId ? 'Lead cannot be changed after creation' : undefined}
                             value={form.leadId}
-                            onChange={(e) => setForm(f => ({ ...f, leadId: e.target.value }))}
-                            className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.leadId ? 'border-red-400' : 'border-slate-300'}`}
-                          >
-                            <option value="">Select a lead</option>
-                            {leads.map((lead: Lead) => (
-                              <option key={lead.id} value={lead.id}>
-                                {lead.companyName} — {lead.contactPerson}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(v) => { setForm(f => ({ ...f, leadId: v, projectId: '', productId: '' })); clearFieldError('leadId'); }}
+                            options={leads.map((lead: Lead) => ({ value: String(lead.id), label: lead.companyName }))}
+                            placeholder={sourceType === 'CUSTOMER' ? 'Select a company' : 'Select a lead'}
+                            error={!!formErrors.leadId}
+                          />
                           {formErrors.leadId && <p className="text-xs text-red-600 mt-1">{formErrors.leadId}</p>}
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                            {/* Project and Product are mutually exclusive —
+                                picking one disables the other (cleared ->
+                                re-enabled), same rule as the
+                                Quotation/Implementation modules' own
+                                Project/Product pickers. */}
+                            <AddableSelect
+                              disabled={!!editingId || !form.leadId || !!form.productId}
+                              value={form.projectId}
+                              onChange={(v) => { setForm(f => ({ ...f, projectId: v })); clearFieldError('project'); }}
+                              options={projectsForLead.map(p => ({ value: String(p.id), label: p.projectName }))}
+                              placeholder="Select project"
+                              error={!!formErrors.project}
+                            />
+                            {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                            <AddableSelect
+                              disabled={!!editingId || !form.leadId || !!form.projectId}
+                              value={form.productId}
+                              onChange={(v) => { setForm(f => ({ ...f, productId: v })); clearFieldError('project'); }}
+                              options={productsForLead.map(p => ({ value: String(p.id), label: p.productName }))}
+                              placeholder="Select product"
+                              error={!!formErrors.project}
+                            />
+                            {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical *</label>
+                            {/* Auto-populated from whichever of Project/
+                                Product is selected above — never manually
+                                picked (see the effect deriving
+                                form.verticalId from selectedProject/
+                                selectedProduct). Shown read-only, same
+                                convention as Head just to the right. While
+                                editing, shows the value actually saved at
+                                creation (editingVerticalInfo) rather than a
+                                live re-derivation, since Project/Product are
+                                locked then anyway. */}
+                            <p className="w-full px-3 py-2 border rounded-lg text-sm text-slate-600 bg-slate-50 border-slate-200">
+                              {editingId ? (editingVerticalInfo.verticalName || 'Not assigned') : ((selectedProject || selectedProduct)?.verticalName || '—')}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Head</label>
+                            {/* Read-only — auto-populated from the selected
+                                Vertical's own Head assignment, same
+                                "Unassigned" fallback convention used
+                                elsewhere (e.g. Assign To below). */}
+                            <p className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600">
+                              {editingId ? (editingVerticalInfo.headName || 'Unassigned') : (form.verticalId ? ((selectedProject || selectedProduct)?.headName || 'Unassigned') : '—')}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Demo Type *</label>
-                            <select
+                            <AddableSelect
                               value={form.demoType}
-                              onChange={(e) => setForm(f => ({ ...f, demoType: e.target.value }))}
-                              className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.demoType ? 'border-red-400' : 'border-slate-300'}`}
-                            >
-                              <option value="">Select type</option>
-                              {DEMO_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                            </select>
+                              onChange={(v) => { setForm(f => ({ ...f, demoType: v })); clearFieldError('demoType'); }}
+                              options={DEMO_TYPES.map(t => ({ value: t.value, label: t.label }))}
+                              placeholder="Select type"
+                              error={!!formErrors.demoType}
+                            />
                             {formErrors.demoType && <p className="text-xs text-red-600 mt-1">{formErrors.demoType}</p>}
                           </div>
                           <div>
@@ -623,7 +822,7 @@ export default function DemosPage() {
                             <input
                               type="datetime-local"
                               value={form.scheduledDate}
-                              onChange={(e) => setForm(f => ({ ...f, scheduledDate: e.target.value }))}
+                              onChange={(e) => { setForm(f => ({ ...f, scheduledDate: e.target.value })); clearFieldError('scheduledDate'); }}
                               className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.scheduledDate ? 'border-red-400' : 'border-slate-300'}`}
                             />
                             {formErrors.scheduledDate && <p className="text-xs text-red-600 mt-1">{formErrors.scheduledDate}</p>}
@@ -631,37 +830,30 @@ export default function DemosPage() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Timezone</label>
-                          <select
+                          <AddableSelect
                             value={form.timezone}
-                            onChange={(e) => setForm(f => ({ ...f, timezone: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                          >
-                            {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
-                          </select>
+                            onChange={(v) => setForm(f => ({ ...f, timezone: v }))}
+                            options={TIMEZONES.map(tz => ({ value: tz.value, label: tz.label }))}
+                            placeholder="Select Timezone"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Package</label>
-                          <select
+                          <AddableSelect
                             value={form.packageId}
-                            onChange={(e) => setForm(f => ({ ...f, packageId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                          >
-                            <option value="">Select package</option>
-                            {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
+                            onChange={(v) => setForm(f => ({ ...f, packageId: v }))}
+                            options={packages.map(p => ({ value: String(p.id), label: p.name }))}
+                            placeholder="Select package"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
-                          <select
+                          <AddableSelect
                             value={form.assignedToId}
-                            onChange={(e) => setForm(f => ({ ...f, assignedToId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                          >
-                            <option value="">Unassigned</option>
-                            {users.map((u) => (
-                              <option key={u.id} value={u.id}>{u.fullName}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => setForm(f => ({ ...f, assignedToId: v }))}
+                            options={[{ value: '', label: 'Unassigned' }, ...users.map((u) => ({ value: String(u.id), label: u.fullName }))]}
+                            placeholder="Unassigned"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Attendees</label>

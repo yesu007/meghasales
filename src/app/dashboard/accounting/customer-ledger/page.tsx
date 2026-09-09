@@ -6,6 +6,8 @@ import toast from 'react-hot-toast';
 import { ArrowDownTrayIcon, BookOpenIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
+import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 interface Lead { id: number; companyName: string }
 
@@ -37,6 +39,8 @@ async function fetchLedger(leadId: string, from: string, to: string) {
 }
 
 export default function CustomerLedgerPage() {
+  const { has } = usePermissions();
+  const canExport = has('export_accounting');
   const [leadId, setLeadId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -85,7 +89,7 @@ export default function CustomerLedgerPage() {
           <h1 className="text-2xl font-bold text-slate-800">Customer Ledger</h1>
           <p className="text-slate-500 mt-1">Running balance of invoices, payments, and credit notes per customer</p>
         </div>
-        {ledger && (
+        {ledger && canExport && (
           <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
             <ArrowDownTrayIcon className="h-4 w-4" /> Export CSV
           </button>
@@ -93,10 +97,14 @@ export default function CustomerLedgerPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-wrap gap-3 items-center">
-        <select value={leadId} onChange={(e) => setLeadId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-          <option value="">Select a customer</option>
-          {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-        </select>
+        <div className="w-64">
+          <AddableSelect
+            value={leadId}
+            onChange={(v) => setLeadId(v)}
+            options={leads.map((l) => ({ value: String(l.id), label: l.companyName }))}
+            placeholder="Select a customer"
+          />
+        </div>
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium text-slate-600">From</label>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800" />

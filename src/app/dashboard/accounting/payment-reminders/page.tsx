@@ -122,7 +122,13 @@ function RemindersTab() {
                 {reminders.map((r: any) => (
                   <tr key={r.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium text-slate-800">{r.invoiceNumber}</td>
-                    <td className="px-4 py-3 text-slate-600">{r.companyName}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {r.companyName}
+                      {/* The customer's dedicated payment-reminder recipient
+                          (not their general contact email) — see
+                          schema.prisma's Lead.financeEmail comment. */}
+                      {r.financeEmail && <p className="text-xs text-slate-400">{r.financeEmail}</p>}
+                    </td>
                     <td className="px-4 py-3 text-right text-slate-700">{fmt(r.balanceDue, r.currencyCode)}</td>
                     <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{dayjs(r.dueDate).format('DD MMM YYYY')}</td>
                     <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${REMINDER_COLORS[r.reminderType] || 'bg-slate-100 text-slate-700'}`}>{REMINDER_LABELS[r.reminderType] || r.reminderType}</span></td>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PlusIcon,
@@ -14,14 +14,22 @@ import {
   PencilIcon,
   TrashIcon,
   DocumentPlusIcon,
+  ClockIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { generateInvoicePDF } from '@/lib/generateInvoicePDF';
 import { formatCurrency } from '@/lib/currency';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+import AddableSelect from '@/components/AddableSelect';
 import dayjs from 'dayjs';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useProjectsForLead } from '@/hooks/useProjectsForLead';
+import { useProductsForLead } from '@/hooks/useProductsForLead';
+import { invalidateQuotationData } from '@/lib/queryInvalidation';
+import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
 
 const QUOTATION_STATUSES = [
   { value: 'DRAFT', label: 'Draft', color: 'bg-slate-100 text-slate-700' },
@@ -40,12 +48,14 @@ const MODULE_COLORS: Record<string, string> = {
 };
 
 interface ModuleConfig { id: number; moduleCode: string; moduleName: string; description: string; baseLicenseCost: number; additionalUserCost: number; additionalBranchCost: number; }
-interface ExistingLead { id: number; companyName: string; contactPerson: string; email: string | null; mobile: string | null; country: { isoCode: string; countryName: string; flagEmoji: string | null } | null; state: string | null; }
+interface ExistingLead { id: number; companyName: string; projectName: string | null; contactPerson: string; email: string | null; mobile: string | null; country: { isoCode: string; countryName: string; flagEmoji: string | null } | null; state: string | null; }
 interface AddonConfig { id: number; addonCode: string; addonName: string; description: string; price: number; }
 interface PricingResponse { currencyCode: string; currencySymbol: string; exchangeRate: number; modules: { moduleCode: string; moduleName: string; basePrice: number }[]; modulesSubtotal: number; implementationCost: number; trainingCost: number; cloudHostingCost: number; annualMaintenanceCost: number; supportCharges: number; addonsCost: number; subtotal: number; discountPercentage: number; discountAmount: number; taxInclusive: boolean; taxBreakdown: { taxName: string; rate: number; amount: number }[]; totalTax: number; grandTotal: number; addons: { addonCode: string; addonName: string; price: number }[]; }
 interface ServiceOverrides { implementationCost?: number; trainingCost?: number; annualMaintenanceCost?: number; }
 interface CustomModule { id: string; name: string; description: string; cost: number; quantity: number; }
 interface CurrencyOption { currencyCode: string; currencySymbol: string; }
+interface CompanyProfileTerms { termsAndConditions: string | null; paymentTerms: string | null; warrantyTerms: string | null }
+interface QuotationRevisionEntry { id: number; versionNumber: number; snapshot: any; revisedByName: string | null; createdAt: string }
 
 function fmt(amount: number, symbol: string, currencyCode: string): string {
   return formatCurrency(amount, currencyCode, { symbol });
@@ -63,8 +73,25 @@ function catalogPriceInPricingCurrency(inrAmount: number, pricing: PricingRespon
 }
 
 export default function QuotationsPage() {
+  const { has } = usePermissions();
+  const canExport = has('export_quotations');
   const queryClient = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Deep-link from Product Master's "Budget Estimation"/"+ New Estimation"
+  // actions (/dashboard/quotations?productId=..&leadId=..) — this is the
+  // Product-side equivalent of the Calculator's own ?projectId=/?leadId=
+  // prefill (see QuotationCalculatorForm's comment), just landing on this
+  // page instead since Product Master uses this catalog-based form rather
+  // than the Calculator (see ProductBudgetPanel's own comment for why).
+  // leadId is whichever of Product.customerId/leadId is set. `?edit=<id>`
+  // is this page's own deep-link for opening an existing quotation straight
+  // into edit mode (used by ProductBudgetPanel's Edit action, since a
+  // Product-linked quotation is always CATALOG-mode and must stay on this
+  // form rather than the Calculator).
+  const prefillProductId = searchParams.get('productId');
+  const prefillLeadId = searchParams.get('leadId');
+  const editParam = searchParams.get('edit');
   const [view, setView] = useState<'list' | 'create'>('list');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingQuotationNumber, setEditingQuotationNumber] = useState('');
@@ -72,6 +99,31 @@ export default function QuotationsPage() {
   // Create state
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
   const [selectedLeadId, setSelectedLeadId] = useState('');
+  // Which project (Project master) this quotation is for — the dropdown is
+  // scoped to selectedLeadId (create) or editingLeadId (edit) via
+  // useProjectsForLead below. `projectName` is kept in sync from whichever
+  // project is picked (see the sync effect below) so the legacy text column
+  // still gets written on save — it's stored on the Quotation itself, not
+  // re-derived from the lead at read time. Kept separate from
+  // newClientProjectName below so switching Existing Client <-> New Client
+  // never copies one tab's Project Name into the other (New Client has no
+  // lead yet, so it keeps its own free-text field instead of a dropdown).
+  const [projectId, setProjectId] = useState('');
+  const [projectName, setProjectName] = useState('');
+  // Which Product master row this quotation is for — same convention as
+  // projectId above (a real dropdown next to Project, scoped the same way).
+  // Also still set via the ?productId= deep-link from Product Master (see
+  // ProductBudgetPanel) — that just pre-selects this same dropdown instead
+  // of a separate read-only display.
+  const [productId, setProductId] = useState('');
+  // New Client mode's free-text Product Name — mirrors newClientProjectName
+  // below. Unlike Project, there's no legacy productName column on
+  // Quotation (a Product always needs an existing lead, which a brand-new
+  // client doesn't have yet), so this is carried only inside
+  // pricingSnapshot.productName once saved — informational only.
+  const [newClientProductName, setNewClientProductName] = useState('');
+  const [editingLeadId, setEditingLeadId] = useState('');
+  const [newClientProjectName, setNewClientProjectName] = useState('');
   const [clientName, setClientName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
@@ -87,18 +139,130 @@ export default function QuotationsPage() {
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [additionalTerms, setAdditionalTerms] = useState('');
+  // Payment Milestones — same shape/behavior as
+  // QuotationCalculatorForm.tsx's own `milestones` state (an editable,
+  // not-yet-approved plan of {percentage, gapDays} rows), reused byte-for-
+  // byte here so a quotation created from this form (Product Master's own
+  // flow, and any other catalog-based quotation) supports the exact same
+  // milestone/invoice-generation behavior as a Calculator one — see
+  // src/lib/quotationMilestones.ts / quotationMilestoneInvoicing.ts, both
+  // already costingMode-agnostic.
+  const [milestones, setMilestones] = useState<{ percentage: string; gapDays: string }[]>([]);
+  // Already-materialized QuotationPaymentMilestone rows (dated, with their
+  // own invoice + status) — only populated once editing an APPROVED
+  // quotation; read-only display, same as the Calculator's own
+  // `existing.paymentMilestones`.
+  const [existingMilestones, setExistingMilestones] = useState<any[]>([]);
+  // The quotation's own stored status, once editing one — needed to decide
+  // whether to show the editable plan or the already-materialized rows
+  // (same role as the Calculator's own local `status` state).
+  const [editingStatus, setEditingStatus] = useState('DRAFT');
 
   const resetCreateState = () => {
     setEditingId(null); setEditingQuotationNumber('');
-    setSelectedModules([]); setModuleOverrides({}); setServiceOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone('');
+    setSelectedModules([]); setModuleOverrides({}); setServiceOverrides({}); setCustomModules([]); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setProjectName(''); setNewClientProjectName(''); setProjectId(''); setProductId(''); setNewClientProductName(''); setEditingLeadId('');
     setClientCountry('IN'); setClientState(''); setDiscountPercentage(0); setTaxInclusive(false); setSelectedAddons([]); setPricing(null);
-    setClientMode('existing'); setSelectedLeadId(''); setFormErrors({});
+    setClientMode('existing'); setSelectedLeadId(''); setFormErrors({}); setAdditionalTerms('');
+    setMilestones([]); setExistingMilestones([]); setEditingStatus('DRAFT');
   };
+
+  const addMilestone = () => setMilestones((prev) => [...prev, { percentage: '', gapDays: prev.length === 0 ? '0' : '15' }]);
+  const removeMilestone = (idx: number) => setMilestones((prev) => prev.filter((_, i) => i !== idx));
+  const updateMilestone = (idx: number, field: 'percentage' | 'gapDays', value: string) =>
+    setMilestones((prev) => prev.map((m, i) => (i === idx ? { ...m, [field]: value } : m)));
+
+  const milestonePlan: MilestonePlanInput[] = useMemo(
+    () => milestones.map((m, idx) => ({ percentage: Number(m.percentage) || 0, gapDays: idx === 0 ? 0 : Number(m.gapDays) || 0 })),
+    [milestones]
+  );
+  const milestonesTotalPct = useMemo(() => Math.round(milestonePlan.reduce((sum, m) => sum + m.percentage, 0) * 100) / 100, [milestonePlan]);
+  const milestoneError = useMemo(() => validateMilestonePlan(milestonePlan), [milestonePlan]);
+
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ milestoneId, newScheduledDate, reason }: { milestoneId: number; newScheduledDate: string; reason?: string }) => {
+      const res = await fetch(`/api/quotations/${editingId}/milestones/${milestoneId}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newScheduledDate, reason }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || 'Failed to reschedule milestone'); }
+      return res.json();
+    },
+    onSuccess: () => { if (editingId) openEdit(editingId); toast.success('Milestone rescheduled'); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  // A milestone whose invoice has already been partially paid needs a reason
+  // on record (enforced again server-side — see the reschedule route) since
+  // money has already moved against the date being changed; one that's
+  // unpaid or not yet invoiced needs no such friction. Same rule as the
+  // Calculator's own handleRescheduleMilestone.
+  const handleRescheduleMilestone = (milestone: any, newDateStr: string) => {
+    let reason: string | undefined;
+    if (milestone.invoice?.status === 'PARTIALLY_PAID') {
+      const entered = window.prompt('This milestone has already been partially paid — enter a reason for rescheduling it:');
+      if (!entered || !entered.trim()) { toast.error('A reason is required to reschedule a partially paid milestone'); return; }
+      reason = entered.trim();
+    }
+    rescheduleMutation.mutate({ milestoneId: milestone.id, newScheduledDate: newDateStr, reason });
+  };
+
+  // Project dropdown, scoped to whichever Lead/Customer is active — create
+  // uses selectedLeadId, editing uses editingLeadId (leadId isn't tracked in
+  // `form` state here since the client section is a locked read-only block
+  // once editing). See useProjectsForLead's own comment for the relation
+  // this filters on.
+  const activeLeadIdForProjects = editingId ? editingLeadId : (clientMode === 'existing' ? selectedLeadId : '');
+  const { data: leadProjects = [], isLoading: projectsLoading } = useProjectsForLead(activeLeadIdForProjects);
+  // Keeps the legacy free-text projectName column (still used for
+  // display/PDF/search) in sync with whichever project is selected.
+  useEffect(() => {
+    const p = leadProjects.find((x) => String(x.id) === projectId);
+    if (p) setProjectName(p.projectName);
+  }, [projectId, leadProjects]);
+  // Product dropdown, scoped the same way as Project above — same
+  // activeLeadIdForProjects, just against Product Master instead.
+  const { data: leadProducts = [], isLoading: productsLoading } = useProductsForLead(activeLeadIdForProjects);
+  // Project and Product are mutually exclusive on a quotation — a customer
+  // picks one or the other, never both (enforced again server-side, see
+  // POST/PUT /api/quotations); neither is auto-selected, even when a
+  // customer has only one Project or Product — the user always picks
+  // explicitly (see the disabled/placeholder logic on each <select> below).
+
+  // Search + Status filter — same debounced searchInput/search pattern and
+  // Filters-toggle-reveals-a-panel behavior as the Customer module
+  // (src/app/dashboard/customers/page.tsx), reusing the existing
+  // QUOTATION_STATUSES constant (already used by the per-row Status select
+  // below) for the filter dropdown's options. Unlike Customers, there's no
+  // pagination UI on this page today, so search/status are added as extra
+  // query params to the existing fixed size=50 fetch rather than
+  // introducing new page/size state — pagination stays exactly as-is.
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const quotationsParams: Record<string, string> = { size: '50' };
+  if (search) quotationsParams.search = search;
+  if (statusFilter) quotationsParams.status = statusFilter;
+
+  const clearQuotationFilters = () => { setSearchInput(''); setSearch(''); setStatusFilter(''); };
 
   // Fetch quotations from database
   const { data: quotationsData, isError: isQuotationsError } = useQuery({
-    queryKey: ['quotations'],
-    queryFn: async () => { const r = await fetch('/api/quotations?size=50'); if (!r.ok) throw new Error('Failed'); return r.json(); },
+    queryKey: ['quotations', quotationsParams],
+    queryFn: async () => {
+      const query = new URLSearchParams(quotationsParams).toString();
+      const r = await fetch(`/api/quotations?${query}`);
+      if (!r.ok) throw new Error('Failed');
+      return r.json();
+    },
+    placeholderData: (prev: any) => prev,
   });
   const quotations = quotationsData?.content || [];
 
@@ -132,6 +296,20 @@ export default function QuotationsPage() {
     queryKey: ['currencies'],
     queryFn: async () => { const r = await fetch('/api/currencies?activeOnly=true'); if (!r.ok) throw new Error('Failed to fetch currencies'); return r.json(); },
   });
+  const { data: companyProfile } = useQuery<CompanyProfileTerms | null>({
+    queryKey: ['company-profile-terms'],
+    queryFn: async () => { const r = await fetch('/api/quotation-config?type=company-profile'); if (!r.ok) throw new Error('Failed to fetch company profile'); return r.json(); },
+  });
+  const standardTermsText = companyProfile
+    ? [companyProfile.termsAndConditions, companyProfile.paymentTerms, companyProfile.warrantyTerms].filter(Boolean).join('\n\n')
+    : '';
+
+  const [historyFor, setHistoryFor] = useState<{ id: number; quotationNumber: string; version: number } | null>(null);
+  const { data: revisions = [], isLoading: revisionsLoading } = useQuery<QuotationRevisionEntry[]>({
+    queryKey: ['quotation-revisions', historyFor?.id],
+    queryFn: async () => { const r = await fetch(`/api/quotations/${historyFor!.id}/revisions`); if (!r.ok) throw new Error('Failed to load history'); return r.json(); },
+    enabled: !!historyFor,
+  });
   const symbolForCurrency = (code: string) => currencyList.find(c => c.currencyCode === code)?.currencySymbol || code;
 
   useEffect(() => {
@@ -156,13 +334,26 @@ export default function QuotationsPage() {
     if (isCurrencyListError) toast.error('Failed to load currencies');
   }, [isCurrencyListError]);
 
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — saveQuotation's own validation only runs again on
+  // the next submit, so without this a message set by a failed submit
+  // attempt would otherwise keep showing even after the field now holds a
+  // valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
   const selectExistingLead = (id: string) => {
     setSelectedLeadId(id);
+    clearFieldError('client');
     const lead = existingLeads.find(l => String(l.id) === id);
     setClientName(lead?.contactPerson || '');
     setCompanyName(lead?.companyName || '');
     setClientEmail(lead?.email || '');
     setClientPhone(lead?.mobile || '');
+    // Reset the Project/Product selections — the previous picks belonged to
+    // whichever lead was selected before, and must not carry over. Both
+    // dropdowns (scoped to this new leadId) repopulate via the queries above.
+    setProjectId(''); setProjectName('');
+    setProductId('');
     // Currency/tax must follow the lead — country isn't independently
     // re-picked once an existing client is selected (see countryLocked).
     setClientCountry(lead?.country?.isoCode || 'IN');
@@ -199,13 +390,14 @@ export default function QuotationsPage() {
     const isSelected = selectedModules.includes(code);
     setSelectedModules(prev => isSelected ? prev.filter(c => c !== code) : [...prev, code]);
     if (isSelected) setModuleOverrides(prev => { const { [code]: _drop, ...rest } = prev; return rest; });
+    clearFieldError('modules');
   };
   const updateModuleOverride = (code: string, value: number) => setModuleOverrides(prev => ({ ...prev, [code]: value }));
   const updateServiceOverride = (field: keyof ServiceOverrides, value: number) => setServiceOverrides(prev => ({ ...prev, [field]: value }));
   const toggleAddon = (code: string) => setSelectedAddons(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   const addCustomModule = () => setCustomModules(prev => [...prev, { id: Date.now().toString(), name: '', description: '', cost: 0, quantity: 1 }]);
   const removeCustomModule = (id: string) => setCustomModules(prev => prev.filter(m => m.id !== id));
-  const updateCustomModule = (id: string, field: keyof CustomModule, value: any) => setCustomModules(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m));
+  const updateCustomModule = (id: string, field: keyof CustomModule, value: any) => { setCustomModules(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m)); clearFieldError('modules'); };
   const customModulesTotal = customModules.reduce((sum, m) => sum + (m.cost * m.quantity), 0);
 
   const saveQuotation = async () => {
@@ -218,15 +410,43 @@ export default function QuotationsPage() {
       if (!companyName) errs.companyName = 'Company is required';
     }
     if (!hasModule) errs.modules = 'Select at least one module';
+    // Existing-client quotations must be tied to a Project or a Product
+    // (mutually exclusive — see their own disabled fields below); New
+    // Client mode has no real Project/Product to pick yet (only the free-
+    // text Project Name/Product Name, informational only), so this only
+    // applies once a real Client is picked. Same rule as the Quotation
+    // Calculator's own handleSave.
+    const projectOrProductValid = editingId || clientMode !== 'existing' || !!projectId || !!productId;
+    if (!editingId && clientMode === 'existing' && !projectId && !productId) errs.project = 'Select a Project or Product';
     setFormErrors(errs);
-    if (!pricing || !clientValid || !hasModule) {
+    if (!pricing || !clientValid || !hasModule || !projectOrProductValid) {
       toast.error(clientMode === 'existing' && !editingId ? 'Select a client and at least one module' : 'Fill required fields and select at least one module');
       return;
     }
+    if (milestoneError) { toast.error(milestoneError); return; }
     try {
+      // Existing-client mode (and editing) use `projectName`; a brand-new
+      // client being created here uses its own, separate state — never mix
+      // the two up when saving.
+      const effectiveProjectName = (!editingId && clientMode === 'new') ? newClientProjectName : projectName;
+      // New-client mode has no lead yet to scope a Project dropdown to, so
+      // it never sets projectId — only the free-text projectName above.
+      const effectiveProjectId = (!editingId && clientMode === 'new') ? null : (projectId ? parseInt(projectId) : null);
+      // Same reasoning for productId — New Client mode has no lead yet to
+      // scope a Product dropdown to (same as Project above), so it never
+      // sets productId — only the free-text newClientProductName below.
+      const effectiveProductId = (!editingId && clientMode === 'new') ? null : (productId ? parseInt(productId) : null);
+      // Preserves whatever New Client-mode free text this quotation was
+      // originally created with once editing (there's no UI to edit it once
+      // a real lead/productId exists — see the Client Information card
+      // below), same convention as projectName vs. newClientProjectName.
+      const effectiveProductName = (editingId || (!editingId && clientMode === 'new')) ? (newClientProductName || null) : null;
       const sharedFields = {
         softwareModules: [...selectedModules, ...customModules.filter(c => c.name).map(c => ({ name: c.name, cost: c.cost, quantity: c.quantity }))],
         businessModule: selectedModules[0] || null,
+        projectName: effectiveProjectName || null,
+        projectId: effectiveProjectId,
+        productId: effectiveProductId,
         clientCountry,
         clientState: clientState || null,
         currencyCode: pricing.currencyCode,
@@ -242,7 +462,13 @@ export default function QuotationsPage() {
         taxInclusive: pricing.taxInclusive,
         taxBreakdown: pricing.taxBreakdown,
         addons: selectedAddons,
-        pricingSnapshot: pricing,
+        // Same nested-under-pricingSnapshot placement PUT already expects
+        // (see /api/quotations/[id]/route.ts's own paymentMilestones
+        // check) and POST's CATALOG branch now validates identically — an
+        // empty array is a valid "no milestones, one lump-sum invoice on
+        // approval" plan, same as the Calculator sending one.
+        pricingSnapshot: { ...pricing, paymentMilestones: milestonePlan, productName: effectiveProductName },
+        additionalTerms: additionalTerms || null,
       };
       // On create: existing-client mode links to the picked lead via leadId;
       // new-client mode sends company/contact fields so the API creates a
@@ -257,7 +483,15 @@ export default function QuotationsPage() {
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed to save');
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
+      invalidateQuotationData(queryClient);
       toast.success(editingId ? 'Quotation updated!' : 'Quotation saved!');
+      // Arrived here from Product Master's Budget Estimation / "+ New
+      // Estimation" (this quotation carries a productId either way — via
+      // the deep-link prefill on create, or because openEdit loaded one on
+      // edit) — send the user back to that product's own accordion so the
+      // saved quotation is immediately visible, same convention as the
+      // Calculator's own post-save redirect to /dashboard/projects?expand=.
+      if (effectiveProductId) { router.push(`/dashboard/products?expand=${effectiveProductId}`); return; }
       resetCreateState();
       setView('list');
     } catch {
@@ -269,6 +503,11 @@ export default function QuotationsPage() {
     const res = await fetch(`/api/quotations/${id}`);
     if (!res.ok) { toast.error('Failed to load quotation'); return; }
     const q = await res.json();
+    // Guards against a still-open form's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — resetCreateState
+    // already clears this on the normal Cancel path, this is just defense in
+    // depth.
+    setFormErrors({});
     const sw = Array.isArray(q.softwareModules) ? q.softwareModules : [];
     setSelectedModules(sw.filter((m: any) => typeof m === 'string'));
     setCustomModules(sw.filter((m: any) => m && typeof m === 'object').map((m: any, i: number) => ({
@@ -296,21 +535,84 @@ export default function QuotationsPage() {
     setCompanyName(q.lead?.companyName || '');
     setClientEmail(q.lead?.email || '');
     setClientPhone(q.lead?.mobile || '');
+    // The quotation's own stored Project — not re-derived from the lead's
+    // current value, so a per-quotation edit here is never silently
+    // overwritten. projectName is the initial display value; once
+    // leadProjects loads, the sync effect above re-derives it from
+    // projectId (a no-op unless the two have drifted).
+    setProjectName(q.projectName || '');
+    setProjectId(q.projectId ? String(q.projectId) : '');
+    setProductId(q.productId ? String(q.productId) : '');
+    setNewClientProductName(q.pricingSnapshot?.productName || '');
+    setEditingLeadId(q.leadId ? String(q.leadId) : '');
     setClientCountry(q.clientCountry || 'IN');
     setClientState(q.clientState || '');
     setDiscountPercentage(Number(q.discountPercentage) || 0);
     setTaxInclusive(!!q.taxInclusive);
     setSelectedAddons(Array.isArray(q.addons) ? q.addons : []);
+    setAdditionalTerms(q.additionalTerms || '');
+    // Same two-branch read as QuotationCalculatorForm.tsx's own populate
+    // effect: the still-editable plan lives in pricingSnapshot.paymentMilestones
+    // (rehydrated into the editable `milestones` state); once APPROVED, the
+    // real materialized QuotationPaymentMilestone rows (with their own
+    // invoice + status) are what GET /api/quotations/[id] already returns
+    // under q.paymentMilestones — both are always present in this same
+    // response, this form just wasn't reading either one until now.
+    const snapMilestones = q.pricingSnapshot?.paymentMilestones;
+    setMilestones(
+      Array.isArray(snapMilestones)
+        ? snapMilestones.map((m: any) => ({ percentage: String(m.percentage ?? ''), gapDays: String(m.gapDays ?? '') }))
+        : []
+    );
+    setExistingMilestones(Array.isArray(q.paymentMilestones) ? q.paymentMilestones : []);
+    setEditingStatus(q.status || 'DRAFT');
     setEditingId(q.id);
     setEditingQuotationNumber(q.quotationNumber);
     setView('create');
   };
+
+  // ?edit=<id> deep-link — ProductBudgetPanel's Edit action (see its own
+  // comment for why a Product-linked quotation must land here rather than
+  // the Calculator). A ref, not state, so a later navigation with the same
+  // param (or a manual "Back to List" then re-edit) isn't silently ignored.
+  const editDeepLinkHandled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editParam || editDeepLinkHandled.current === editParam) return;
+    editDeepLinkHandled.current = editParam;
+    openEdit(parseInt(editParam));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openEdit is
+    // stable enough for this one-shot deep-link effect; re-running it on
+    // every openEdit identity change would re-fetch/reset the form mid-edit.
+  }, [editParam]);
+
+  // ?productId=<id>&leadId=<id> deep-link — Product Master's own "Budget
+  // Estimation"/"+ New Estimation" actions (see ProductBudgetPanel). Waits
+  // for existingLeads to load so selectExistingLead (which reads from it)
+  // has something to find; a ref guards against re-running the moment
+  // existingLeads finishes loading a second time (e.g. a background
+  // refetch) after the user has already started editing the form.
+  const productDeepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (productDeepLinkHandled.current || !prefillProductId || !prefillLeadId) return;
+    if (existingLeads.length === 0) return;
+    if (!existingLeads.some((l) => String(l.id) === prefillLeadId)) return;
+    productDeepLinkHandled.current = true;
+    resetCreateState();
+    setView('create');
+    setClientMode('existing');
+    selectExistingLead(prefillLeadId);
+    setProductId(prefillProductId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately
+    // omits resetCreateState/selectExistingLead (stable enough here, and
+    // including them would re-fire this on every render).
+  }, [prefillProductId, prefillLeadId, existingLeads]);
 
   const deleteQuotation = async (id: number, quotationNumber: string) => {
     if (!window.confirm(`Delete quotation "${quotationNumber}"? This cannot be undone.`)) return;
     const res = await fetch(`/api/quotations/${id}`, { method: 'DELETE' });
     if (!res.ok) { toast.error('Failed to delete quotation'); return; }
     queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    invalidateQuotationData(queryClient);
     toast.success('Quotation deleted');
   };
 
@@ -327,6 +629,7 @@ export default function QuotationsPage() {
     }
     queryClient.invalidateQueries({ queryKey: ['quotations'] });
     queryClient.invalidateQueries({ queryKey: ['accounting-invoices'] });
+    invalidateQuotationData(queryClient);
     const updated = await res.json();
     if (updated.generatedInvoice) {
       toast.success(`Quotation approved — Invoice ${updated.generatedInvoice.invoiceNumber} created in Pending Invoices`);
@@ -389,6 +692,8 @@ export default function QuotationsPage() {
       currencySymbol: symbol,
       currencyCode: pricing.currencyCode,
       fileName: `Quotation_${companyName || 'Client'}_${dayjs().format('YYYYMMDD')}.pdf`,
+      standardTerms: standardTermsText,
+      additionalTerms,
     });
   };
 
@@ -441,6 +746,8 @@ export default function QuotationsPage() {
       currencySymbol: symbol,
       currencyCode: q.currencyCode || 'INR',
       fileName: `${q.quotationNumber}_${q.companyName}.pdf`,
+      standardTerms: standardTermsText,
+      additionalTerms: q.additionalTerms || '',
     });
   };
 
@@ -482,6 +789,8 @@ export default function QuotationsPage() {
       currencySymbol: symbol,
       currencyCode: q.currencyCode || 'INR',
       fileName: `${q.quotationNumber}_${q.companyName}.pdf`,
+      standardTerms: standardTermsText,
+      additionalTerms: q.additionalTerms || '',
     });
   };
 
@@ -495,14 +804,53 @@ export default function QuotationsPage() {
           <button onClick={() => { resetCreateState(); setView('create'); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"><PlusIcon className="h-4 w-4" /> New Quotation</button>
         </div>
       </div>
+
+      {/* Search & Filters — filter fields sit directly beside the search
+          bar, always visible (no "Filters" button/dropdown to open first). */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:flex-wrap gap-3">
+          <div className="relative flex-1 min-w-[220px]">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by quote no, client, company, project..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            />
+            {searchInput && (
+              <button onClick={() => { setSearchInput(''); setSearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <div className="w-full sm:w-44">
+            <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+            <AddableSelect
+              value={statusFilter}
+              onChange={(v) => setStatusFilter(v)}
+              options={[{ value: '', label: 'All' }, ...QUOTATION_STATUSES.map(s => ({ value: s.value, label: s.label }))]}
+              placeholder="All"
+            />
+          </div>
+          {(searchInput || statusFilter) && <button onClick={clearQuotationFilters} className="text-sm text-slate-500 hover:text-red-500 sm:mb-2.5">Clear All</button>}
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         {quotations.length === 0 ? (
-          <div className="text-center py-16"><CalculatorIcon className="h-12 w-12 mx-auto text-slate-300" /><p className="mt-4 text-lg font-medium text-slate-600">No quotations yet</p><p className="text-sm text-slate-400">Create your first quotation</p></div>
+          <div className="text-center py-16">
+            <CalculatorIcon className="h-12 w-12 mx-auto text-slate-300" />
+            <p className="mt-4 text-lg font-medium text-slate-600">{search || statusFilter ? 'No quotations found' : 'No quotations yet'}</p>
+            <p className="text-sm text-slate-400">{search || statusFilter ? 'Try adjusting your search or filters' : 'Create your first quotation'}</p>
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-900"><tr>
               <th className="px-4 py-3 text-left font-semibold text-white">Quote No</th>
               <th className="px-4 py-3 text-left font-semibold text-white">Client</th>
+              <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Project Name</th>
+              <th className="px-4 py-3 text-left font-semibold text-white hidden md:table-cell">Product Name</th>
               <th className="px-4 py-3 text-left font-semibold text-white">Modules</th>
               <th className="px-4 py-3 text-right font-semibold text-white">Amount</th>
               <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
@@ -517,10 +865,15 @@ export default function QuotationsPage() {
                 return (
                 <tr key={q.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                   <td className="px-4 py-3 font-medium text-slate-800">
-                    {q.quotationNumber}
+                    <div className="flex items-center gap-1.5">
+                      <span>{q.quotationNumber}</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500">v{q.version || 1}</span>
+                    </div>
                     {isResourceBased && <span className="block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-teal-100 text-teal-700 w-fit">Calculator</span>}
                   </td>
                   <td className="px-4 py-3"><p className="font-medium text-slate-800">{q.contactPerson}</p><p className="text-xs text-slate-500">{q.companyName}</p></td>
+                  <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{q.projectName || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{q.productName || '—'}</td>
                   <td className="px-4 py-3">
                     {isResourceBased ? (
                       <span className="text-xs text-slate-500">{q.projectName || 'Resource-based'}</span>
@@ -541,7 +894,10 @@ export default function QuotationsPage() {
                   <td className="px-4 py-3 text-slate-500">{dayjs(q.createdAt).format('DD MMM YYYY')}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => downloadQuotationPDF(q)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download PDF"><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                      <button onClick={() => setHistoryFor({ id: q.id, quotationNumber: q.quotationNumber, version: q.version || 1 })} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Version History"><ClockIcon className="h-4 w-4" /></button>
+                      {canExport && (
+                        <button onClick={() => downloadQuotationPDF(q)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download PDF"><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                      )}
                       {q.status === 'APPROVED' && (
                         <button onClick={() => generateInvoice(q)} className="p-1.5 rounded text-slate-400 hover:text-green-600 hover:bg-green-50" title="Generate Invoice"><DocumentPlusIcon className="h-4 w-4" /></button>
                       )}
@@ -559,6 +915,48 @@ export default function QuotationsPage() {
           </table>
         )}
       </div>
+
+      {historyFor && (
+        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4" onClick={() => setHistoryFor(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800">Version History — {historyFor.quotationNumber}</h3>
+                <p className="text-xs text-slate-500">Current version: v{historyFor.version}</p>
+              </div>
+              <button onClick={() => setHistoryFor(null)} className="p-1.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100"><XMarkIcon className="h-5 w-5" /></button>
+            </div>
+            <div className="overflow-y-auto p-4">
+              {revisionsLoading ? (
+                <div className="text-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
+              ) : revisions.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-8">No prior revisions — this is the original version.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead><tr className="text-xs text-slate-400 uppercase tracking-wide border-b border-slate-200">
+                    <th className="text-left pb-2">Version</th>
+                    <th className="text-left pb-2">Date</th>
+                    <th className="text-left pb-2">Revised By</th>
+                    <th className="text-right pb-2">Total Amount</th>
+                    <th className="text-left pb-2">Status</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {revisions.map((r) => (
+                      <tr key={r.id}>
+                        <td className="py-2 font-medium text-slate-700">v{r.versionNumber}</td>
+                        <td className="py-2 text-slate-500">{dayjs(r.createdAt).format('DD MMM YYYY, HH:mm')}</td>
+                        <td className="py-2 text-slate-500">{r.revisedByName || '—'}</td>
+                        <td className="py-2 text-right font-medium text-slate-700">{fmt(Number(r.snapshot?.totalAmount || 0), symbolForCurrency(r.snapshot?.currencyCode || 'INR'), r.snapshot?.currencyCode || 'INR')}</td>
+                        <td className="py-2 text-slate-500">{QUOTATION_STATUSES.find(s => s.value === r.snapshot?.status)?.label || r.snapshot?.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -579,26 +977,84 @@ export default function QuotationsPage() {
               <p className="text-xs text-slate-400 mb-3">Client details are tied to the lead and cannot be changed from here.</p>
             ) : (
               <div className="flex gap-2 mb-4">
-                <button onClick={() => { setClientMode('existing'); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'existing' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>Existing Client</button>
-                <button onClick={() => { setClientMode('new'); setSelectedLeadId(''); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'new' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>New Client</button>
+                <button onClick={() => { setClientMode('existing'); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setNewClientProjectName(''); setProjectId(''); setProjectName(''); setProductId(''); setNewClientProductName(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'existing' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>Existing Client</button>
+                <button onClick={() => { setClientMode('new'); setSelectedLeadId(''); setClientName(''); setCompanyName(''); setClientEmail(''); setClientPhone(''); setNewClientProjectName(''); setProjectId(''); setProjectName(''); setProductId(''); setNewClientProductName(''); }} className={`px-4 py-1.5 rounded-lg text-sm font-medium border ${clientMode === 'new' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>New Client</button>
               </div>
             )}
             {!editingId && clientMode === 'existing' ? (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
-                <select value={selectedLeadId} onChange={e => selectExistingLead(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.client ? 'border-red-400' : 'border-slate-300'}`}>
-                  <option value="">Select a client</option>
-                  {existingLeads.map(l => <option key={l.id} value={l.id}>{l.companyName} — {l.contactPerson}{l.email ? ` (${l.email})` : ''}</option>)}
-                </select>
-                {formErrors.client && <p className="text-xs text-red-600 mt-1">{formErrors.client}</p>}
-                {existingLeads.length === 0 && <p className="text-xs text-slate-400 mt-1">No existing clients yet — switch to &ldquo;New Client&rdquo; to add one.</p>}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Client *</label>
+                  <AddableSelect
+                    value={selectedLeadId}
+                    onChange={v => selectExistingLead(v)}
+                    options={existingLeads.map(l => ({ value: String(l.id), label: l.companyName }))}
+                    placeholder="Select a client"
+                    error={!!formErrors.client}
+                  />
+                  {formErrors.client && <p className="text-xs text-red-600 mt-1">{formErrors.client}</p>}
+                  {existingLeads.length === 0 && <p className="text-xs text-slate-400 mt-1">No existing clients yet — switch to &ldquo;New Client&rdquo; to add one.</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                  <AddableSelect
+                    value={projectId}
+                    onChange={v => { setProjectId(v); clearFieldError('project'); }}
+                    options={leadProjects.map(p => ({ value: String(p.id), label: p.projectName }))}
+                    placeholder={!selectedLeadId ? 'Select a client first' : projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
+                    disabled={!selectedLeadId || projectsLoading || leadProjects.length === 0 || !!productId}
+                    error={!!formErrors.project}
+                  />
+                  {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                  <AddableSelect
+                    value={productId}
+                    onChange={v => { setProductId(v); clearFieldError('project'); }}
+                    options={leadProducts.map(p => ({ value: String(p.id), label: p.productName }))}
+                    placeholder={!selectedLeadId ? 'Select a client first' : productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
+                    disabled={!selectedLeadId || productsLoading || leadProducts.length === 0 || !!projectId}
+                    error={!!formErrors.project}
+                  />
+                  {formErrors.project && <p className="text-xs text-red-600 mt-1">{formErrors.project}</p>}
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input disabled={!!editingId} value={clientName} onChange={e => setClientName(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.clientName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.clientName && <p className="text-xs text-red-600 mt-1">{formErrors.clientName}</p>}</div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input disabled={!!editingId} value={companyName} onChange={e => setCompanyName(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}</div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Client Name *</label><input disabled={!!editingId} value={clientName} onChange={e => { setClientName(e.target.value); clearFieldError('clientName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.clientName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.clientName && <p className="text-xs text-red-600 mt-1">{formErrors.clientName}</p>}</div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Company *</label><input disabled={!!editingId} value={companyName} onChange={e => { setCompanyName(e.target.value); clearFieldError('companyName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />{formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}</div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input disabled={!!editingId} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input disabled={!!editingId} value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
+                {editingId ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                      <AddableSelect
+                        value={projectId}
+                        onChange={v => setProjectId(v)}
+                        options={leadProjects.map(p => ({ value: String(p.id), label: p.projectName }))}
+                        placeholder={projectsLoading ? 'Loading projects...' : leadProjects.length === 0 ? 'No projects available' : 'Select Project'}
+                        disabled={projectsLoading || leadProjects.length === 0 || !!productId}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                      <AddableSelect
+                        value={productId}
+                        onChange={v => setProductId(v)}
+                        options={leadProducts.map(p => ({ value: String(p.id), label: p.productName }))}
+                        placeholder={productsLoading ? 'Loading products...' : leadProducts.length === 0 ? 'No products available' : 'Select Product'}
+                        disabled={productsLoading || leadProducts.length === 0 || !!projectId}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Project Name</label><input value={newClientProjectName} onChange={e => setNewClientProjectName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Product Name</label><input value={newClientProductName} onChange={e => setNewClientProductName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" /></div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -674,6 +1130,81 @@ export default function QuotationsPage() {
             )}
           </div>
 
+          {/* Payment Milestones — same UI/fields/validation/calculation as
+              QuotationCalculatorForm.tsx's own "Payment Milestones" card, so
+              a quotation created from this form (Product Master's own flow
+              included) supports the identical milestone → invoice-generation
+              behavior. Split the same way: an editable {percentage, gapDays}
+              plan before approval, the real materialized (dated, invoiced)
+              rows once APPROVED — see openEdit's own comment for where each
+              comes from. */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Payment Milestones</h2>
+            {editingStatus === 'APPROVED' && existingMilestones.length > 0 ? (
+              <div className="space-y-2">
+                {existingMilestones.map((m: any) => (
+                  <div key={m.id} className="flex items-center justify-between gap-3 py-2 border-b border-dashed border-slate-100 last:border-0">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">
+                        Milestone {m.sequence} — {Number(m.percentage)}% ({fmt(Number(m.amount), pricing?.currencySymbol || '₹', pricing?.currencyCode || 'INR')})
+                      </p>
+                      {m.invoice && (
+                        <p className="text-xs text-slate-400">
+                          <Link href={`/dashboard/accounting/invoices/${m.invoice.id}`} className="text-amber-700 hover:underline">{m.invoice.invoiceNumber}</Link> — {m.invoice.status}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        key={`${m.id}-${m.scheduledDate}`}
+                        type="date"
+                        defaultValue={dayjs(m.scheduledDate).format('YYYY-MM-DD')}
+                        disabled={m.invoice?.status === 'PAID'}
+                        onBlur={(e) => {
+                          if (e.target.value && e.target.value !== dayjs(m.scheduledDate).format('YYYY-MM-DD')) handleRescheduleMilestone(m, e.target.value);
+                        }}
+                        className="px-2 py-1 border border-slate-300 rounded text-xs text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                        title={m.invoice?.status === 'PAID' ? 'Fully paid — date is locked' : 'Reschedule this milestone'}
+                      />
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${m.status === 'INVOICED' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{m.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : editingStatus === 'APPROVED' ? (
+              <p className="text-xs text-slate-400">No payment milestones were configured — the full amount was invoiced on approval.</p>
+            ) : (
+              <>
+                <p className="text-xs text-slate-400 mb-3">Optional — split the quoted amount into staged invoices instead of one lump sum on approval. Leave empty to invoice the full amount once approved.</p>
+                <div className="space-y-2">
+                  {milestones.map((m, idx) => (
+                    <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-0.5">Milestone {idx + 1} — % of total</label>
+                        <input type="number" min="0" step="0.01" value={m.percentage} onChange={(e) => updateMilestone(idx, 'percentage', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" placeholder="e.g. 50" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-0.5">{idx === 0 ? 'Invoiced on approval' : 'Days after previous milestone'}</label>
+                        <input type="number" min="0" value={idx === 0 ? '0' : m.gapDays} disabled={idx === 0} onChange={(e) => updateMilestone(idx, 'gapDays', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 disabled:bg-slate-50 disabled:text-slate-400" placeholder="e.g. 15" />
+                      </div>
+                      <button type="button" onClick={() => removeMilestone(idx)} className="p-2 text-slate-400 hover:text-red-600" title="Remove milestone">
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={addMilestone} className="mt-2 flex items-center gap-1 text-sm text-amber-700 hover:text-amber-800 font-medium">
+                  <PlusIcon className="h-4 w-4" /> Add Milestone
+                </button>
+                {milestones.length > 0 && (
+                  <p className={`text-xs mt-2 ${milestoneError ? 'text-red-600' : 'text-green-600'}`}>
+                    Total: {milestonesTotalPct}% {milestoneError ? `— ${milestoneError}` : '— OK'}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
           {/* Client Location */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2"><GlobeAltIcon className="h-5 w-5 text-amber-600" /> Client Location *</h2>
@@ -686,7 +1217,7 @@ export default function QuotationsPage() {
                   disabled={countryLocked}
                 />
               </div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">State</label><select value={clientState} onChange={e => setClientState(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"><option value="">Select</option>{states.map(s => <option key={s.stateCode} value={s.stateCode}>{s.stateName}</option>)}</select></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">State</label><AddableSelect value={clientState} onChange={v => setClientState(v)} options={states.map(s => ({ value: s.stateCode, label: s.stateName }))} placeholder="Select" /></div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Discount %</label><input type="number" min={0} max={50} value={discountPercentage} onChange={e => setDiscountPercentage(Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></div>
             </div>
             <div className="mt-4">
@@ -713,6 +1244,25 @@ export default function QuotationsPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Terms & Conditions */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h2 className="text-lg font-semibold text-slate-800 mb-4">Terms &amp; Conditions</h2>
+            {standardTermsText && (
+              <div className="mb-4">
+                <p className="text-xs font-medium text-slate-500 mb-1">Standard Template (from Settings — applies to every quotation)</p>
+                <div className="text-xs text-slate-600 whitespace-pre-wrap bg-slate-50 border border-slate-200 rounded-lg p-3 max-h-40 overflow-y-auto">{standardTermsText}</div>
+              </div>
+            )}
+            <label className="block text-sm font-medium text-slate-700 mb-1">Additional Clauses (specific to this quotation)</label>
+            <textarea
+              value={additionalTerms}
+              onChange={e => setAdditionalTerms(e.target.value)}
+              rows={4}
+              placeholder="Any extra terms or clauses that apply only to this quotation"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+            />
           </div>
         </div>
 
@@ -765,7 +1315,9 @@ export default function QuotationsPage() {
                 <div className="flex justify-between items-center pt-1"><span className="text-lg font-bold text-slate-800">Grand Total</span><span className="text-xl font-bold text-amber-700">{fmt(pricing.grandTotal + customModulesTotal, pricing.currencySymbol, pricing.currencyCode)}</span></div>
                 <div className="flex gap-2 mt-4">
                   <button onClick={saveQuotation} className="flex-1 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700">{editingId ? 'Save Changes' : 'Save Quotation'}</button>
-                  <button onClick={downloadPDF} className="p-2 border border-slate-300 rounded-lg hover:bg-slate-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                  {canExport && (
+                    <button onClick={downloadPDF} className="p-2 border border-slate-300 rounded-lg hover:bg-slate-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                  )}
                 </div>
               </div>
             ) : (

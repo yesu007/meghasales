@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 interface PackageRow {
@@ -12,14 +12,15 @@ interface PackageRow {
   isActive: boolean;
 }
 
-const inputCls = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500';
-
 async function fetchPackages(): Promise<PackageRow[]> {
   const res = await fetch('/api/packages?includeInactive=true');
   if (!res.ok) throw new Error('Failed to fetch packages');
   return res.json();
 }
 
+// No separate `code` field anywhere in this form — code always mirrors
+// name, kept in sync server-side on both create and update (see POST/PATCH
+// /api/packages).
 const blankForm = { name: '' };
 
 export default function PackagesPage() {
@@ -27,14 +28,43 @@ export default function PackagesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(blankForm);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — the form's own submit handler only runs
+  // validation again on the next submit, so without this a message set by a
+  // failed submit attempt would otherwise keep showing even after the field
+  // now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
+  // Search — same debounced searchInput/search pattern as the Leads module
+  // (src/app/dashboard/leads/page.tsx), but applied client-side since this
+  // list has no server-side pagination to re-fetch against.
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const { data: packages = [], isLoading } = useQuery({ queryKey: ['packages-admin'], queryFn: fetchPackages });
+  const filteredPackages = search
+    ? packages.filter((p) => {
+        const term = search.trim().toLowerCase();
+        return p.name.toLowerCase().includes(term) || p.code.toLowerCase().includes(term);
+      })
+    : packages;
 
-  const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
+  const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
 
   const openEdit = (p: PackageRow) => {
     setEditingId(p.id);
     setForm({ name: p.name });
+    // Guards against a still-open form's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeForm
+    // already clears this on the normal Cancel path, this is just defense
+    // in depth.
+    setFormErrors({});
     setShowForm(true);
   };
 
@@ -85,16 +115,50 @@ export default function PackagesPage() {
         </button>
       </div>
 
+      {/* Search — same bordered-card placement above the table as Leads. */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by package, code..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            />
+            {searchInput && (
+              <button onClick={() => { setSearchInput(''); setSearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {showForm && (
         <form
-          onSubmit={(e) => { e.preventDefault(); if (!form.name.trim()) { toast.error('Package name is required'); return; } save.mutate(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const errs: Record<string, string> = {};
+            if (!form.name.trim()) errs.name = 'Package name is required';
+            setFormErrors(errs);
+            if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
+            save.mutate();
+          }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
         >
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingId ? 'Edit Package' : 'New Package'}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Package Name</label>
-              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="e.g. Custom Project" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Package Name *</label>
+              <input
+                value={form.name}
+                onChange={(e) => { setForm((f) => ({ ...f, name: e.target.value })); clearFieldError('name'); }}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${formErrors.name ? 'border-red-400' : 'border-slate-300'}`}
+                placeholder="e.g. Custom Project"
+              />
+              {formErrors.name && <p className="text-xs text-red-600 mt-1">{formErrors.name}</p>}
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
@@ -111,6 +175,11 @@ export default function PackagesPage() {
           <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
         ) : packages.length === 0 ? (
           <p className="text-center py-16 text-slate-400">No packages created yet</p>
+        ) : filteredPackages.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-lg font-medium text-slate-600">No packages found</p>
+            <p className="text-sm text-slate-400 mt-1">Try adjusting your search</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -122,11 +191,10 @@ export default function PackagesPage() {
                 </tr>
               </thead>
               <tbody>
-                {packages.map((p, idx) => (
+                {filteredPackages.map((p, idx) => (
                   <tr key={p.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800">{p.name}</p>
-                      <p className="text-xs text-slate-400">{p.code}</p>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>

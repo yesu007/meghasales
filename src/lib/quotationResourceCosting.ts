@@ -14,6 +14,12 @@ export interface ResourceLine {
   qty: number;
   durationDays: number;
   dayRate: number;
+  // Purely descriptive — which employee (if any) this line is staffed by,
+  // e.g. "Kousika SS (EMP-000027)". Never read by the costing math below;
+  // `role` alone (a client-facing job title) is what feeds quotation/
+  // invoice line items. Optional so a non-employee (contractor, new hire)
+  // line simply omits it.
+  employeeRef?: string | null;
 }
 
 export type CostMode = 'PCT' | 'FIXED';
@@ -47,17 +53,18 @@ export interface ResourceCostingResult {
   marginPercent: number;
 }
 
-// Standard 5-day-week annual working-days approximation, used only to turn
-// an employee's annual CTC into a per-day billing-rate estimate for the
-// Resources autocomplete below. Deliberately distinct from Payroll's own
-// day-rate convention (src/lib/payroll/runEngine.ts's daysInMonth), which
-// prorates by the actual calendar days in one specific month for payslip
-// generation — a different purpose (net pay for a month) than this one
-// (a general costing/billing-rate basis for a quotation).
-export const ANNUAL_WORKING_DAYS = 260;
+// Standardized as annual ÷ 12 ÷ 30 (i.e. a flat 30-day month), used only to
+// turn an employee's annual CTC into a per-day billing-rate estimate for the
+// Resources autocomplete below — e.g. ₹12,00,000/yr → ₹1,00,000/mo →
+// ₹3,333.33/day. Deliberately distinct from Payroll's own day-rate
+// convention (src/lib/payroll/runEngine.ts's daysInMonth), which prorates by
+// the actual calendar days in one specific month for payslip generation —
+// a different purpose (net pay for a month) than this one (a general
+// costing/billing-rate basis for a quotation).
+export const ANNUAL_BILLING_DAYS = 360;
 
 export function dayRateFromAnnualCtc(ctcAnnual: number): number {
-  return Math.round((ctcAnnual / ANNUAL_WORKING_DAYS) * 100) / 100;
+  return Math.round((ctcAnnual / ANNUAL_BILLING_DAYS) * 100) / 100;
 }
 
 export function computeResourceCosting(input: ResourceCostingInput): ResourceCostingResult {

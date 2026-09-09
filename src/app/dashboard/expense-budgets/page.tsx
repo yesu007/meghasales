@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import dayjs, { Dayjs } from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { defaultMonthlySpread } from '@/lib/expenseBudgetVariance';
+import AddableSelect from '@/components/AddableSelect';
 
 interface Vertical { id: number; name: string; headName?: string | null }
 interface ExpenseCategory { id: number; name: string }
@@ -102,9 +103,32 @@ export default function ExpenseBudgetsPage() {
   const [form, setForm] = useState(blankForm());
   const [categoryAmounts, setCategoryAmounts] = useState<Record<number, string>>({});
   const [editingBudget, setEditingBudget] = useState<BudgetRow | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  // Clears one field's stale "required" message as soon as the user actually
+  // changes it — the form's own submit handler only runs validation again on
+  // the next submit, so without this a message set by a failed submit
+  // attempt would otherwise keep showing even after the field now holds a
+  // valid value. Same pattern used across every other module's form in this
+  // app (see e.g. src/app/dashboard/expenses/page.tsx's own clearFieldError).
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
 
-  const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
+  // Which dimension runs down the rows — the "Category vs. Vertical" /
+  // "Vertical vs. Category" toggle just flips this; the matrix itself,
+  // pagination and totals all key off it rather than assuming categories
+  // are always the rows.
+  const [rowAxis, setRowAxis] = useState<'category' | 'vertical'>('category');
+  const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ key: string; value: string } | null>(null);
+
+  // Scales every displayed figure in the grid — matrix cells, Row Total
+  // column and the footer total row — between the monthly figures
+  // ExpenseBudget.totalAmount stores and their ×12 yearly equivalent.
+  // A cell being actively edited is the one exception: it always shows/
+  // accepts the raw monthly amount, since that's the basis everything is
+  // actually stored and spread across months on (see defaultMonthlySpread
+  // and commitCell below) — only the at-rest display scales with the toggle.
+  const [valueMode, setValueMode] = useState<'monthly' | 'yearly'>('monthly');
+  const valueScale = valueMode === 'yearly' ? 12 : 1;
 
   const { data: matrixData, isLoading: matrixLoading } = useQuery({
     queryKey: ['expense-budgets-matrix', fyStart.format('YYYY-MM-DD')],
@@ -138,22 +162,43 @@ export default function ExpenseBudgetsPage() {
   );
   const grandTotals = useMemo(() => sumByCurrency(matrixBudgets), [matrixBudgets]);
 
+  // Both axes reduced to the same shape so the table below can render
+  // either one as rows and the other as columns without caring which is
+  // which — `axis` records where each item came from, so cell lookups and
+  // totals still key off the right one of categoryId/verticalId.
+  type AxisItem = { key: string; id: number | null; label: string; headName?: string | null; axis: 'category' | 'vertical' };
+  const categoryAxisItems: AxisItem[] = useMemo(
+    () => categories.map((c) => ({ key: `cat-${c.id}`, id: c.id, label: c.name, axis: 'category' as const })),
+    [categories]
+  );
+  const verticalAxisItems: AxisItem[] = useMemo(
+    () => columns.map((col) => ({ key: `vert-${col.verticalId ?? 'company-wide'}`, id: col.verticalId, label: col.label, headName: col.headName, axis: 'vertical' as const })),
+    [columns]
+  );
+  const rowAxisItems = rowAxis === 'category' ? categoryAxisItems : verticalAxisItems;
+  const colAxisItems = rowAxis === 'category' ? verticalAxisItems : categoryAxisItems;
+  const budgetsForAxisItem = (item: AxisItem) =>
+    item.axis === 'category'
+      ? matrixBudgets.filter((b) => b.categoryId === item.id)
+      : matrixBudgets.filter((b) => b.verticalId === item.id);
+
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
-  const [categoryPage, setCategoryPage] = useState(0);
-  const [categoryPageSize, setCategoryPageSize] = useState(10);
-  const categoryTotalPages = Math.max(1, Math.ceil(categories.length / categoryPageSize));
-  const safeCategoryPage = Math.min(categoryPage, categoryTotalPages - 1);
-  const pagedCategories = useMemo(
-    () => categories.slice(safeCategoryPage * categoryPageSize, safeCategoryPage * categoryPageSize + categoryPageSize),
-    [categories, safeCategoryPage, categoryPageSize]
+  const [rowPage, setRowPage] = useState(0);
+  const [rowPageSize, setRowPageSize] = useState(10);
+  const rowTotalPages = Math.max(1, Math.ceil(rowAxisItems.length / rowPageSize));
+  const safeRowPage = Math.min(rowPage, rowTotalPages - 1);
+  const pagedRowItems = useMemo(
+    () => rowAxisItems.slice(safeRowPage * rowPageSize, safeRowPage * rowPageSize + rowPageSize),
+    [rowAxisItems, safeRowPage, rowPageSize]
   );
 
-  const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); setEditingBudget(null); };
+  const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); setEditingBudget(null); setFormErrors({}); };
 
   const openNewForm = () => {
     setEditingBudget(null);
     setForm(blankForm());
     setCategoryAmounts({});
+    setFormErrors({});
     setShowForm(true);
   };
 
@@ -162,6 +207,11 @@ export default function ExpenseBudgetsPage() {
     if (!res.ok) { toast.error('Failed to load budget'); return; }
     const detail = await res.json();
     setEditingBudget(row);
+    // Guards against a still-open form's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeForm
+    // already clears this on the normal Cancel path, this is just defense
+    // in depth.
+    setFormErrors({});
     setForm({
       financialYearStart: dayjs(detail.financialYearStart).format('YYYY-MM-DD'),
       financialYearEnd: dayjs(detail.financialYearEnd).format('YYYY-MM-DD'),
@@ -182,6 +232,13 @@ export default function ExpenseBudgetsPage() {
     [categoryAmounts]
   );
   const categoryEntriesTotal = useMemo(() => categoryEntries.reduce((sum, e) => sum + e.amount, 0), [categoryEntries]);
+  // categoryEntries has no direct onChange of its own (it's derived from
+  // every category amount input combined) — clear its own stale "required"
+  // message here instead, the moment it resolves to at least one entry, same
+  // convention as the Demo/Implementation modules' own derived-field effects.
+  useEffect(() => {
+    if (categoryEntries.length > 0) clearFieldError('categories');
+  }, [categoryEntries.length]);
 
   const invalidateMatrix = () => queryClient.invalidateQueries({ queryKey: ['expense-budgets-matrix'] });
 
@@ -332,10 +389,12 @@ export default function ExpenseBudgetsPage() {
           onSubmit={(e) => {
             e.preventDefault();
             if (editingBudget) { saveEdit.mutate(); return; }
-            if (categoryEntries.length === 0 || !form.financialYearStart || !form.financialYearEnd) {
-              toast.error('Financial year and a budget amount for at least one category are required');
-              return;
-            }
+            const errs: Record<string, string> = {};
+            if (!form.financialYearStart) errs.financialYearStart = 'Financial year start is required';
+            if (!form.financialYearEnd) errs.financialYearEnd = 'Financial year end is required';
+            if (categoryEntries.length === 0) errs.categories = 'Enter a budget amount for at least one category';
+            setFormErrors(errs);
+            if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
             save.mutate();
           }}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
@@ -343,44 +402,45 @@ export default function ExpenseBudgetsPage() {
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingBudget ? `Edit Expense Budget — ${editingBudget.categoryName}` : 'Create Expense Budget'}</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year Start</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year Start *</label>
               <input
                 type="date" value={form.financialYearStart}
-                onChange={(e) => setForm((f) => ({ ...f, financialYearStart: e.target.value }))}
+                onChange={(e) => { setForm((f) => ({ ...f, financialYearStart: e.target.value })); clearFieldError('financialYearStart'); }}
                 disabled={!!editingBudget}
                 title={editingBudget ? 'Financial year is fixed once a budget is created — delete and recreate it if this needs to change' : undefined}
-                className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:bg-slate-50 disabled:text-slate-400 ${formErrors.financialYearStart ? 'border-red-400' : 'border-slate-300'}`}
               />
+              {formErrors.financialYearStart && <p className="text-xs text-red-600 mt-1">{formErrors.financialYearStart}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year End</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year End *</label>
               <input
                 type="date" value={form.financialYearEnd}
-                onChange={(e) => setForm((f) => ({ ...f, financialYearEnd: e.target.value }))}
+                onChange={(e) => { setForm((f) => ({ ...f, financialYearEnd: e.target.value })); clearFieldError('financialYearEnd'); }}
                 disabled={!!editingBudget}
                 title={editingBudget ? 'Financial year is fixed once a budget is created — delete and recreate it if this needs to change' : undefined}
-                className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:bg-slate-50 disabled:text-slate-400 ${formErrors.financialYearEnd ? 'border-red-400' : 'border-slate-300'}`}
               />
+              {formErrors.financialYearEnd && <p className="text-xs text-red-600 mt-1">{formErrors.financialYearEnd}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Vertical</label>
-              <select
+              <AddableSelect
                 value={form.verticalId}
-                onChange={(e) => setForm((f) => ({ ...f, verticalId: e.target.value }))}
+                onChange={(v) => setForm((f) => ({ ...f, verticalId: v }))}
+                options={[{ value: '', label: 'Company-wide' }, ...verticals.map((v) => ({ value: String(v.id), label: v.name }))]}
+                placeholder="Company-wide"
                 disabled={!!editingBudget}
-                title={editingBudget ? 'Vertical is fixed once a budget is created — delete and recreate it if this needs to change' : undefined}
-                className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}
-              >
-                <option value="">Company-wide</option>
-                {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-              <select value={form.currencyCode} onChange={(e) => setForm((f) => ({ ...f, currencyCode: e.target.value }))} className={inputCls}>
-                <option value="INR">INR</option>
-                {currencies.filter((c) => c.currencyCode !== 'INR').map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>)}
-              </select>
+              <AddableSelect
+                value={form.currencyCode}
+                onChange={(v) => setForm((f) => ({ ...f, currencyCode: v }))}
+                options={[{ value: 'INR', label: 'INR' }, ...currencies.filter((c) => c.currencyCode !== 'INR').map((c) => ({ value: c.currencyCode, label: c.currencyCode }))]}
+                placeholder="Select currency"
+              />
             </div>
             <div className="col-span-2 sm:col-span-3">
               <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
@@ -397,7 +457,7 @@ export default function ExpenseBudgetsPage() {
             <div className="mt-4">
               <label className="block text-sm font-medium text-slate-700 mb-1">Category Budgets <span className="text-red-500">*</span></label>
               <p className="text-xs text-slate-400 mb-2">Enter a budget amount for each category that needs one this financial year. Leave the rest blank.</p>
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <div className={`border rounded-lg overflow-hidden ${formErrors.categories ? 'border-red-400' : 'border-slate-200'}`}>
                 <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                   <p className="text-sm font-medium text-slate-700">Categories ({categories.length})</p>
                   {categoryEntries.length > 0 && <p className="text-xs font-medium text-amber-700">{categoryEntries.length} with an amount entered</p>}
@@ -428,6 +488,7 @@ export default function ExpenseBudgetsPage() {
                   </>
                 )}
               </div>
+              {formErrors.categories && <p className="text-xs text-red-600 mt-1">{formErrors.categories}</p>}
             </div>
           )}
 
@@ -462,8 +523,44 @@ export default function ExpenseBudgetsPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" style={{ minHeight: 420 }}>
         {/* Category x vertical matrix, one cell = one expense budget */}
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="px-4 py-2.5 border-b border-slate-200 text-sm font-medium text-slate-700">
-            Category vs. Vertical
+          <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-700">
+              {rowAxis === 'category' ? 'Category vs. Vertical' : 'Vertical vs. Category'}
+            </span>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={() => { setRowAxis('category'); setRowPage(0); setActiveRowKey(null); }}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${rowAxis === 'category' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  By Category
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setRowAxis('vertical'); setRowPage(0); setActiveRowKey(null); }}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${rowAxis === 'vertical' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  By Vertical
+                </button>
+              </div>
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={() => setValueMode('monthly')}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${valueMode === 'monthly' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Monthly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setValueMode('yearly')}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${valueMode === 'yearly' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Yearly
+                </button>
+              </div>
+            </div>
           </div>
           {matrixLoading ? (
             <div className="text-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-500 mx-auto" /></div>
@@ -478,16 +575,16 @@ export default function ExpenseBudgetsPage() {
               <table className="w-full border-collapse text-sm table-fixed">
                 <colgroup>
                   <col className="w-44" />
-                  {columns.map((col) => <col key={col.verticalId ?? 'company-wide'} className="w-48" />)}
+                  {colAxisItems.map((col) => <col key={col.key} className="w-48" />)}
                   <col className="w-36" />
                 </colgroup>
                 <thead>
                   <tr>
                     <th className="sticky top-0 left-0 z-20 bg-white text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 pr-3 border-b border-slate-200">
-                      Category
+                      {rowAxis === 'category' ? 'Category' : 'Vertical'}
                     </th>
-                    {columns.map((col) => (
-                      <th key={col.verticalId ?? 'company-wide'} className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 px-3 border-b border-slate-200">
+                    {colAxisItems.map((col) => (
+                      <th key={col.key} className="sticky top-0 z-10 bg-white text-right text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 px-3 border-b border-slate-200">
                         <div className="truncate" title={col.label}>{col.label}</div>
                         {col.headName && <div className="truncate text-[10px] font-normal normal-case text-slate-400" title={`Head: ${col.headName}`}>Head: {col.headName}</div>}
                       </th>
@@ -498,25 +595,33 @@ export default function ExpenseBudgetsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedCategories.map((cat) => {
-                    const isActive = cat.id === activeCategoryId;
-                    const rowBudgets = matrixBudgets.filter((b) => b.categoryId === cat.id);
+                  {pagedRowItems.map((row) => {
+                    const isActive = row.key === activeRowKey;
+                    const rowBudgets = budgetsForAxisItem(row);
                     return (
                       <tr
-                        key={cat.id}
-                        onClick={() => setActiveCategoryId(cat.id)}
+                        key={row.key}
+                        onClick={() => setActiveRowKey(row.key)}
                         className={`cursor-pointer border-b border-slate-100 ${isActive ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
                       >
                         <td className={`sticky left-0 z-10 py-2 pr-3 truncate ${isActive ? 'bg-amber-50' : 'bg-white'}`}>
-                          <span className={isActive ? 'font-medium text-amber-700' : 'text-slate-700'}>{cat.name}</span>
+                          <div className="truncate" title={row.label}>
+                            <span className={isActive ? 'font-medium text-amber-700' : 'text-slate-700'}>{row.label}</span>
+                          </div>
+                          {row.headName && <div className="truncate text-[10px] text-slate-400" title={`Head: ${row.headName}`}>Head: {row.headName}</div>}
                         </td>
-                        {columns.map((col) => {
-                          const key = cellKey(cat.id, col.verticalId);
+                        {colAxisItems.map((col) => {
+                          const catItem = row.axis === 'category' ? row : col;
+                          const vertItem = row.axis === 'category' ? col : row;
+                          const categoryId = catItem.id as number;
+                          const verticalId = vertItem.id;
+                          const cat: ExpenseCategory = { id: categoryId, name: catItem.label };
+                          const key = cellKey(categoryId, verticalId);
                           const budget = budgetsByCell.get(key);
                           const isEditing = editingCell?.key === key;
-                          const displayValue = isEditing ? editingCell!.value : fmt(budget ? budget.totalAmount : 0);
+                          const displayValue = isEditing ? editingCell!.value : fmt((budget ? Number(budget.totalAmount) : 0) * valueScale);
                           return (
-                            <td key={col.verticalId ?? 'company-wide'} className="py-1.5 px-3 text-right">
+                            <td key={col.key} className="py-1.5 px-3 text-right">
                               <div className="group flex items-center justify-end gap-1">
                                 {/* Reserved-width slots placed BEFORE the number, never after —
                                     an element after the input sits between it and the cell's
@@ -569,7 +674,7 @@ export default function ExpenseBudgetsPage() {
                                   }}
                                   onChange={(e) => setEditingCell({ key, value: e.target.value.replace(/[^0-9.]/g, '') })}
                                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                                  onBlur={() => commitCell(cat, col.verticalId)}
+                                  onBlur={() => commitCell(cat, verticalId)}
                                   title={budget?.status === 'APPROVED' ? 'Approved — open the budget to revise with a reason' : undefined}
                                   className={`w-[84px] shrink-0 text-right bg-transparent outline-none rounded px-1.5 py-1 text-slate-800 ${budget?.status === 'APPROVED' ? 'cursor-not-allowed' : 'focus:bg-white focus:ring-1 focus:ring-amber-500'}`}
                                 />
@@ -578,7 +683,7 @@ export default function ExpenseBudgetsPage() {
                           );
                         })}
                         <td className="py-1.5 pl-3 text-right font-medium text-slate-800">
-                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
+                          {sumByCurrency(rowBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * valueScale, t.currencyCode)}</div>)}
                         </td>
                       </tr>
                     );
@@ -586,17 +691,17 @@ export default function ExpenseBudgetsPage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-slate-200">
-                    <td className="py-2.5 pr-3 font-semibold text-slate-800">Column Total</td>
-                    {columns.map((col) => {
-                      const colBudgets = matrixBudgets.filter((b) => b.verticalId === col.verticalId);
+                    <td className="py-2.5 pr-3 font-semibold text-slate-800">{valueMode === 'yearly' ? 'Yearly Budget' : 'Monthly Budget'}</td>
+                    {colAxisItems.map((col) => {
+                      const colBudgets = budgetsForAxisItem(col);
                       return (
-                        <td key={col.verticalId ?? 'company-wide'} className="py-2.5 px-3 text-right font-semibold text-slate-800">
-                          {sumByCurrency(colBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
+                        <td key={col.key} className="py-2.5 px-3 text-right font-semibold text-slate-800">
+                          {sumByCurrency(colBudgets).map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * valueScale, t.currencyCode)}</div>)}
                         </td>
                       );
                     })}
                     <td className="py-2.5 pl-3 text-right font-semibold text-amber-700">
-                      {grandTotals.length === 0 ? formatCurrency(0, 'INR') : grandTotals.map((t) => <div key={t.currencyCode}>{formatCurrency(t.total, t.currencyCode)}</div>)}
+                      {grandTotals.length === 0 ? formatCurrency(0, 'INR') : grandTotals.map((t) => <div key={t.currencyCode}>{formatCurrency(t.total * valueScale, t.currencyCode)}</div>)}
                     </td>
                   </tr>
                 </tfoot>
@@ -607,45 +712,46 @@ export default function ExpenseBudgetsPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={categoryPageSize}
-                  onChange={(e) => { setCategoryPageSize(Number(e.target.value)); setCategoryPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(rowPageSize)}
+                    onChange={(v) => { setRowPageSize(Number(v)); setRowPage(0); }}
+                    options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setCategoryPage((p) => Math.max(0, p - 1))}
-                  disabled={safeCategoryPage === 0}
+                  onClick={() => setRowPage((p) => Math.max(0, p - 1))}
+                  disabled={safeRowPage === 0}
                   className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
                 >
                   <ChevronLeftIcon className="h-4 w-4" /> Previous
                 </button>
-                {getPageNumbers(safeCategoryPage, categoryTotalPages).map((p, i) =>
+                {getPageNumbers(safeRowPage, rowTotalPages).map((p, i) =>
                   p === 'ellipsis' ? (
                     <span key={`ellipsis-${i}`} className="px-2 text-sm text-slate-400">…</span>
                   ) : (
                     <button
                       key={p}
-                      onClick={() => setCategoryPage(p)}
-                      className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === safeCategoryPage ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                      onClick={() => setRowPage(p)}
+                      className={`min-w-[2.5rem] min-h-[40px] px-2 py-1.5 rounded text-sm font-medium ${p === safeRowPage ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
                     >
                       {p + 1}
                     </button>
                   )
                 )}
                 <button
-                  onClick={() => setCategoryPage((p) => Math.min(categoryTotalPages - 1, p + 1))}
-                  disabled={safeCategoryPage >= categoryTotalPages - 1}
+                  onClick={() => setRowPage((p) => Math.min(rowTotalPages - 1, p + 1))}
+                  disabled={safeRowPage >= rowTotalPages - 1}
                   className="flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
                 >
                   Next <ChevronRightIcon className="h-4 w-4" />
                 </button>
               </div>
               <p className="text-sm text-slate-500">
-                Showing {safeCategoryPage * categoryPageSize + 1}–{Math.min((safeCategoryPage + 1) * categoryPageSize, categories.length)} of {categories.length}
+                Showing {safeRowPage * rowPageSize + 1}–{Math.min((safeRowPage + 1) * rowPageSize, rowAxisItems.length)} of {rowAxisItems.length}
               </p>
             </div>
           )}

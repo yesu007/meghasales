@@ -14,15 +14,18 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   ArrowsUpDownIcon,
-  FunnelIcon,
   PencilIcon,
   TrashIcon,
   EyeIcon,
+  CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { LEAD_STATUSES } from '@/lib/leadStatus';
-import LeadFormDrawer, { SOURCES, blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
+import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
+import { useLeadSources } from '@/hooks/useLeadSources';
+import AddableSelect from '@/components/AddableSelect';
+import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
+import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
 
 const VIEW_TABS = [
   { value: '', label: 'All Leads' },
@@ -30,11 +33,10 @@ const VIEW_TABS = [
   { value: 'followed-up', label: 'Followed-up Leads' },
 ];
 
-const STATUSES = LEAD_STATUSES;
-
 interface Lead {
   id: number;
   companyName: string;
+  projectName: string | null;
   contactPerson: string;
   designation: string | null;
   email: string | null;
@@ -42,6 +44,7 @@ interface Lead {
   whatsapp: string | null;
   status: string;
   leadSource: string;
+  businessVerticals: string | null;
   assignedBaId: number | null;
   assignedBaName: string | null;
   createdAt: string;
@@ -79,10 +82,11 @@ async function fetchUsers(): Promise<UserOption[]> {
 
 export default function LeadsPage() {
   const { data: session } = useSession();
+  const { options: STATUSES, color: leadStatusColor } = useLeadStatusOptions();
+  const SOURCES = useLeadSources();
   const isAdmin = (session?.user?.roles || []).includes('ADMIN');
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   // Summary widgets ("dashboard") visibility, persisted per-browser so the
   // preference sticks across visits. Defaults to collapsed; read from
   // localStorage on mount only (can't touch it during SSR).
@@ -118,7 +122,7 @@ export default function LeadsPage() {
   }, [searchInput]);
 
   // Build query params
-  const params: Record<string, string> = { page: String(page), size: String(size), sortBy, sortDir };
+  const params: Record<string, string> = { page: String(page), size: String(size), sortBy, sortDir, excludeDirectCustomers: 'true' };
   if (search) params.search = search;
   if (statusFilter) params.status = statusFilter;
   if (sourceFilter) params.leadSource = sourceFilter;
@@ -204,6 +208,7 @@ export default function LeadsPage() {
     },
     onSuccess: (lead) => {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
+      invalidateLeadCustomerData(queryClient);
       toast.success(editingId ? 'Lead updated!' : `Lead "${lead.companyName}" created!`);
       closeDrawer();
     },
@@ -215,6 +220,11 @@ export default function LeadsPage() {
     if (!data) { toast.error('Failed to load lead'); return; }
     setForm(data);
     setEditingId(id);
+    // Guards against a still-open drawer's stale validation messages from a
+    // previous failed create attempt bleeding into this edit — closeDrawer
+    // already clears this on the normal Cancel/X path, this is just defense
+    // in depth.
+    setFormErrors({});
     setDrawerOpen(true);
   };
 
@@ -223,6 +233,7 @@ export default function LeadsPage() {
     const res = await fetch(`/api/leads/${id}`, { method: 'DELETE' });
     if (!res.ok) { toast.error('Failed to delete lead'); return; }
     queryClient.invalidateQueries({ queryKey: ['leads'] });
+    invalidateLeadCustomerData(queryClient);
     toast.success('Lead deleted');
   };
 
@@ -230,6 +241,7 @@ export default function LeadsPage() {
     const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
     if (!res.ok) { toast.error('Failed to update status'); return; }
     queryClient.invalidateQueries({ queryKey: ['leads'] });
+    invalidateLeadCustomerData(queryClient);
     toast.success('Status updated');
   };
 
@@ -237,7 +249,16 @@ export default function LeadsPage() {
     const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedBaId: assignedBaId || null }) });
     if (!res.ok) { toast.error('Failed to assign BA'); return; }
     queryClient.invalidateQueries({ queryKey: ['leads'] });
+    invalidateLeadCustomerData(queryClient);
     toast.success('BA assigned');
+  };
+
+  const updateNextFollowUp = async (id: number, nextFollowUpDate: string) => {
+    const res = await fetch(`/api/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nextFollowUpDate: nextFollowUpDate || null }) });
+    if (!res.ok) { toast.error('Failed to update next follow-up'); return; }
+    queryClient.invalidateQueries({ queryKey: ['leads'] });
+    invalidateLeadCustomerData(queryClient);
+    toast.success('Next follow-up updated');
   };
 
   const handleSort = (col: string) => {
@@ -329,40 +350,48 @@ export default function LeadsPage() {
         </div>
       )}
 
-      {/* Search & Filters */}
+      {/* Search & Filters — filter fields sit directly beside the search
+          bar, always visible (no "Filters" button/dropdown to open first). */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:flex-wrap gap-3">
+          <div className="relative flex-1 min-w-[220px]">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input type="text" placeholder="Search by name, company, email, phone..." value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
             {searchInput && <button onClick={() => { setSearchInput(''); setSearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><XMarkIcon className="h-4 w-4" /></button>}
           </div>
-          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-            <option value="">All Statuses</option>
-            {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-          <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(0); }} className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500">
-            <option value="">All Sources</option>
-            {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-          <button onClick={() => setFiltersOpen(!filtersOpen)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium ${activeFilters > 0 ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600'}`}>
-            <FunnelIcon className="h-4 w-4" /> Filters {activeFilters > 0 && <span className="bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{activeFilters}</span>}
-          </button>
-          {(searchInput || activeFilters > 0) && <button onClick={clearFilters} className="text-sm text-slate-500 hover:text-red-500">Clear All</button>}
-        </div>
-        {filtersOpen && (
-          <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="w-full sm:w-40">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+              <AddableSelect
+                value={statusFilter}
+                onChange={(v) => { setStatusFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All Statuses' }, ...STATUSES.map(s => ({ value: s.code, label: s.label }))]}
+                placeholder="All Statuses"
+              />
+            </div>
+            <div className="w-full sm:w-40">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Source</label>
+              <AddableSelect
+                value={sourceFilter}
+                onChange={(v) => { setSourceFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All Sources' }, ...SOURCES.map(s => ({ value: s.code, label: s.name }))]}
+                placeholder="All Sources"
+              />
+            </div>
+            <div className="w-full sm:w-44">
               <label className="block text-xs font-medium text-slate-600 mb-1">Business Vertical</label>
-              <select value={verticalFilter} onChange={(e) => { setVerticalFilter(e.target.value); setPage(0); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800">
-                <option value="">All</option>
-                {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-              </select>
+              <AddableSelect
+                value={verticalFilter}
+                onChange={(v) => { setVerticalFilter(v); setPage(0); }}
+                options={[{ value: '', label: 'All' }, ...verticalOptions.map(vo => ({ value: vo.name, label: vo.name }))]}
+                placeholder="All"
+              />
             </div>
           </div>
-        )}
+          {(searchInput || activeFilters > 0) && <button onClick={clearFilters} className="text-sm text-slate-500 hover:text-red-500 sm:mb-2.5">Clear All</button>}
+        </div>
         {activeFilters > 0 && (
           <div className="flex flex-wrap gap-2">
             {statusFilter && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200">Status: {statusFilter} <button onClick={() => setStatusFilter('')}><XMarkIcon className="h-3 w-3" /></button></span>}
@@ -410,8 +439,8 @@ export default function LeadsPage() {
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{lead.whatsapp || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase()}</td>
                       <td className="px-4 py-3">
-                        <select value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${STATUSES.find(s => s.value === lead.status)?.color || 'bg-slate-100'}`}>
-                          {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                        <select value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${leadStatusColor(lead.status)}`}>
+                          {STATUSES.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
                         </select>
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell">
@@ -426,12 +455,17 @@ export default function LeadsPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{dayjs(lead.createdAt).format('DD MMM YYYY')}</td>
                       <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{lead.lastFollowUpDate ? dayjs(lead.lastFollowUpDate).format('DD MMM YYYY') : '—'}</td>
-                      <td className={`px-4 py-3 hidden lg:table-cell ${lead.isOverdue ? 'text-red-600 font-semibold' : 'text-slate-500'}`}>
-                        {lead.nextFollowUpDate ? (
-                          <span className={lead.isOverdue ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 border border-red-200' : ''}>
-                            {dayjs(lead.nextFollowUpDate).format('DD MMM YYYY')}{lead.isOverdue ? ' (Overdue)' : ''}
-                          </span>
-                        ) : '—'}
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <div className={`relative inline-flex items-center rounded-lg border ${lead.isOverdue ? 'border-red-300 bg-red-50' : lead.nextFollowUpDate ? 'border-slate-200 bg-white' : 'border-dashed border-slate-300 bg-white'}`}>
+                          <CalendarDaysIcon className={`pointer-events-none absolute left-2 h-3.5 w-3.5 ${lead.isOverdue ? 'text-red-500' : 'text-slate-400'}`} />
+                          <input
+                            type="date"
+                            value={lead.nextFollowUpDate ? dayjs(lead.nextFollowUpDate).format('YYYY-MM-DD') : ''}
+                            onChange={(e) => updateNextFollowUp(lead.id, e.target.value)}
+                            className={`w-[9.5rem] pl-7 pr-2 py-1.5 text-xs bg-transparent border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${lead.isOverdue ? 'text-red-700 font-semibold' : lead.nextFollowUpDate ? 'text-slate-700' : 'text-slate-400'}`}
+                          />
+                        </div>
+                        {lead.isOverdue && <p className="mt-1 text-[10px] font-semibold text-red-600 uppercase tracking-wide">Overdue</p>}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
@@ -454,13 +488,14 @@ export default function LeadsPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <span>Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm text-slate-700 focus:ring-2 focus:ring-amber-500"
-                >
-                  {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="w-28">
+                  <AddableSelect
+                    value={String(size)}
+                    onChange={(v) => { setSize(Number(v)); setPage(0); }}
+                    options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
+                    placeholder="Rows"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button

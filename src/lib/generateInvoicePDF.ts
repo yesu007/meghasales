@@ -43,6 +43,12 @@ interface InvoiceData {
   currencySymbol: string;
   currencyCode: string;
   fileName: string;
+  // Company-wide standard T&C (CompanyProfile.termsAndConditions/paymentTerms/
+  // warrantyTerms, pre-joined by the caller) and quotation-specific clauses.
+  // Both optional so existing Invoice-PDF callers (which never pass these)
+  // keep getting the old two-line fallback text unchanged.
+  standardTerms?: string;
+  additionalTerms?: string;
 }
 
 // Kept as "symbol amount" (always a space) to match the PDF's existing
@@ -265,17 +271,38 @@ export function generateInvoicePDF(data: InvoiceData) {
     doc.setFont(FONT, 'bold');
     doc.setTextColor(...SLATE_900);
     doc.text('Terms & Conditions', marginX, ty);
+    ty += 6;
 
     doc.setFont(FONT, 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(...SLATE_500);
-    doc.text('This quotation is valid for 30 days from the date of issue.', marginX, ty + 6);
-    doc.text('Payment terms as per agreement.', marginX, ty + 11.5);
+    const standardLines = doc.splitTextToSize(
+      data.standardTerms?.trim() || 'This quotation is valid for 30 days from the date of issue.\nPayment terms as per agreement.',
+      contentWidth
+    );
+    doc.text(standardLines, marginX, ty);
+    ty += standardLines.length * 4.5;
 
+    if (data.additionalTerms?.trim()) {
+      ty += 4;
+      doc.setFont(FONT, 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...SLATE_700);
+      doc.text('Additional Clauses', marginX, ty);
+      ty += 5;
+
+      doc.setFont(FONT, 'normal');
+      doc.setTextColor(...SLATE_500);
+      const additionalLines = doc.splitTextToSize(data.additionalTerms.trim(), contentWidth);
+      doc.text(additionalLines, marginX, ty);
+      ty += additionalLines.length * 4.5;
+    }
+
+    ty += 8;
     doc.setFont(FONT, 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(...AMBER_700);
-    doc.text('Thank you for your business!', marginX, ty + 22);
+    doc.text('Thank you for your business!', marginX, ty);
   }
 
   // === FOOTER ===

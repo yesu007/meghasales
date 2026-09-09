@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownTrayIcon, DocumentChartBarIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
+import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 import {
   MEETING_TYPES,
   ACTION_ITEM_PRIORITIES,
@@ -141,6 +143,8 @@ async function fetchImplementations(): Promise<ImplementationOption[]> {
 }
 
 export default function MeetingReportsPage() {
+  const { has } = usePermissions();
+  const canExport = has('export_meeting_reports');
   const [filters, setFilters] = useState<ReportFilters>(EMPTY_FILTERS);
   const params = buildParams(filters);
 
@@ -170,12 +174,14 @@ export default function MeetingReportsPage() {
           <h1 className="text-2xl font-bold text-slate-800">Meeting Action Item Reports</h1>
           <p className="text-slate-500 mt-1">Filter action items by date, owner, department, customer, project, and status</p>
         </div>
-        <button
-          onClick={exportCsv}
-          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-        >
-          <ArrowDownTrayIcon className="h-4 w-4" /> Export CSV
-        </button>
+        {canExport && (
+          <button
+            onClick={exportCsv}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4" /> Export CSV
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
@@ -200,14 +206,12 @@ export default function MeetingReportsPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Assigned To</label>
-            <select
+            <AddableSelect
               value={filters.userId}
-              onChange={(e) => setFilter('userId')(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">All users</option>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-            </select>
+              onChange={setFilter('userId')}
+              options={[{ value: '', label: 'All users' }, ...users.map((u) => ({ value: String(u.id), label: u.fullName }))]}
+              placeholder="All users"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Department</label>
@@ -221,71 +225,57 @@ export default function MeetingReportsPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Customer</label>
-            <select
+            <AddableSelect
               value={filters.leadId}
-              onChange={(e) => setFilter('leadId')(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">All customers</option>
-              {leads.map((l) => <option key={l.id} value={l.id}>{l.companyName}</option>)}
-            </select>
+              onChange={setFilter('leadId')}
+              options={[{ value: '', label: 'All customers' }, ...leads.map((l) => ({ value: String(l.id), label: l.companyName }))]}
+              placeholder="All customers"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Project</label>
-            <select
+            <AddableSelect
               value={filters.implementationId}
-              onChange={(e) => setFilter('implementationId')(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">All projects</option>
-              {implementations.map((impl) => (
-                <option key={impl.id} value={impl.id}>{impl.projectName || impl.companyName}</option>
-              ))}
-            </select>
+              onChange={setFilter('implementationId')}
+              options={[{ value: '', label: 'All projects' }, ...implementations.map((impl) => ({ value: String(impl.id), label: impl.projectName || impl.companyName }))]}
+              placeholder="All projects"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Meeting Type</label>
-            <select
+            <AddableSelect
               value={filters.meetingType}
-              onChange={(e) => setFilter('meetingType')(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">All types</option>
-              {MEETING_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-            </select>
+              onChange={setFilter('meetingType')}
+              options={[{ value: '', label: 'All types' }, ...MEETING_TYPES.map((t) => ({ value: t, label: t.replace('_', ' ') }))]}
+              placeholder="All types"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Priority</label>
-            <select
+            <AddableSelect
               value={filters.priority}
-              onChange={(e) => setFilter('priority')(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">All priorities</option>
-              {ACTION_ITEM_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
+              onChange={setFilter('priority')}
+              options={[{ value: '', label: 'All priorities' }, ...ACTION_ITEM_PRIORITIES.map((p) => ({ value: p, label: p }))]}
+              placeholder="All priorities"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
-            <select
+            <AddableSelect
               value={filters.status}
-              onChange={(e) => setFilter('status')(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">All statuses</option>
-              {ACTION_ITEM_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-            </select>
+              onChange={setFilter('status')}
+              options={[{ value: '', label: 'All statuses' }, ...ACTION_ITEM_STATUSES.map((s) => ({ value: s, label: s.replace('_', ' ') }))]}
+              placeholder="All statuses"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">SLA Status</label>
-            <select
+            <AddableSelect
               value={filters.slaStatus}
-              onChange={(e) => setFilter('slaStatus')(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">All SLA statuses</option>
-              {ACTION_ITEM_SLA_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-            </select>
+              onChange={setFilter('slaStatus')}
+              options={[{ value: '', label: 'All SLA statuses' }, ...ACTION_ITEM_SLA_STATUSES.map((s) => ({ value: s, label: s.replace('_', ' ') }))]}
+              placeholder="All SLA statuses"
+            />
           </div>
         </div>
         {hasFilters && (

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
 
@@ -93,6 +94,10 @@ export default function LoginPage() {
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
+
+          <p className="text-center text-sm">
+            <Link href="/login/forgot-password" className="text-amber-700 hover:text-amber-800 font-medium">Forgot password?</Link>
+          </p>
         </form>
 
         <p className="text-center text-xs text-slate-400 mt-6">

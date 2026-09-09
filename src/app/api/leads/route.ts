@@ -5,9 +5,11 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
+import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
 import { isFollowUpOverdue } from '@/lib/leadFollowUp';
-import { requirePermission } from '@/lib/rbac';
+import { requirePermission, getOwnershipFilter } from '@/lib/rbac';
 import { dispatchDeadlineReminders } from '@/lib/deadlineReminders';
+import { isValidEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +48,29 @@ export async function GET(request: NextRequest) {
     const sortDir = searchParams.get('sortDir') || 'desc';
     const createdFrom = searchParams.get('createdFrom') || '';
     const createdTo = searchParams.get('createdTo') || '';
+    // Opt-in, passed only by the Leads page's own listing — every other
+    // caller of this endpoint (Quotations, Demos, Implementations,
+    // Accounting, Meetings reports) still needs Customer rows too, since
+    // there's no separate Customer table (see src/app/api/customers/
+    // route.ts's own comment: "Customer" is a Lead row with
+    // status=CONFIRMED). A Customer created directly from the Customer tab
+    // is excluded here — a genuinely-converted Lead (status reached
+    // CONFIRMED via the pipeline) is not.
+    const excludeDirectCustomers = searchParams.get('excludeDirectCustomers') === 'true';
+    // Opt-in, passed only by the Customers page's own listing — joins each
+    // row's most-recently-created Implementation (Stage/Status shown/edited
+    // inline there, reusing the exact same values/UI as the Implementations
+    // module — see src/lib/implementationStatus.ts) without adding an
+    // unnecessary extra join to every other caller of this endpoint.
+    const includeImplementation = searchParams.get('includeImplementation') === 'true';
+    const implementationStatus = searchParams.get('implementationStatus') || '';
+    // Opt-in, passed only by the Customers page's own listing — exposes
+    // isDirectCustomer per row (created directly from the Customer module
+    // vs. converted from a Lead), reusing the exact same CREATED-activity
+    // signal excludeDirectCustomers above already filters on, so the
+    // Customers page's own Edit action can open the right form without a
+    // new field of its own recording origin.
+    const includeSource = searchParams.get('includeSource') === 'true';
 
     // Build where clause
     const where: Prisma.LeadWhereInput = {};
@@ -85,11 +110,31 @@ export async function GET(request: NextRequest) {
     if (createdTo) AND.push({ createdAt: { lte: new Date(createdTo) } });
     if (view === 'new') AND.push({ followUpCount: 0 });
     if (view === 'followed-up') AND.push({ followUpCount: { gt: 0 } });
+    if (excludeDirectCustomers) {
+      // Both /api/leads and /api/customers write exactly one CREATED
+      // LeadActivity at creation, with a distinct description — the only
+      // existing signal for "was this row ever a real Lead" since Customer
+      // creation writes straight to the Lead table with no field of its
+      // own recording origin.
+      AND.push({ activities: { none: { activityType: 'CREATED', description: { startsWith: 'Customer created for company:' } } } });
+    }
+    if (implementationStatus) {
+      // Matches the Implementations module's own filter semantics
+      // (status.toUpperCase(), exact match) — see src/app/api/implementations/route.ts.
+      AND.push({ implementations: { some: { status: implementationStatus.toUpperCase() } } });
+    }
+
+    // Ownership data-scope boundary — a Business Analyst / Sales rep sees
+    // only leads assigned to them (plus unassigned ones); see
+    // getOwnershipFilter's own comment for why other view_leads-holding
+    // roles (DEMO_TEAM) are deliberately left unrestricted.
+    const ownershipFilter = await getOwnershipFilter('assignedBaId', ['BUSINESS_ANALYST', 'SALES']);
+    if (ownershipFilter) AND.push(ownershipFilter);
 
     if (AND.length > 0) where.AND = AND;
 
     // Validate sort field
-    const validSortFields = ['companyName', 'contactPerson', 'email', 'status', 'leadSource', 'createdAt', 'updatedAt', 'lastFollowUpDate', 'nextFollowUpDate'];
+    const validSortFields = ['companyName', 'contactPerson', 'email', 'status', 'leadSource', 'createdAt', 'confirmedAt', 'updatedAt', 'lastFollowUpDate', 'nextFollowUpDate'];
     const orderField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const orderDir = sortDir === 'asc' ? 'asc' : 'desc';
 
@@ -102,6 +147,20 @@ export async function GET(request: NextRequest) {
         include: {
           assignedBa: { select: { firstName: true, lastName: true } },
           countryRef: { select: { isoCode: true, countryName: true, flagEmoji: true } },
+          ...(includeImplementation && {
+            implementations: {
+              orderBy: { createdAt: 'desc' as const },
+              take: 1,
+              select: { id: true, status: true, currentStage: true },
+            },
+          }),
+          ...(includeSource && {
+            activities: {
+              where: { activityType: 'CREATED', description: { startsWith: 'Customer created for company:' } },
+              select: { id: true },
+              take: 1,
+            },
+          }),
         },
       }),
       prisma.lead.count({ where }),
@@ -110,24 +169,49 @@ export async function GET(request: NextRequest) {
     const content = leads.map((lead) => ({
       id: lead.id,
       companyName: lead.companyName,
+      projectName: lead.projectName,
       contactPerson: lead.contactPerson,
       designation: lead.designation,
       email: lead.email,
+      financeEmail: lead.financeEmail,
       mobile: lead.mobile,
       whatsapp: lead.whatsapp,
       status: lead.status,
       customerStatus: lead.customerStatus,
       leadSource: lead.leadSource,
+      businessVerticals: lead.businessVerticals,
       assignedBaId: lead.assignedBaId,
       assignedBaName: lead.assignedBa ? `${lead.assignedBa.firstName} ${lead.assignedBa.lastName}` : null,
       country: lead.countryRef,
       state: lead.state,
       createdAt: lead.createdAt,
+      // Customer module's "Created"/"Customer Since" date — see
+      // schema.prisma's Lead.confirmedAt comment. Additive alongside
+      // createdAt (left untouched) so the Leads module's own "Created"
+      // column, which must keep showing the Lead's original creation date,
+      // is unaffected.
+      confirmedAt: lead.confirmedAt,
       updatedAt: lead.updatedAt,
       lastFollowUpDate: lead.lastFollowUpDate,
       nextFollowUpDate: lead.nextFollowUpDate,
       followUpCount: lead.followUpCount,
       isOverdue: isFollowUpOverdue(lead.nextFollowUpDate, lead.status),
+      // Only present when includeImplementation=true was passed (see above)
+      // — this row's most-recently-created Implementation, or null if it
+      // has none yet. `as any` since the include is conditional at runtime.
+      ...(includeImplementation && {
+        implementation: (lead as any).implementations?.[0]
+          ? {
+              id: (lead as any).implementations[0].id,
+              status: (lead as any).implementations[0].status,
+              currentStage: (lead as any).implementations[0].currentStage,
+            }
+          : null,
+      }),
+      // Only present when includeSource=true was passed (see above).
+      ...(includeSource && {
+        isDirectCustomer: ((lead as any).activities?.length ?? 0) > 0,
+      }),
     }));
 
     return NextResponse.json({
@@ -151,11 +235,24 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    if (!body.businessVerticals) {
-      return NextResponse.json({ message: 'Business vertical is required' }, { status: 400 });
-    }
     if (!body.countryId) {
       return NextResponse.json({ message: 'Country is required' }, { status: 400 });
+    }
+    // Dedicated recipient for payment reminders — required on every Lead,
+    // not just once it becomes a Customer. See schema.prisma's
+    // Lead.financeEmail comment.
+    if (!body.financeEmail) {
+      return NextResponse.json({ message: 'Finance email is required' }, { status: 400 });
+    }
+    if (!isValidEmail(body.financeEmail)) {
+      return NextResponse.json({ message: 'Enter a valid finance email address' }, { status: 400 });
+    }
+
+    let businessVerticals: string | null;
+    try {
+      businessVerticals = await resolveBusinessVerticals(body.businessVerticals);
+    } catch (e: any) {
+      return NextResponse.json({ message: e.message || 'Invalid business vertical' }, { status: 400 });
     }
 
     const session = await getServerSession(authOptions);
@@ -167,14 +264,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
     }
 
+    if (body.projectId) {
+      const project = await prisma.project.findUnique({ where: { id: parseInt(body.projectId) }, select: { id: true } });
+      if (!project) return NextResponse.json({ message: 'Selected project not found' }, { status: 404 });
+    }
+
     const lead = await prisma.lead.create({
       data: {
         companyName: body.companyName,
+        projectName: body.projectName || null,
+        projectId: body.projectId ? parseInt(body.projectId) : null,
         contactPerson: body.contactPerson,
         designation: body.designation || null,
         mobile: body.mobile || null,
         whatsapp: body.whatsapp || null,
         email: body.email || null,
+        financeEmail: body.financeEmail,
         country: countryFields.country,
         countryId: countryFields.countryId,
         currencyCode: countryFields.currencyCode,
@@ -182,8 +287,10 @@ export async function POST(request: NextRequest) {
         taxType: countryFields.taxType,
         state: body.state || null,
         city: body.city || null,
+        addressLine1: body.addressLine1 || null,
+        addressLine2: body.addressLine2 || null,
         leadSource: body.leadSource,
-        businessVerticals: body.businessVerticals ? JSON.stringify(body.businessVerticals) : null,
+        businessVerticals,
         notes: body.notes || null,
         status: 'NEW',
       },

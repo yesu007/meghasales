@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import { usePermissions } from '@/hooks/usePermissions';
+import AddableSelect from '@/components/AddableSelect';
 
 async function fetchProfile() {
   const res = await fetch('/api/settings/profile');
@@ -62,6 +63,12 @@ function CountryMasterManager() {
     return errs;
   };
 
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — validateCountryForm only runs again on the next
+  // submit, so without this a message set by a failed submit attempt would
+  // otherwise keep showing even after the field now holds a valid value.
+  const clearCountryFieldError = (key: string) => setCountryFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+
   const saveCountryMutation = useMutation({
     mutationFn: async (data: typeof countryForm) => {
       const url = editingCountryId ? `/api/countries/${editingCountryId}` : '/api/countries';
@@ -108,20 +115,23 @@ function CountryMasterManager() {
         <div className="grid grid-cols-2 gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Country Name</label>
-            <input value={countryForm.countryName} onChange={(e) => setCountryForm(f => ({ ...f, countryName: e.target.value }))} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.countryName ? 'border-red-400' : 'border-slate-300'}`} />
+            <input value={countryForm.countryName} onChange={(e) => { setCountryForm(f => ({ ...f, countryName: e.target.value })); clearCountryFieldError('countryName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.countryName ? 'border-red-400' : 'border-slate-300'}`} />
             {countryFormErrors.countryName && <p className="text-xs text-red-600 mt-1">{countryFormErrors.countryName}</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">ISO Code</label>
-            <input value={countryForm.isoCode} onChange={(e) => setCountryForm(f => ({ ...f, isoCode: e.target.value.toUpperCase() }))} maxLength={2} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.isoCode ? 'border-red-400' : 'border-slate-300'}`} />
+            <input value={countryForm.isoCode} onChange={(e) => { setCountryForm(f => ({ ...f, isoCode: e.target.value.toUpperCase() })); clearCountryFieldError('isoCode'); }} maxLength={2} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.isoCode ? 'border-red-400' : 'border-slate-300'}`} />
             {countryFormErrors.isoCode && <p className="text-xs text-red-600 mt-1">{countryFormErrors.isoCode}</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
-            <select value={countryForm.currencyCode} onChange={(e) => setCountryForm(f => ({ ...f, currencyCode: e.target.value }))} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.currencyCode ? 'border-red-400' : 'border-slate-300'}`}>
-              <option value="">Select</option>
-              {currencies.map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode} — {c.currencyName}</option>)}
-            </select>
+            <AddableSelect
+              value={countryForm.currencyCode}
+              onChange={(v) => { setCountryForm(f => ({ ...f, currencyCode: v })); clearCountryFieldError('currencyCode'); }}
+              options={currencies.map((c) => ({ value: c.currencyCode, label: `${c.currencyCode} — ${c.currencyName}` }))}
+              placeholder="Select"
+              error={!!countryFormErrors.currencyCode}
+            />
             {countryFormErrors.currencyCode && <p className="text-xs text-red-600 mt-1">{countryFormErrors.currencyCode}</p>}
           </div>
           <div>
@@ -130,11 +140,16 @@ function CountryMasterManager() {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Tax Type</label>
-            <select value={countryForm.defaultTaxType} onChange={(e) => setCountryForm(f => ({ ...f, defaultTaxType: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
-              <option value="GST">GST</option>
-              <option value="VAT">VAT</option>
-              <option value="NONE">None</option>
-            </select>
+            <AddableSelect
+              value={countryForm.defaultTaxType}
+              onChange={(v) => setCountryForm(f => ({ ...f, defaultTaxType: v }))}
+              options={[
+                { value: 'GST', label: 'GST' },
+                { value: 'VAT', label: 'VAT' },
+                { value: 'NONE', label: 'None' },
+              ]}
+              placeholder="Select tax type"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Tax Percentage</label>
@@ -544,6 +559,8 @@ export default function SettingsPage() {
     termsAndConditions: '',
     paymentTerms: '',
     warrantyTerms: '',
+    defaultAdminOverheadMode: 'PCT' as 'PCT' | 'FIXED',
+    defaultAdminOverheadValue: '10',
     defaultCountryId: null as number | null,
   });
 
@@ -573,6 +590,8 @@ export default function SettingsPage() {
         termsAndConditions: profile.termsAndConditions || '',
         paymentTerms: profile.paymentTerms || '',
         warrantyTerms: profile.warrantyTerms || '',
+        defaultAdminOverheadMode: profile.defaultAdminOverheadMode === 'FIXED' ? 'FIXED' : 'PCT',
+        defaultAdminOverheadValue: String(profile.defaultAdminOverheadValue ?? 10),
         defaultCountryId: profile.defaultCountryId || null,
       });
     }
@@ -811,6 +830,26 @@ export default function SettingsPage() {
                     onChange={(e) => setForm(f => ({ ...f, bankIfsc: e.target.value }))}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
                   />
+                </div>
+                <div className="md:col-span-2 border-t pt-4 mt-2">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-1">Quotation Defaults</h3>
+                  <p className="text-xs text-slate-500 mb-3">Pre-fills the Quotation Calculator&apos;s Admin/Overhead field on a new quotation — each quotation can still change it, and existing quotations keep whatever they were saved with.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Default Admin / Overhead</label>
+                  <div className="flex gap-2">
+                    <div className="flex border border-slate-300 rounded-lg overflow-hidden text-xs font-medium">
+                      <button type="button" onClick={() => setForm(f => ({ ...f, defaultAdminOverheadMode: 'PCT' }))} className={`px-3 py-2 ${form.defaultAdminOverheadMode === 'PCT' ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>%</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, defaultAdminOverheadMode: 'FIXED' }))} className={`px-3 py-2 ${form.defaultAdminOverheadMode === 'FIXED' ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>Fixed</button>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.defaultAdminOverheadValue}
+                      onChange={(e) => setForm(f => ({ ...f, defaultAdminOverheadValue: e.target.value }))}
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

@@ -6,11 +6,26 @@ import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+import AddableSelect from '@/components/AddableSelect';
+import { useLeadSources } from '@/hooks/useLeadSources';
+import { parseBusinessVerticals } from '@/lib/businessVerticals';
+// Business Vertical is no longer collected on this form (removed per
+// product request) — parseBusinessVerticals above is still used, only to
+// carry an existing record's value through Edit unchanged (see
+// fetchLeadForEdit below), not to render or edit it.
+import { isValidEmail } from '@/lib/email';
+import { CUSTOMER_STATUSES } from '@/lib/customerStatus';
 
-interface VerticalOption { id: number; name: string }
-async function fetchVerticalOptions(): Promise<VerticalOption[]> {
-  const res = await fetch('/api/verticals');
-  if (!res.ok) throw new Error('Failed to fetch verticals');
+// Project master picker — replaces the old free-text Project Name input.
+// linkedLeadsCount (from GET /api/projects) is how many Lead/Customer rows
+// already have this same Project selected here, computed server-side so
+// this dropdown never has to (mis)count it itself. verticalId/verticalName
+// are shown read-only once a Project is picked, same convention as
+// CustomerFormDrawer's own Create-time Project field.
+interface ProjectOption { id: number; projectName: string; linkedLeadsCount: number; verticalId: number; verticalName: string }
+async function fetchProjectOptions(): Promise<ProjectOption[]> {
+  const res = await fetch('/api/projects');
+  if (!res.ok) throw new Error('Failed to fetch projects');
   return res.json();
 }
 
@@ -20,25 +35,20 @@ async function fetchVerticalOptions(): Promise<VerticalOption[]> {
 // module for why converted leads are just Leads with status=CONFIRMED
 // rather than a separate entity.
 
-export const SOURCES = [
-  { value: 'WEBSITE', label: 'Website' },
-  { value: 'WHATSAPP', label: 'WhatsApp' },
-  { value: 'REFERRAL', label: 'Referral' },
-  { value: 'EMAIL', label: 'Email' },
-  { value: 'TRADE_SHOW', label: 'Trade Show' },
-  { value: 'COLD_CALL', label: 'Cold Call' },
-  { value: 'SALES_EXECUTIVE', label: 'Sales Executive' },
-];
-
 export interface LeadFormState {
   companyName: string;
+  projectId: number | null;
   contactPerson: string;
   designation: string;
   mobile: string;
   whatsapp: string;
   email: string;
+  // Dedicated recipient for payment reminders — required on every Lead,
+  // not just once it becomes a Customer. See schema.prisma's
+  // Lead.financeEmail comment.
+  financeEmail: string;
   leadSource: string;
-  businessVerticals: string;
+  businessVerticals: string[];
   countryId: number | null;
   currencyCode: string;
   currencySymbol: string;
@@ -46,13 +56,15 @@ export interface LeadFormState {
   taxPercentage: number | string;
   state: string;
   city: string;
+  addressLine1: string;
+  addressLine2: string;
   notes: string;
 }
 
 export const blankLeadForm: LeadFormState = {
-  companyName: '', contactPerson: '', designation: '', mobile: '', whatsapp: '', email: '', leadSource: '', businessVerticals: '',
+  companyName: '', projectId: null, contactPerson: '', designation: '', mobile: '', whatsapp: '', email: '', financeEmail: '', leadSource: '', businessVerticals: [],
   countryId: null, currencyCode: '', currencySymbol: '', taxType: '', taxPercentage: 0,
-  state: '', city: '', notes: '',
+  state: '', city: '', addressLine1: '', addressLine2: '', notes: '',
 };
 
 export interface CurrencyOption {
@@ -68,17 +80,16 @@ export async function fetchLeadForEdit(id: number): Promise<LeadFormState | null
   const res = await fetch(`/api/leads/${id}`);
   if (!res.ok) return null;
   const lead = await res.json();
-  let businessVerticals = '';
-  if (lead.businessVerticals) {
-    try { businessVerticals = JSON.parse(lead.businessVerticals); } catch { businessVerticals = lead.businessVerticals; }
-  }
+  const businessVerticals = parseBusinessVerticals(lead.businessVerticals);
   return {
     companyName: lead.companyName || '',
+    projectId: lead.projectId ?? null,
     contactPerson: lead.contactPerson || '',
     designation: lead.designation || '',
     mobile: lead.mobile || '',
     whatsapp: lead.whatsapp || '',
     email: lead.email || '',
+    financeEmail: lead.financeEmail || '',
     leadSource: lead.leadSource || '',
     businessVerticals,
     countryId: lead.countryId || null,
@@ -88,6 +99,8 @@ export async function fetchLeadForEdit(id: number): Promise<LeadFormState | null
     taxPercentage: 0,
     state: lead.state || '',
     city: lead.city || '',
+    addressLine1: lead.addressLine1 || '',
+    addressLine2: lead.addressLine2 || '',
     notes: lead.notes || '',
   };
 }
@@ -97,8 +110,9 @@ function validateLeadForm(data: LeadFormState): Record<string, string> {
   if (!data.companyName) errs.companyName = 'Company name is required';
   if (!data.contactPerson) errs.contactPerson = 'Contact person is required';
   if (!data.mobile) errs.mobile = 'Mobile is required';
+  if (!data.financeEmail) errs.financeEmail = 'Finance email is required';
+  else if (!isValidEmail(data.financeEmail)) errs.financeEmail = 'Enter a valid finance email address';
   if (!data.leadSource) errs.leadSource = 'Lead source is required';
-  if (!data.businessVerticals) errs.businessVerticals = 'Business vertical is required';
   if (!data.countryId) errs.countryId = 'Country is required';
   return errs;
 }
@@ -115,12 +129,31 @@ export interface LeadFormDrawerProps {
   isSaving: boolean;
   isAdmin: boolean;
   currencies: CurrencyOption[];
+  // Customer lifecycle status (Active/In-Active/Hold — see
+  // src/lib/customerStatus.ts) — a Customer-only concept, so both props
+  // are only ever passed by the Customers page's own Lead-converted-
+  // Customer "Edit Lead" use of this drawer (src/app/dashboard/
+  // customers/page.tsx) — a directly-created Customer's Edit opens
+  // CustomerFormDrawer instead. The Leads page's own "Edit Lead" use
+  // doesn't pass them, so the field simply doesn't render there — the
+  // Leads module is unaffected.
+  customerStatus?: string;
+  onCustomerStatusChange?: (value: string) => void;
 }
 
 export default function LeadFormDrawer({
   open, onClose, editingId, form, setForm, formErrors, setFormErrors, onSave, isSaving, isAdmin, currencies,
+  customerStatus, onCustomerStatusChange,
 }: LeadFormDrawerProps) {
-  const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticalOptions });
+  const { data: projectOptions = [] } = useQuery({ queryKey: ['projects-for-lead-link'], queryFn: fetchProjectOptions });
+  const sources = useLeadSources();
+  const selectedProject = projectOptions.find(p => p.id === form.projectId);
+
+  // Clears one field's stale validation message as soon as the user
+  // actually changes it — validateLeadForm only runs again on the next
+  // submit, so without this a message set by a failed submit attempt would
+  // otherwise keep showing even after the field now holds a valid value.
+  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
 
   const handleCountryChange = (country: Country) => {
     setForm((f) => ({
@@ -131,6 +164,7 @@ export default function LeadFormDrawer({
       taxType: country.defaultTaxType,
       taxPercentage: country.defaultTaxPercentage,
     }));
+    clearFieldError('countryId');
   };
 
   const handleClose = () => { setFormErrors({}); onClose(); };
@@ -158,14 +192,31 @@ export default function LeadFormDrawer({
                     onSave(form);
                   }} className="flex-1 px-4 sm:px-6 py-4 space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="col-span-2">
+                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Company Name *</label>
-                        <input value={form.companyName} onChange={(e) => setForm(f => ({...f, companyName: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />
+                        <input value={form.companyName} onChange={(e) => { setForm(f => ({...f, companyName: e.target.value})); clearFieldError('companyName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.companyName ? 'border-red-400' : 'border-slate-300'}`} />
                         {formErrors.companyName && <p className="text-xs text-red-600 mt-1">{formErrors.companyName}</p>}
                       </div>
                       <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                        <AddableSelect
+                          value={form.projectId != null ? String(form.projectId) : ''}
+                          onChange={(v) => setForm(f => ({...f, projectId: v ? Number(v) : null}))}
+                          options={[
+                            { value: '', label: 'Unassigned' },
+                            ...projectOptions.map(p => ({ value: String(p.id), label: `${p.projectName} — ${p.linkedLeadsCount} ${p.linkedLeadsCount === 1 ? 'Project' : 'Projects'}` })),
+                          ]}
+                          placeholder="Unassigned"
+                        />
+                        {/* Read-only, same convention as CustomerFormDrawer's
+                            own Create-time Project field — the Vertical
+                            rides along with whichever Project is picked,
+                            never independently chosen here. */}
+                        {selectedProject && <p className="text-xs text-slate-500 mt-1">Vertical: <strong>{selectedProject.verticalName}</strong></p>}
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person *</label>
-                        <input value={form.contactPerson} onChange={(e) => setForm(f => ({...f, contactPerson: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.contactPerson ? 'border-red-400' : 'border-slate-300'}`} />
+                        <input value={form.contactPerson} onChange={(e) => { setForm(f => ({...f, contactPerson: e.target.value})); clearFieldError('contactPerson'); }} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.contactPerson ? 'border-red-400' : 'border-slate-300'}`} />
                         {formErrors.contactPerson && <p className="text-xs text-red-600 mt-1">{formErrors.contactPerson}</p>}
                       </div>
                       <div>
@@ -177,7 +228,23 @@ export default function LeadFormDrawer({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Mobile *</label>
-                        <input value={form.mobile} onChange={(e) => setForm(f => ({...f, mobile: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.mobile ? 'border-red-400' : 'border-slate-300'}`} />
+                        <input
+                          value={form.mobile}
+                          onChange={(e) => {
+                            const mobile = e.target.value;
+                            // WhatsApp defaults from Mobile as you type, same as the
+                            // BRD's "may default from Contact Number" — but only while
+                            // it hasn't diverged (still empty, or still tracking the old
+                            // Mobile value). The moment someone edits WhatsApp directly,
+                            // it's a deliberate override and Mobile edits stop touching it.
+                            setForm(f => {
+                              const whatsappTracksMobile = f.whatsapp === '' || f.whatsapp === f.mobile;
+                              return { ...f, mobile, ...(whatsappTracksMobile && { whatsapp: mobile }) };
+                            });
+                            clearFieldError('mobile');
+                          }}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.mobile ? 'border-red-400' : 'border-slate-300'}`}
+                        />
                         {formErrors.mobile && <p className="text-xs text-red-600 mt-1">{formErrors.mobile}</p>}
                       </div>
                       <div>
@@ -194,21 +261,32 @@ export default function LeadFormDrawer({
                         <input type="email" value={form.email} onChange={(e) => setForm(f => ({...f, email: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Lead Source *</label>
-                        <select value={form.leadSource} onChange={(e) => setForm(f => ({...f, leadSource: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.leadSource ? 'border-red-400' : 'border-slate-300'}`}>
-                          <option value="">Select</option>
-                          {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                        </select>
-                        {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Finance Email ID *</label>
+                        <input type="email" value={form.financeEmail} onChange={(e) => { setForm(f => ({...f, financeEmail: e.target.value})); clearFieldError('financeEmail'); }} placeholder="For payment reminders" className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.financeEmail ? 'border-red-400' : 'border-slate-300'}`} />
+                        {formErrors.financeEmail && <p className="text-xs text-red-600 mt-1">{formErrors.financeEmail}</p>}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Business Vertical *</label>
-                        <select value={form.businessVerticals} onChange={(e) => setForm(f => ({...f, businessVerticals: e.target.value}))} className={`w-full px-3 py-2 border rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 ${formErrors.businessVerticals ? 'border-red-400' : 'border-slate-300'}`}>
-                          <option value="">Select</option>
-                          {verticalOptions.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                        </select>
-                        {formErrors.businessVerticals && <p className="text-xs text-red-600 mt-1">{formErrors.businessVerticals}</p>}
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Lead Source *</label>
+                        <AddableSelect
+                          value={form.leadSource}
+                          onChange={(v) => { setForm(f => ({...f, leadSource: v})); clearFieldError('leadSource'); }}
+                          options={sources.map(s => ({ value: s.code, label: s.name }))}
+                          placeholder="Select"
+                          error={!!formErrors.leadSource}
+                        />
+                        {formErrors.leadSource && <p className="text-xs text-red-600 mt-1">{formErrors.leadSource}</p>}
                       </div>
+                      {onCustomerStatusChange && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                          <AddableSelect
+                            value={customerStatus ?? ''}
+                            onChange={(v) => onCustomerStatusChange(v)}
+                            options={CUSTOMER_STATUSES.map(s => ({ value: s.value, label: s.label }))}
+                            placeholder="Select Status"
+                          />
+                        </div>
+                      )}
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Country *</label>
                         <CountrySelect value={form.countryId} onChange={handleCountryChange} />
@@ -222,16 +300,15 @@ export default function LeadFormDrawer({
                         {isAdmin && form.countryId && (
                           <div className="mt-2">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Override currency (Administrator only)</label>
-                            <select
+                            <AddableSelect
                               value={form.currencyCode}
-                              onChange={(e) => {
-                                const c = currencies.find((cur) => cur.currencyCode === e.target.value);
+                              onChange={(v) => {
+                                const c = currencies.find((cur) => cur.currencyCode === v);
                                 if (c) setForm(f => ({ ...f, currencyCode: c.currencyCode, currencySymbol: c.currencySymbol }));
                               }}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-                            >
-                              {currencies.map((c) => <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode} — {c.currencyName}</option>)}
-                            </select>
+                              options={currencies.map((c) => ({ value: c.currencyCode, label: `${c.currencyCode} — ${c.currencyName}` }))}
+                              placeholder="Select Currency"
+                            />
                           </div>
                         )}
                       </div>
@@ -242,6 +319,14 @@ export default function LeadFormDrawer({
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
                         <input value={form.city} onChange={(e) => setForm(f => ({...f, city: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Address Line 1</label>
+                        <input value={form.addressLine1} onChange={(e) => setForm(f => ({...f, addressLine1: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Address Line 2</label>
+                        <input value={form.addressLine2} onChange={(e) => setForm(f => ({...f, addressLine2: e.target.value}))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500" />
                       </div>
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>

@@ -36,10 +36,19 @@ export function validateFollowUpInput(body: { followUpDate?: string; method?: st
   return null;
 }
 
+// A next-follow-up date is overdue when it's in the past and the record
+// hasn't reached a terminal state yet — the shared comparison behind
+// isFollowUpOverdue below, factored out so other modules with their own
+// "terminal" definition (e.g. Demo's status) can reuse the same date logic
+// without adopting Lead's own terminal-status rule.
+export function isNextDateOverdue(nextDate: Date | string | null, isTerminal: boolean, now: Date = new Date()): boolean {
+  if (!nextDate) return false;
+  if (isTerminal) return false;
+  return new Date(nextDate) < now;
+}
+
 // A lead is overdue when it has a next follow-up date in the past and hasn't
 // reached a terminal outcome (Converted/Lost) yet.
 export function isFollowUpOverdue(nextFollowUpDate: Date | string | null, status: string, now: Date = new Date()): boolean {
-  if (!nextFollowUpDate) return false;
-  if (isTerminalLeadStatus(status)) return false;
-  return new Date(nextFollowUpDate) < now;
+  return isNextDateOverdue(nextFollowUpDate, isTerminalLeadStatus(status), now);
 }

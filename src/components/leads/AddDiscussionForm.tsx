@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { validateDiscussionInput } from '@/lib/eventValidation';
+import AddableSelect from '@/components/AddableSelect';
 import DocumentUpload from './DocumentUpload';
 
 interface UserOption {
@@ -93,10 +94,12 @@ export default function AddDiscussionForm({ leadId, eventId }: AddDiscussionForm
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Assigned To</label>
-          <select value={form.assignedToId} onChange={(e) => setForm((f) => ({ ...f, assignedToId: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 bg-white">
-            <option value="">Unassigned</option>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-          </select>
+          <AddableSelect
+            value={form.assignedToId}
+            onChange={(v) => setForm((f) => ({ ...f, assignedToId: v }))}
+            options={[{ value: '', label: 'Unassigned' }, ...users.map((u) => ({ value: String(u.id), label: u.fullName }))]}
+            placeholder="Unassigned"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Target Date</label>

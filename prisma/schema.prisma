@@ -91,6 +91,9 @@ model User {
   pushSubscriptions PushSubscription[]
   employee          Employee?
 
+  passwordResetRequests         PasswordResetRequest[] @relation("PasswordResetRequester")
+  resolvedPasswordResetRequests PasswordResetRequest[] @relation("PasswordResetResolver")
+
   // Event Management
   createdEvents            Event[]                @relation("EventCreatedBy")
   uploadedEventDocuments   EventDocument[]        @relation("EventDocumentUploadedBy")
@@ -111,12 +114,16 @@ model User {
   createdExpenseBudgets  ExpenseBudget[]         @relation("ExpenseBudgetCreatedBy")
   revisedExpenseBudgets  ExpenseBudgetRevision[] @relation("ExpenseBudgetRevisedBy")
   headOfVerticals        Vertical[]              @relation("VerticalHead")
+  headOfProjects         Project[]               @relation("ProjectHead")
+  headOfProducts         Product[]               @relation("ProductHead")
+  headOfImplementations  Implementation[]        @relation("ImplementationHead")
+  headOfDemos            Demo[]                  @relation("DemoHead")
   createdCompanies       Company[]               @relation("CompanyCreatedBy")
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, see
   // CustomerKyc/CustomerKycDocument/CustomerContract below.
-  customerKycVerifications CustomerKyc[]         @relation("CustomerKycVerifiedBy")
-  uploadedCustomerKycDocs  CustomerKycDocument[]  @relation("CustomerKycDocumentUploadedBy")
+  customerKycVerifications  CustomerKyc[]         @relation("CustomerKycVerifiedBy")
+  uploadedCustomerKycDocs   CustomerKycDocument[] @relation("CustomerKycDocumentUploadedBy")
   uploadedCustomerContracts CustomerContract[]    @relation("CustomerContractUploadedBy")
 
   @@map("users")
@@ -189,33 +196,48 @@ model CompanyLegalEntity {
 // ============================================================
 
 model Lead {
-  id                    Int      @id @default(autoincrement())
-  companyName           String   @map("company_name")
-  contactPerson         String   @map("contact_person")
+  id                    Int       @id @default(autoincrement())
+  companyName           String    @map("company_name")
+  projectName           String?   @map("project_name")
+  contactPerson         String    @map("contact_person")
   designation           String? // contact person's role/title
   mobile                String?
   whatsapp              String? // WhatsApp contact number — separate from `mobile` since they often differ
   email                 String?
+  // Dedicated recipient for payment/invoice reminders — required on the
+  // Customer module's create/edit forms (validated in POST /api/customers
+  // and PUT /api/leads/[id]) once a Lead is/becomes a Customer
+  // (status=CONFIRMED), but left nullable here since plain (non-customer)
+  // Leads never collect it. Deliberately separate from `email` above:
+  // that's the contact person's general email, this is specifically who
+  // should receive payment reminders — see dispatchDeadlineReminders.
+  financeEmail          String?   @map("finance_email")
   country               String?
   state                 String?
   city                  String?
-  countryId             Int?     @map("country_id")
-  currencyCode          String?  @map("currency_code")
-  currencySymbol        String?  @map("currency_symbol")
-  taxType               String?  @map("tax_type")
+  // Contact-level address — distinct from CompanyLegalEntity's own
+  // address/tax fields (see companyId/legalEntityId below): this is a plain
+  // optional detail on the Lead/Customer itself, not tied to any specific
+  // country's legal entity registration.
+  addressLine1          String?   @map("address_line1")
+  addressLine2          String?   @map("address_line2")
+  countryId             Int?      @map("country_id")
+  currencyCode          String?   @map("currency_code")
+  currencySymbol        String?   @map("currency_symbol")
+  taxType               String?   @map("tax_type")
   // Optional link to the Customer Company Master — which real-world company
   // this deal belongs to, and (if set) which of that company's per-country
   // legal entities it's specifically with. Both stay optional: existing
   // Leads/Customers keep working exactly as before via their own
   // companyName/country/state/city fields when neither is set.
-  companyId             Int?     @map("company_id")
-  legalEntityId         Int?     @map("legal_entity_id")
-  jewelleryBusinessType String?  @map("jewellery_business_type")
-  numberOfBranches      Int?     @map("number_of_branches")
-  existingErp           String?  @map("existing_erp")
-  leadSource            String   @map("lead_source")
-  assignedBaId          Int?     @map("assigned_ba_id")
-  status                String   @default("NEW")
+  companyId             Int?      @map("company_id")
+  legalEntityId         Int?      @map("legal_entity_id")
+  jewelleryBusinessType String?   @map("jewellery_business_type")
+  numberOfBranches      Int?      @map("number_of_branches")
+  existingErp           String?   @map("existing_erp")
+  leadSource            String    @map("lead_source")
+  assignedBaId          Int?      @map("assigned_ba_id")
+  status                String    @default("NEW")
   // Lifecycle status once a Lead has become a Customer (status=CONFIRMED) —
   // ACTIVE | INACTIVE | ON_HOLD (see src/lib/customerStatus.ts). Deliberately
   // a separate field from `status` above: `status` is the lead pipeline
@@ -223,12 +245,27 @@ model Lead {
   // while this tracks whether an already-converted customer is currently
   // doing business with us. Defaults to ACTIVE for every row, but is only
   // surfaced/editable on the Customers page.
-  customerStatus        String   @default("ACTIVE") @map("customer_status")
-  businessVerticals     String?  @map("business_verticals")
+  customerStatus        String    @default("ACTIVE") @map("customer_status")
+  // The moment this Lead's status actually transitioned to CONFIRMED (i.e.
+  // became a Customer) — set alongside the LEAD_CONFIRMED LeadActivity in
+  // PUT /api/leads/[id], and at creation time for customers created
+  // directly via POST /api/customers (born CONFIRMED, so "confirmed" and
+  // "created" are the same instant there). This is what the Customer
+  // module's "Created"/"Customer Since" date displays instead of
+  // `createdAt`, which for a pipeline-converted lead is the date the LEAD
+  // was first created, not the date it became a customer.
+  confirmedAt           DateTime? @map("confirmed_at")
+  // JSON-encoded array of Vertical *names* (no FK to Vertical — see
+  // src/lib/businessVerticals.ts), e.g. '["Retail Jewellery","Wholesale"]',
+  // supporting multi-select. Rows written before multi-select existed still
+  // hold a JSON-encoded single name, e.g. '"Retail Jewellery"' — that
+  // helper reads both shapes as an array, so no migration was needed to add
+  // multi-select and no historical single-vertical data was lost.
+  businessVerticals     String?   @map("business_verticals")
   notes                 String?
-  createdById           Int?     @map("created_by")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  createdById           Int?      @map("created_by")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
   // Denormalized follow-up tracking (kept in sync whenever a LeadFollowUp is
   // logged) so the leads list can filter/sort on "last contacted" and flag
@@ -237,20 +274,42 @@ model Lead {
   nextFollowUpDate DateTime? @map("next_follow_up_date")
   followUpCount    Int       @default(0) @map("follow_up_count")
 
-  assignedBa      User?               @relation("AssignedBA", fields: [assignedBaId], references: [id])
-  createdBy       User?               @relation("CreatedBy", fields: [createdById], references: [id])
-  countryRef      Country?            @relation(fields: [countryId], references: [id])
-  company         Company?            @relation(fields: [companyId], references: [id])
-  legalEntity     CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
-  activities      LeadActivity[]
-  followUps       LeadFollowUp[]
-  demos           Demo[]
-  quotations      Quotation[]
-  implementations Implementation[]
-  invoices        Invoice[]
-  creditNotes     CreditNote[]
-  events          Event[]
-  documents       EventDocument[]
+  assignedBa         User?               @relation("AssignedBA", fields: [assignedBaId], references: [id])
+  createdBy          User?               @relation("CreatedBy", fields: [createdById], references: [id])
+  countryRef         Country?            @relation(fields: [countryId], references: [id])
+  company            Company?            @relation(fields: [companyId], references: [id])
+  legalEntity        CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
+  activities         LeadActivity[]
+  followUps          LeadFollowUp[]
+  demos              Demo[]
+  quotations         Quotation[]
+  implementations    Implementation[]
+  invoices           Invoice[]
+  creditNotes        CreditNote[]
+  events             Event[]
+  documents          EventDocument[]
+  vendorExpenses     Expense[]           @relation("ExpenseVendor")
+  // Project master — two independent relations: this Lead/Customer row as
+  // the project's required Customer (Project.customerId) vs. as the
+  // project's optional Lead reference (Project.leadId, added alongside the
+  // Project form's own Lead dropdown). Separate from projectId/linkedProject
+  // below, which is this Lead/Customer's *own* "Project" picker field (what
+  // used to be the free-text Project Name input on the Lead/Customer forms).
+  projectsAsCustomer Project[]           @relation("ProjectCustomer")
+  projectsAsLead     Project[]           @relation("ProjectLead")
+  projectId          Int?                @map("project_id")
+  linkedProject      Project?            @relation("LeadProjectLink", fields: [projectId], references: [id])
+  // Same shape as the Project relations directly above, for Product Master
+  // (see the Product model's own comment) — a separate master, not a
+  // sub-type of Project, so it gets its own customer/lead relation pair.
+  productsAsCustomer Product[]           @relation("ProductCustomer")
+  productsAsLead     Product[]           @relation("ProductLead")
+  // This Lead/Customer's own "Product" picker field — same shape/rationale
+  // as projectId/linkedProject above (independent of productsAsCustomer/
+  // productsAsLead, which are ownership relations, not this reference).
+  // Added for the Customer creation form's "Product / Project" field.
+  productId     Int?     @map("product_id")
+  linkedProduct Product? @relation("LeadProductLink", fields: [productId], references: [id])
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, not
   // read/written by any Lead-owned page or API.
@@ -264,10 +323,13 @@ model Lead {
   // this model had zero indexes beyond its primary key despite all of that,
   // forcing a full table scan on every one of those queries.
   @@index([createdAt])
+  @@index([confirmedAt])
   @@index([status])
   @@index([leadSource])
   @@index([assignedBaId])
   @@index([nextFollowUpDate])
+  @@index([projectId])
+  @@index([productId])
   @@index([lastFollowUpDate])
   @@index([companyId])
   @@index([legalEntityId])
@@ -313,6 +375,16 @@ model Demo {
   leadId                Int       @map("lead_id")
   demoType              String    @map("demo_type")
   packageId             Int?      @map("package_id")
+  // Which Project master row this demo is for — scoped to leadId (see
+  // GET /api/projects's own leadId filter): the dropdown only ever offers
+  // projects related to the selected Lead/Customer, same convention as
+  // Quotation.projectId/Implementation.projectId below.
+  projectId             Int?      @map("project_id")
+  // Same shape/convention as projectId above, but for Product Master's own
+  // "Product" picker next to Project — mutually exclusive with projectId
+  // (enforced in the API, not here — see POST/PUT /api/demos), same
+  // convention as Quotation/Implementation's own projectId/productId pair.
+  productId             Int?      @map("product_id")
   assignedToId          Int?      @map("assigned_to")
   scheduledDate         DateTime? @map("scheduled_date")
   timezone              String?   @default("Asia/Kolkata") @map("timezone")
@@ -327,13 +399,33 @@ model Demo {
   recordingUrl          String?   @map("recording_url")
   stakeholderFeedback   String?   @map("stakeholder_feedback")
   approvalStatus        String?   @default("PENDING") @map("approval_status")
+  // Same "Next Follow-up" field/behavior as Lead.nextFollowUpDate — directly
+  // editable from the Demos list table, same convention.
+  nextFollowUpDate      DateTime? @map("next_follow_up_date")
+  // Business Vertical this demo is for — auto-derived client-side from
+  // whichever of Project/Product is selected (see the New Demo Project
+  // form's own effect), same convention as Implementation.verticalId.
+  // headId is a snapshot of Vertical.headId taken at the moment verticalId
+  // is set, same convention as Project.headId above — never taken from the
+  // client, and left null (handled as "Unassigned" in the UI) when the
+  // vertical has no head.
+  verticalId            Int?      @map("vertical_id")
+  headId                Int?      @map("head_id")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  assignedTo User?    @relation(fields: [assignedToId], references: [id])
-  package    Package? @relation(fields: [packageId], references: [id])
+  lead       Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedTo User?     @relation(fields: [assignedToId], references: [id])
+  package    Package?  @relation(fields: [packageId], references: [id])
+  project    Project?  @relation(fields: [projectId], references: [id])
+  product    Product?  @relation(fields: [productId], references: [id])
+  vertical   Vertical? @relation(fields: [verticalId], references: [id])
+  head       User?     @relation("DemoHead", fields: [headId], references: [id])
 
+  @@index([projectId])
+  @@index([productId])
+  @@index([nextFollowUpDate])
+  @@index([verticalId])
   @@map("demos")
 }
 
@@ -568,6 +660,9 @@ model Quotation {
   addons                Json?
   pricingSnapshot       Json?     @map("pricing_snapshot")
   notes                 String?
+  // Quotation-specific clauses shown on the PDF alongside the standard
+  // company-wide T&C template (CompanyProfile.termsAndConditions).
+  additionalTerms       String?   @map("additional_terms")
   createdById           Int?      @map("created_by")
   approvedById          Int?      @map("approved_by")
   customerApprovedAt    DateTime? @map("customer_approved_at")
@@ -582,6 +677,11 @@ model Quotation {
   // than a normalized child table — see softwareModules/addons above).
   costingMode           String   @default("CATALOG") @map("costing_mode")
   projectName           String?  @map("project_name")
+  // Which Project master row this quotation is for — scoped to leadId, same
+  // convention as Demo.projectId. The old projectName TEXT column above is
+  // left untouched (kept in sync from the selected project for display/PDF
+  // purposes) rather than removed.
+  projectId             Int?     @map("project_id")
   verticalId            Int?     @map("vertical_id")
   // Which of the lead's Company's per-country legal entities this
   // quotation bills to — its registered address/tax number print on the
@@ -598,14 +698,91 @@ model Quotation {
   marginPercent         Decimal? @map("margin_percent") @db.Decimal(5, 2)
   calculatedTotalAmount Decimal? @map("calculated_total_amount") @db.Decimal(15, 2)
   totalAmountOverridden Boolean  @default(false) @map("total_amount_overridden")
+  // Which Product master row this quotation is a Budget Estimation for —
+  // same shape/convention as projectId above, just for Product Master's own
+  // "Budget Estimation"/"+ New Estimation" actions (which open this same
+  // Quotation form, not the Calculator — see ProductBudgetPanel's own
+  // comment for why). Independent of projectId; a quotation is never
+  // required to have either, and in practice only one of the two is set
+  // per quotation depending on which module's accordion created it.
+  productId             Int?     @map("product_id")
 
-  lead        Lead                @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  vertical    Vertical?           @relation(fields: [verticalId], references: [id])
-  legalEntity CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
-  invoices    Invoice[]
+  lead              Lead                        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  vertical          Vertical?                   @relation(fields: [verticalId], references: [id])
+  legalEntity       CompanyLegalEntity?         @relation(fields: [legalEntityId], references: [id])
+  project           Project?                    @relation(fields: [projectId], references: [id])
+  product           Product?                    @relation(fields: [productId], references: [id])
+  invoices          Invoice[]
+  revisions         QuotationRevision[]
+  paymentMilestones QuotationPaymentMilestone[]
 
   @@index([legalEntityId])
+  @@index([projectId])
+  @@index([productId])
   @@map("quotations")
+}
+
+// A quotation's payment plan, split into per-milestone invoices instead of
+// one lump-sum invoice on approval. Rows are only materialized once the
+// quotation is APPROVED (see generateInvoiceForQuotation's sibling in
+// api/quotations/[id]/route.ts) — before that, the plan the user is editing
+// is just percentage/gapDays config living in Quotation.pricingSnapshot,
+// same convention as adminMode/markupMode. scheduledDate is computed once,
+// at materialization time, from cumulative gapDays off the approval date
+// (milestone 1 is always gapDays=0 — invoiced immediately on approval); it's
+// never recomputed from siblings afterward, so rescheduling one milestone
+// deliberately doesn't cascade into shifting the others.
+model QuotationPaymentMilestone {
+  id               Int       @id @default(autoincrement())
+  quotationId      Int       @map("quotation_id")
+  sequence         Int
+  percentage       Decimal   @db.Decimal(5, 2)
+  // Computed once at materialization time (percentage x the quotation's
+  // totalAmount, with the last milestone absorbing any rounding remainder —
+  // see materializeMilestonePlan) and stored permanently rather than
+  // recomputed later, so the cron invoicing milestone 2+ months from now
+  // doesn't need (and can't drift from) the full sibling-plan context that
+  // produced it.
+  amount           Decimal   @db.Decimal(15, 2)
+  gapDays          Int       @map("gap_days")
+  scheduledDate    DateTime  @map("scheduled_date")
+  // PENDING (not yet due, or due but the cron hasn't run) | INVOICED
+  status           String    @default("PENDING")
+  invoiceId        Int?      @map("invoice_id")
+  rescheduledAt    DateTime? @map("rescheduled_at")
+  rescheduleReason String?   @map("reschedule_reason")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  invoice   Invoice?  @relation(fields: [invoiceId], references: [id])
+
+  @@unique([quotationId, sequence])
+  @@index([status, scheduledDate])
+  @@map("quotation_payment_milestones")
+}
+
+// Append-only history of a quotation's prior states. Unlike
+// SalaryAssignmentRevision/ExpenseBudgetRevision (which diff one or two
+// scalar fields), a quotation edit can touch dozens of columns at once, so
+// the previous row is kept as a full JSON snapshot rather than a per-field
+// before/after pair. The live Quotation row is always updated in place
+// (version incremented) — this table is purely retained history, not a
+// current/active record itself.
+model QuotationRevision {
+  id            Int      @id @default(autoincrement())
+  quotationId   Int      @map("quotation_id")
+  versionNumber Int      @map("version_number")
+  snapshot      Json
+  // Loose reference to User.id (not a relation), matching
+  // SalaryAssignmentRevision.revisedById's convention.
+  revisedById   Int?     @map("revised_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@index([quotationId])
+  @@map("quotation_revisions")
 }
 
 // ============================================================
@@ -615,7 +792,38 @@ model Quotation {
 model Implementation {
   id               Int       @id @default(autoincrement())
   leadId           Int       @map("lead_id")
+  // Which picker the user chose leadId from at creation — LEAD | CUSTOMER
+  // (both are Lead rows; see the Vertical/ExpenseBudget schema note above
+  // for why "Customer" has no table of its own). Purely a classification
+  // for now — same fields either way — kept for future Lead-vs-Customer
+  // implementation behavior. Not editable after creation, same as leadId.
+  sourceType       String    @default("LEAD") @map("source_type")
   projectName      String?   @map("project_name")
+  // Which Project master row this implementation is for — scoped to leadId,
+  // same convention as Demo.projectId/Quotation.projectId. The old
+  // projectName TEXT column above is left untouched (kept in sync from the
+  // selected project for display purposes) rather than removed.
+  projectId        Int?      @map("project_id")
+  // Same shape as projectId above, for Product Master's own Status/Stage
+  // columns (see the Customer main table's CustomerProductsPanel) — a
+  // Product has no other linked record to read/write these through, same
+  // as Project relies on this Implementation relation for the same thing.
+  productId        Int?      @map("product_id")
+  // Business Vertical picked manually on this implementation's own form —
+  // deliberately independent of the Lead's own (possibly multi-valued)
+  // businessVerticals and of Project.verticalId; neither auto-fills this.
+  // Nullable since existing rows created before this field existed have
+  // none, and the New Implementation Project form doesn't require it.
+  verticalId       Int?      @map("vertical_id")
+  // Derived server-side from the selected Vertical's own Head assignment at
+  // create time (Vertical.headId) — never taken from the client, and never
+  // re-derived afterward, same convention as Project.headId (see that
+  // model's own comment) so a later Head reassignment on the Vertical
+  // Master doesn't retroactively change what this implementation recorded.
+  // Null (not an error) when the selected Vertical has no Head — the
+  // existing "Unassigned" display convention, unlike Project's own stricter
+  // requirement that a Vertical have a Head before it can be used.
+  headId           Int?      @map("head_id")
   projectManagerId Int?      @map("project_manager_id")
   status           String    @default("PLANNING")
   startDate        DateTime? @map("start_date")
@@ -626,13 +834,20 @@ model Implementation {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  lead           Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  projectManager User? @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  projectManager User?     @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  project        Project?  @relation(fields: [projectId], references: [id])
+  product        Product?  @relation(fields: [productId], references: [id])
+  vertical       Vertical? @relation(fields: [verticalId], references: [id])
+  head           User?     @relation("ImplementationHead", fields: [headId], references: [id])
 
   // Customer Documents: an NDA/Contract can optionally reference the
   // Implementation it's tied to (its "Project Name").
   customerContracts CustomerContract[]
 
+  @@index([projectId])
+  @@index([productId])
+  @@index([verticalId])
   @@map("implementations")
 }
 
@@ -790,44 +1005,52 @@ model Country {
 // ============================================================
 
 model CompanyProfile {
-  id                    Int      @id @default(autoincrement())
-  companyName           String   @map("company_name")
-  tagline               String?
-  logoUrl               String?  @map("logo_url")
-  addressLine1          String?  @map("address_line1")
-  addressLine2          String?  @map("address_line2")
-  city                  String?
-  state                 String?
-  country               String?
-  postalCode            String?  @map("postal_code")
-  phone                 String?
-  email                 String?
-  website               String?
-  gstNumber             String?  @map("gst_number")
-  panNumber             String?  @map("pan_number")
-  bankName              String?  @map("bank_name")
-  bankAccountNumber     String?  @map("bank_account_number")
-  bankIfsc              String?  @map("bank_ifsc")
-  authorizedSignatory   String?  @map("authorized_signatory")
-  signatoryDesignation  String?  @map("signatory_designation")
-  primaryColor          String?  @default("#1E3A5F") @map("primary_color")
-  secondaryColor        String?  @default("#D4AF37") @map("secondary_color")
-  termsAndConditions    String?  @map("terms_and_conditions")
-  paymentTerms          String?  @map("payment_terms")
-  warrantyTerms         String?  @map("warranty_terms")
-  assumptions           String?
-  exclusions            String?
-  confidentialityNotice String?  @map("confidentiality_notice")
-  supplierStateCode     String?  @default("TN") @map("supplier_state_code")
-  defaultCountryId      Int?     @map("default_country_id")
-  isActive              Boolean  @default(true) @map("is_active")
+  id                        Int      @id @default(autoincrement())
+  companyName               String   @map("company_name")
+  tagline                   String?
+  logoUrl                   String?  @map("logo_url")
+  addressLine1              String?  @map("address_line1")
+  addressLine2              String?  @map("address_line2")
+  city                      String?
+  state                     String?
+  country                   String?
+  postalCode                String?  @map("postal_code")
+  phone                     String?
+  email                     String?
+  website                   String?
+  gstNumber                 String?  @map("gst_number")
+  panNumber                 String?  @map("pan_number")
+  bankName                  String?  @map("bank_name")
+  bankAccountNumber         String?  @map("bank_account_number")
+  bankIfsc                  String?  @map("bank_ifsc")
+  authorizedSignatory       String?  @map("authorized_signatory")
+  signatoryDesignation      String?  @map("signatory_designation")
+  primaryColor              String?  @default("#1E3A5F") @map("primary_color")
+  secondaryColor            String?  @default("#D4AF37") @map("secondary_color")
+  termsAndConditions        String?  @map("terms_and_conditions")
+  paymentTerms              String?  @map("payment_terms")
+  warrantyTerms             String?  @map("warranty_terms")
+  assumptions               String?
+  exclusions                String?
+  confidentialityNotice     String?  @map("confidentiality_notice")
+  supplierStateCode         String?  @default("TN") @map("supplier_state_code")
+  // Default Admin/Overhead allocation the Quotation Calculator pre-fills a
+  // new quotation with (mirrors that calculator's own PCT/FIXED toggle —
+  // see ResourceLine costing in src/lib/quotationResourceCosting.ts). Only
+  // a starting default: still freely editable per quotation, and an
+  // existing quotation keeps whatever it was saved with regardless of a
+  // later change here.
+  defaultAdminOverheadMode  String   @default("PCT") @map("default_admin_overhead_mode")
+  defaultAdminOverheadValue Decimal  @default(10) @map("default_admin_overhead_value") @db.Decimal(10, 2)
+  defaultCountryId          Int?     @map("default_country_id")
+  isActive                  Boolean  @default(true) @map("is_active")
   // Payroll statutory identifiers — the business's own GST/PAN/bank details
   // already exist above; these four are specifically what Payroll's
   // compliance reports (PF/ESI/PT/TDS) need and nothing else in the app uses.
-  tanNumber             String?  @map("tan_number")
-  pfEstablishmentCode   String?  @map("pf_establishment_code")
-  esiEstablishmentCode  String?  @map("esi_establishment_code")
-  ptRegistrationNumber  String?  @map("pt_registration_number")
+  tanNumber                 String?  @map("tan_number")
+  pfEstablishmentCode       String?  @map("pf_establishment_code")
+  esiEstablishmentCode      String?  @map("esi_establishment_code")
+  ptRegistrationNumber      String?  @map("pt_registration_number")
   // Payroll Phase 4 — the actual rates/thresholds the run engine applies
   // (see SalaryComponent.statutoryType). Nullable ceiling/threshold means
   // "no cap" — a company that pays PF on full actual basic rather than
@@ -836,19 +1059,19 @@ model CompanyProfile {
   // which would incorrectly reduce net pay) purely so compliance reports
   // can show the employer's contribution alongside what was actually
   // deducted from the employee.
-  pfWageCeiling         Decimal? @default(15000) @map("pf_wage_ceiling") @db.Decimal(12, 2)
-  pfEmployerRate        Decimal? @default(12) @map("pf_employer_rate") @db.Decimal(5, 2)
-  esiGrossThreshold     Decimal? @default(21000) @map("esi_gross_threshold") @db.Decimal(12, 2)
-  esiEmployerRate       Decimal? @default(3.25) @map("esi_employer_rate") @db.Decimal(5, 2)
+  pfWageCeiling             Decimal? @default(15000) @map("pf_wage_ceiling") @db.Decimal(12, 2)
+  pfEmployerRate            Decimal? @default(12) @map("pf_employer_rate") @db.Decimal(5, 2)
+  esiGrossThreshold         Decimal? @default(21000) @map("esi_gross_threshold") @db.Decimal(12, 2)
+  esiEmployerRate           Decimal? @default(3.25) @map("esi_employer_rate") @db.Decimal(5, 2)
   // Time & Attendance — which Saturdays are a weekly off, not every-Saturday
   // (the common alternate-Saturday policy at Indian companies). Sunday is
   // always off regardless of this setting; only Saturday's treatment
   // varies. NONE | ALL | FIRST_THIRD | SECOND_FOURTH — see
   // isWeeklyOff() in timesheetEngine.ts for how each is interpreted.
   // Defaults to SECOND_FOURTH, the most common convention.
-  weeklyOffSaturdays    String   @default("SECOND_FOURTH") @map("weekly_off_saturdays")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  weeklyOffSaturdays        String   @default("SECOND_FOURTH") @map("weekly_off_saturdays")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
 
   defaultCountry Country? @relation(fields: [defaultCountryId], references: [id])
 
@@ -875,6 +1098,29 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+
+// Pure audit trail for the admin-mediated password reset flow — no
+// token/code is ever generated or emailed to the requesting user; a request
+// here just notifies every ADMIN-role user (see POST
+// /api/auth/password-reset-request), and the admin resets the password
+// directly via the existing Edit User screen. That same PUT
+// (/api/users/[id]) auto-resolves any PENDING row for that user the moment
+// a new password is actually set — see the status/resolvedBy/resolvedAt
+// fields below.
+model PasswordResetRequest {
+  id           Int       @id @default(autoincrement())
+  userId       Int       @map("user_id")
+  status       String    @default("PENDING") // PENDING | RESOLVED
+  resolvedById Int?      @map("resolved_by")
+  resolvedAt   DateTime? @map("resolved_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user       User  @relation("PasswordResetRequester", fields: [userId], references: [id], onDelete: Cascade)
+  resolvedBy User? @relation("PasswordResetResolver", fields: [resolvedById], references: [id])
+
+  @@index([userId, status])
+  @@map("password_reset_requests")
 }
 
 // Dedup key for the deadline-reminder dispatcher (events, lead follow-ups,
@@ -961,6 +1207,9 @@ model Employee {
   email             String    @map("email")
   department        String?
   designation       String?
+  role              String?
+  managerId         Int?      @map("manager_id")
+  verticalId        Int?      @map("vertical_id")
   dateOfJoining     DateTime? @map("date_of_joining")
   dateOfLeaving     DateTime? @map("date_of_leaving")
   employmentType    String    @default("FULL_TIME") @map("employment_type") // FULL_TIME | PART_TIME | CONTRACT | INTERN
@@ -979,12 +1228,16 @@ model Employee {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  user              User?                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  salaryAssignments SalaryStructureAssignment[]
-  payslips          Payslip[]
-  leaveRequests     LeaveRequest[]
-  loans             Loan[]
-  timesheetEntries  TimesheetEntry[]
+  user                User?                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manager             Employee?                    @relation("EmployeeManager", fields: [managerId], references: [id])
+  directReports       Employee[]                   @relation("EmployeeManager")
+  vertical            Vertical?                    @relation(fields: [verticalId], references: [id])
+  salaryAssignments   SalaryStructureAssignment[]
+  payslips            Payslip[]
+  leaveRequests       LeaveRequest[]
+  loans               Loan[]
+  timesheetEntries    TimesheetEntry[]
+  verticalAllocations EmployeeVerticalAllocation[]
 
   @@map("employees")
 }
@@ -1423,27 +1676,34 @@ model Invoice {
   status             String    @default("PENDING") @map("status") // PENDING | PARTIALLY_PAID | PAID | CANCELLED
   accountManagerId   Int?      @map("account_manager_id")
   notes              String?
+  // When to next contact the client about this pending invoice (e.g. "they
+  // said they'll pay on the 5th") — same simple denormalized-date pattern as
+  // Lead.nextFollowUpDate, reused verbatim for the Pending Invoice table's
+  // Next Follow Ups column.
+  nextFollowUpDate   DateTime? @map("next_follow_up_date")
   createdById        Int?      @map("created_by")
   updatedById        Int?      @map("updated_by")
   deletedAt          DateTime? @map("deleted_at")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
-  lead           Lead                @relation(fields: [leadId], references: [id])
-  quotation      Quotation?          @relation(fields: [quotationId], references: [id])
-  legalEntity    CompanyLegalEntity? @relation(fields: [legalEntityId], references: [id])
-  accountManager User?               @relation("InvoiceAccountManager", fields: [accountManagerId], references: [id])
-  createdBy      User?               @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
-  updatedBy      User?               @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
-  payments       Payment[]
-  reminders      PaymentReminder[]
-  creditNotes    CreditNote[]
+  lead              Lead                        @relation(fields: [leadId], references: [id])
+  quotation         Quotation?                  @relation(fields: [quotationId], references: [id])
+  legalEntity       CompanyLegalEntity?         @relation(fields: [legalEntityId], references: [id])
+  accountManager    User?                       @relation("InvoiceAccountManager", fields: [accountManagerId], references: [id])
+  createdBy         User?                       @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  updatedBy         User?                       @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
+  payments          Payment[]
+  reminders         PaymentReminder[]
+  creditNotes       CreditNote[]
+  paymentMilestones QuotationPaymentMilestone[]
 
   @@index([status])
   @@index([leadId])
   @@index([dueDate])
   @@index([accountManagerId])
   @@index([legalEntityId])
+  @@index([nextFollowUpDate])
   @@map("invoices")
 }
 
@@ -1550,9 +1810,10 @@ model ExpenseCategory {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  expenses      Expense[]
-  budgets       ExpenseBudget[]
-  subCategories ExpenseSubCategory[]
+  expenses         Expense[]
+  budgets          ExpenseBudget[]
+  subCategories    ExpenseSubCategory[]
+  subCategoryLinks ExpenseCategorySubCategoryLink[]
 
   @@map("expense_categories")
 }
@@ -1569,12 +1830,34 @@ model ExpenseSubCategory {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  category ExpenseCategory @relation(fields: [categoryId], references: [id])
-  expenses Expense[]
+  category      ExpenseCategory                  @relation(fields: [categoryId], references: [id])
+  expenses      Expense[]
+  categoryLinks ExpenseCategorySubCategoryLink[]
 
   @@unique([categoryId, name])
   @@index([categoryId])
   @@map("expense_sub_categories")
+}
+
+// A standalone "+ Add" record on the Expenses > Category/Sub Category page,
+// pairing an existing Category with one of its existing Sub Categories as
+// its own editable row — distinct from (and independent of) the ownership
+// relationship above; deleting a link never touches the Category or Sub
+// Category it points to, and vice versa.
+model ExpenseCategorySubCategoryLink {
+  id            Int      @id @default(autoincrement())
+  categoryId    Int      @map("category_id")
+  subCategoryId Int      @map("sub_category_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  category    ExpenseCategory    @relation(fields: [categoryId], references: [id])
+  subCategory ExpenseSubCategory @relation(fields: [subCategoryId], references: [id])
+
+  @@unique([categoryId, subCategoryId])
+  @@index([categoryId])
+  @@index([subCategoryId])
+  @@map("expense_category_sub_category_links")
 }
 
 model Expense {
@@ -1582,7 +1865,23 @@ model Expense {
   expenseNumber   String    @unique @map("expense_number")
   categoryId      Int       @map("category_id")
   subCategoryId   Int?      @map("sub_category_id")
+  // Vendor is now selected from the Customer module (a Lead row) rather
+  // than typed freehand. vendorLeadId is the source of truth for the
+  // dropdown/edit-mode selection; vendor stays in sync as the resolved
+  // companyName so existing search-by-vendor (route.ts) and historical
+  // free-text rows (recorded before this field existed) keep working
+  // unchanged.
+  vendorLeadId    Int?      @map("vendor_lead_id")
   vendor          String?
+  // Set only for a Project Expense (the create form's "Overall Expense" vs
+  // "Project Expense" toggle) — null means Overall/company-wide spend, same
+  // "optional FK, null when not applicable" convention as Demo.projectId /
+  // Implementation.projectId.
+  projectId       Int?      @map("project_id")
+  // Same shape as projectId above, for a Product Expense (the create
+  // form's own Overall / Project / Product Expense toggle) — null means
+  // not a Product Expense, same convention.
+  productId       Int?      @map("product_id")
   expenseDate     DateTime  @map("expense_date")
   amount          Decimal   @db.Decimal(14, 2)
   currencyCode    String    @default("INR") @map("currency_code")
@@ -1605,11 +1904,17 @@ model Expense {
   category    ExpenseCategory     @relation(fields: [categoryId], references: [id])
   subCategory ExpenseSubCategory? @relation(fields: [subCategoryId], references: [id])
   recordedBy  User?               @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
+  vendorLead  Lead?               @relation("ExpenseVendor", fields: [vendorLeadId], references: [id])
+  project     Project?            @relation(fields: [projectId], references: [id])
+  product     Product?            @relation(fields: [productId], references: [id])
 
   @@index([status])
   @@index([categoryId])
   @@index([subCategoryId])
   @@index([expenseDate])
+  @@index([vendorLeadId])
+  @@index([projectId])
+  @@index([productId])
   @@map("expenses")
 }
 
@@ -1634,16 +1939,126 @@ model Vertical {
   headId             Int?     @map("head_id")
   budget             Decimal? @map("budget") @db.Decimal(15, 2)
   budgetCurrencyCode String?  @default("INR") @map("budget_currency_code")
+  // Flags a vertical as product-oriented (vs. a services/project-oriented
+  // one) — purely informational at this stage, set/edited from the
+  // Create/Edit Vertical form's own "Product Vertical" checkbox; nothing
+  // elsewhere in the app currently reads it.
+  isProductVertical  Boolean  @default(false) @map("is_product_vertical")
   isActive           Boolean  @default(true) @map("is_active")
   sortOrder          Int      @default(0) @map("sort_order")
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  head       User?           @relation("VerticalHead", fields: [headId], references: [id])
-  budgets    ExpenseBudget[]
-  quotations Quotation[]
+  head            User?                        @relation("VerticalHead", fields: [headId], references: [id])
+  budgets         ExpenseBudget[]
+  quotations      Quotation[]
+  employees       Employee[]
+  projects        Project[]
+  products        Product[]
+  allocations     EmployeeVerticalAllocation[]
+  implementations Implementation[]
+  demos           Demo[]
 
   @@map("verticals")
+}
+
+// Project master — under Masters alongside Vertical/Package, same
+// admin-managed-list shape: a Customer (Lead) + Vertical pairing with a
+// responsible Head and Budget. Soft-deleted (isActive) rather than hard
+// -deleted, same convention as Vertical, since other modules may key off it
+// later.
+model Project {
+  id                 Int      @id @default(autoincrement())
+  projectName        String   @map("project_name")
+  // Exactly one of customerId/leadId is set — enforced in the API, not here
+  // (see POST/PATCH /api/projects), so a Project is always tied to either an
+  // existing Customer or an existing Lead, never both, never neither.
+  customerId         Int?     @map("customer_id")
+  // Optional, independent reference to a Lead row (any pipeline stage — not
+  // necessarily the same row as customerId, though both FK the same `leads`
+  // table since Customer IS a Lead with status=CONFIRMED). Lets a Project
+  // record which specific enquiry/Lead it grew out of, separate from which
+  // Customer it's billed to.
+  leadId             Int?     @map("lead_id")
+  verticalId         Int      @map("vertical_id")
+  headId             Int?     @map("head_id")
+  budget             Decimal? @db.Decimal(15, 2)
+  budgetCurrencyCode String?  @default("INR") @map("budget_currency_code")
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  customer        Lead?            @relation("ProjectCustomer", fields: [customerId], references: [id])
+  lead            Lead?            @relation("ProjectLead", fields: [leadId], references: [id])
+  vertical        Vertical         @relation(fields: [verticalId], references: [id])
+  head            User?            @relation("ProjectHead", fields: [headId], references: [id])
+  // Reverse side of Lead.projectId — the Leads/Customers that picked this
+  // Project from their own "Project" field (see that field's comment).
+  linkedLeads     Lead[]           @relation("LeadProjectLink")
+  // Reverse side of Demo/Quotation/Implementation.projectId — those
+  // modules' own Project dropdown, scoped to the selected Lead/Customer.
+  demos           Demo[]
+  quotations      Quotation[]
+  implementations Implementation[]
+  expenses        Expense[]
+
+  @@index([customerId])
+  @@index([leadId])
+  @@index([verticalId])
+  @@map("projects")
+}
+
+// Product master — under Masters alongside Project, same shape and same
+// admin-managed-list convention: a Customer (Lead) + Vertical pairing with
+// a responsible Head and Budget. A separate master from Project (its own
+// table, own relations), not a sub-type of it, even though the fields
+// mirror it exactly — kept independent so a later Product-specific need
+// (e.g. its own linked Quotations/Demos) doesn't have to retrofit onto
+// Project's own relations. Soft-deleted (isActive) rather than
+// hard-deleted, same convention as Project/Vertical.
+model Product {
+  id                 Int      @id @default(autoincrement())
+  productName        String   @map("product_name")
+  // Exactly one of customerId/leadId is set — enforced in the API, not here
+  // (see POST/PATCH /api/products), same convention as Project.
+  customerId         Int?     @map("customer_id")
+  // Optional, independent reference to a Lead row — same rationale as
+  // Project.leadId.
+  leadId             Int?     @map("lead_id")
+  verticalId         Int      @map("vertical_id")
+  headId             Int?     @map("head_id")
+  budget             Decimal? @db.Decimal(15, 2)
+  budgetCurrencyCode String?  @default("INR") @map("budget_currency_code")
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  customer        Lead?            @relation("ProductCustomer", fields: [customerId], references: [id])
+  lead            Lead?            @relation("ProductLead", fields: [leadId], references: [id])
+  vertical        Vertical         @relation(fields: [verticalId], references: [id])
+  head            User?            @relation("ProductHead", fields: [headId], references: [id])
+  // Reverse side of Quotation.productId — Product Master's own "Budget
+  // Estimation" panel (see ProductBudgetPanel).
+  quotations      Quotation[]
+  // Reverse side of Implementation.productId — the Customer main table's
+  // own Status/Stage columns (CustomerProductsPanel), same convention as
+  // Project's own implementations relation.
+  implementations Implementation[]
+  // Reverse side of Expense.productId — the Expenses module's own Product
+  // Expenses tab, same convention as Project's own expenses relation.
+  expenses        Expense[]
+  // Reverse side of Demo.productId — the Demo module's own Project/Product
+  // picker, same convention as Project's own demos relation.
+  demos           Demo[]
+  // Reverse side of Lead.productId — the Leads/Customers that picked this
+  // Product from their own "Product" field, same convention as Project's
+  // own linkedLeads relation.
+  linkedLeads     Lead[]           @relation("LeadProductLink")
+
+  @@index([customerId])
+  @@index([leadId])
+  @@index([verticalId])
+  @@map("products")
 }
 
 // The package/offering being demoed — Trading, Jewellery Manufacturing,
@@ -1663,6 +2078,72 @@ model Package {
   demos Demo[]
 
   @@map("packages")
+}
+
+// Lead Source master — open picklist, same rationale/shape as Package above.
+// `code` is what Lead.leadSource actually stores (kept as a plain string on
+// Lead rather than an FK, same convention as Lead.businessVerticals/Vertical
+// — see that field's comment): the seed rows below use codes that exactly
+// match the values already sitting in existing Lead rows (WEBSITE, WHATSAPP,
+// REFERRAL, EMAIL, TRADE_SHOW, COLD_CALL, SALES_EXECUTIVE), so nothing on
+// Lead itself needed to change.
+model LeadSource {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  code      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("lead_sources")
+}
+
+// Lead Status master — not a fully open Vertical/Package-style picklist.
+// `code` for the 6 seeded rows (NEW, CONTACTED, FOLLOW_UP_SCHEDULED,
+// QUALIFIED, CONFIRMED, DISQUALIFIED) is what src/lib/leadStatus.ts's
+// STATUS_RANK/isTerminalLeadStatus and several routes (Customers =
+// status=CONFIRMED, Events/Documents tab unlock, the Un-convert flow)
+// branch on by exact value — renaming or deleting one of those 6 codes
+// would silently break that logic, so there's intentionally no delete
+// here. POST /api/lead-status-options does allow adding further rows on
+// top of those 6 (a custom, purely display-only status with no pipeline
+// rank/terminal behavior of its own — see that route's own comment); only
+// the fixed 6's own codes are permanent and PATCH-only.
+model LeadStatusOption {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  label     String
+  color     String
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("lead_status_options")
+}
+
+// Stage master — open picklist, same rationale/shape as LeadSource above,
+// replacing the hardcoded IMPLEMENTATION_STAGES array previously in
+// src/lib/implementationStatus.ts. Unlike LeadSource, the dropdowns built
+// from this (Customer module's Stage column, Implementation module's
+// Stage field/filter — both key off Implementation.currentStage) store
+// `name` rather than `code`: currentStage is a free-text field that
+// already held human-readable strings like "Go-Live" before this master
+// existed, so storing `name` keeps existing data compatible with zero
+// migration. `code` still exists for parity with every other open-picklist
+// master in this schema (Vertical/Package/LeadSource) and as a stable
+// admin-facing identifier, it's just not what gets written to
+// Implementation.currentStage.
+model Stage {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  code      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("stages")
 }
 
 model ExpenseBudget {
@@ -1728,6 +2209,41 @@ model ExpenseBudgetRevision {
   revisedBy User?         @relation("ExpenseBudgetRevisedBy", fields: [revisedById], references: [id])
 
   @@map("expense_budget_revisions")
+}
+
+// ============================================================
+// SALARY ALLOCATION MATRIX
+//
+// What fraction of each employee's cost sits behind each business line —
+// same Employee vs. Vertical grain as the Expense Budgets matrix (Category
+// vs. Vertical), reusing the exact same Vertical master (AI, BPO, Megha,
+// Megha+, Megha OS, Retail, Outsourcing, ...) rather than a second,
+// invented list of "internal cost lines" — an earlier version of this
+// module kept its own AllocationCategory/SalaryResource tables, which
+// turned out to just be duplicating Vertical and Employee. Rows come
+// straight from the real Employee table; there is no separate "add a
+// resource" identity to create or keep in sync.
+// ============================================================
+
+// One employee's percentage split into one vertical. verticalId null means
+// "Company-wide" — same convention as ExpenseBudget.verticalId. A row
+// summing to less than 100% for an employee (e.g. 0% — fully shared/
+// overhead cost) is valid and distinct from a genuine data-entry gap; the
+// UI's "Check" column (see employeeVerticalAllocation.ts) is what tells
+// those two apart, not this table.
+model EmployeeVerticalAllocation {
+  id         Int      @id @default(autoincrement())
+  employeeId Int      @map("employee_id")
+  verticalId Int?     @map("vertical_id")
+  percentage Decimal  @db.Decimal(5, 2)
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  vertical Vertical? @relation(fields: [verticalId], references: [id])
+
+  @@unique([employeeId, verticalId])
+  @@index([verticalId])
+  @@map("employee_vertical_allocations")
 }
 
 // ============================================================
