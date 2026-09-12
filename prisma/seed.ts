@@ -511,11 +511,22 @@ async function main() {
   console.log('  ✓ approve_leave permission granted to ADMIN, MANAGEMENT, FINANCE roles');
 
   // Starter leave types — upsert by code so re-seeding never duplicates.
+  // Casual Leave and Sick Leave were retired as leave types (replaced below
+  // by a standalone Annual Leave); Earned Leave remains the sole member of
+  // the common pool (accruing 1 day/month, capped at 12/year — see
+  // COMMON_POOL_LEAVE_CODES in leaveEngine.ts).
   const leaveTypes = [
-    { name: 'Casual Leave', code: 'CASUAL', isPaid: true, annualQuota: 12 },
-    { name: 'Sick Leave', code: 'SICK', isPaid: true, annualQuota: 12 },
-    { name: 'Earned Leave', code: 'EARNED', isPaid: true, annualQuota: 15 },
+    { name: 'Earned Leave', code: 'EARNED', isPaid: true, annualQuota: 12 },
     { name: 'Loss of Pay', code: 'LOP', isPaid: false, annualQuota: null },
+    // Special Paid Leave category (e.g. Maternity Leave) — deliberately
+    // separate from the common pool (see leaveEngine.ts): it has no
+    // annualQuota here, so it never triggers a quota/LOP check and is
+    // simply recorded as its own paid leave type.
+    { name: 'Maternity Leave', code: 'MATERNITY', isPaid: true, annualQuota: null },
+    // Standalone 12-day annual entitlement — checked on its own (the
+    // generic per-type quota path), not pooled with Earned Leave or
+    // anything else.
+    { name: 'Annual Leave', code: 'ANNUAL', isPaid: true, annualQuota: 12 },
   ];
   for (const lt of leaveTypes) {
     await prisma.leaveType.upsert({ where: { code: lt.code }, update: {}, create: lt });

@@ -7,7 +7,7 @@ import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
 
 interface LeaveType { id: number; name: string; code: string; isPaid: boolean; annualQuota: string | null; isActive: boolean }
-interface Balance { leaveTypeId: number; name: string; code: string; isPaid: boolean; quota: number | null; usedDays: number; remaining: number | null }
+interface Balance { leaveTypeId: number; name: string; code: string; isPaid: boolean; quota: number | null; usedDays: number; remaining: number | null; accruedDays?: number }
 interface MyRequest {
   id: number;
   startDate: string;
@@ -48,19 +48,51 @@ export default function MyLeavePage() {
   const blankForm = { leaveTypeId: '', startDate: '', endDate: '', days: '', reason: '' };
   const [form, setForm] = useState(blankForm);
 
+  // Shown instead of the old hard-block toast when a request would exceed
+  // its leave type's quota — lets the employee choose to still submit, with
+  // the excess days logged against Loss of Pay (see the apply mutation's
+  // acknowledgeLossOfPay resubmit below), rather than rejecting outright.
+  const [quotaConfirm, setQuotaConfirm] = useState<{ leaveTypeName: string; availableDays: number; excessDays: number } | null>(null);
+
+  interface QuotaExceededError extends Error {
+    quotaExceeded: true;
+    leaveTypeName: string;
+    availableDays: number;
+    excessDays: number;
+  }
+
   const apply = useMutation({
-    mutationFn: async () => {
-      const res = await fetch('/api/payroll/leave-requests/mine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to apply'); }
+    mutationFn: async (opts?: { acknowledgeLossOfPay?: boolean }) => {
+      const res = await fetch('/api/payroll/leave-requests/mine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, acknowledgeLossOfPay: opts?.acknowledgeLossOfPay || false }) });
+      if (!res.ok) {
+        const err = await res.json();
+        if (err.quotaExceeded) {
+          const quotaErr = new Error(err.message) as QuotaExceededError;
+          Object.assign(quotaErr, { quotaExceeded: true, leaveTypeName: err.leaveTypeName, availableDays: err.availableDays, excessDays: err.excessDays });
+          throw quotaErr;
+        }
+        throw new Error(err.message || 'Failed to apply');
+      }
       return res.json();
     },
-    onSuccess: (data: { departmentOverlapWarning?: string | null }) => {
+    onSuccess: (data: { departmentOverlapWarning?: string | null; split?: boolean; availableDays?: number; excessDays?: number }) => {
       queryClient.invalidateQueries({ queryKey: ['my-leave'] });
-      toast.success('Leave request submitted');
+      if (data.split) {
+        toast.success(`Leave request submitted — ${data.availableDays} day(s) as leave, ${data.excessDays} day(s) as Loss of Pay`);
+      } else {
+        toast.success('Leave request submitted');
+      }
       if (data.departmentOverlapWarning) toast(data.departmentOverlapWarning, { icon: '⚠️', duration: 8000 });
       setForm(blankForm);
+      setQuotaConfirm(null);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error | QuotaExceededError) => {
+      if ('quotaExceeded' in err && err.quotaExceeded) {
+        setQuotaConfirm({ leaveTypeName: err.leaveTypeName, availableDays: err.availableDays, excessDays: err.excessDays });
+        return;
+      }
+      toast.error(err.message);
+    },
   });
 
   const cancel = useMutation({
@@ -96,13 +128,16 @@ export default function MyLeavePage() {
           <div key={b.leaveTypeId} className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4">
             <p className="text-xs sm:text-sm text-slate-500">{b.name}</p>
             <p className="text-xl sm:text-2xl font-bold mt-1 text-slate-700">{b.remaining ?? '∞'}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{b.usedDays} used{b.quota != null ? ` of ${b.quota}` : ''}</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {b.usedDays} used{b.accruedDays != null ? ` of ${b.accruedDays} accrued` : b.quota != null ? ` of ${b.quota}` : ''}
+            </p>
+            {b.accruedDays != null && <p className="text-[11px] text-slate-300 mt-0.5">{b.quota} days/year, accruing 1/month</p>}
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <form onSubmit={(e) => { e.preventDefault(); if (!form.leaveTypeId || !form.startDate || !form.endDate || !form.days) { toast.error('All fields except reason are required'); return; } apply.mutate(); }} className="lg:col-span-1 bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3 h-fit">
+        <form onSubmit={(e) => { e.preventDefault(); if (!form.leaveTypeId || !form.startDate || !form.endDate || !form.days) { toast.error('All fields except reason are required'); return; } apply.mutate({}); }} className="lg:col-span-1 bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3 h-fit">
           <h2 className="text-base font-semibold text-slate-800">Apply for Leave</h2>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Leave Type</label>
@@ -166,6 +201,30 @@ export default function MyLeavePage() {
           )}
         </div>
       </div>
+
+      {quotaConfirm && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px] z-50 flex items-center justify-center p-4" onClick={() => setQuotaConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-semibold text-slate-800">Exceeds available balance</h3>
+            <p className="text-sm text-slate-600 mt-2">
+              Your leave request exceeds your available paid leave balance. The excess leave will be treated as Loss of Pay. Do you want to continue?
+            </p>
+            <p className="text-xs text-slate-400 mt-3">
+              {quotaConfirm.availableDays} day(s) → {quotaConfirm.leaveTypeName}, {quotaConfirm.excessDays} day(s) → Loss of Pay
+            </p>
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setQuotaConfirm(null)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800">Cancel</button>
+              <button
+                onClick={() => apply.mutate({ acknowledgeLossOfPay: true })}
+                disabled={apply.isPending}
+                className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
+              >
+                {apply.isPending ? 'Submitting...' : 'OK'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

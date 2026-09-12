@@ -36,7 +36,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 const EDITABLE_FIELDS = [
   'firstName', 'lastName', 'department', 'designation', 'role', 'employmentType', 'panNumber', 'uanNumber', 'esicNumber',
   'bankAccountNumber', 'bankIfsc', 'bankAccountHolder', 'bankName', 'taxRegime',
-  'pfApplicable', 'esiApplicable', 'ptApplicable', 'status',
+  'pfApplicable', 'esiApplicable', 'ptApplicable', 'status', 'timesheetStatus',
 ] as const;
 const DATE_FIELDS = ['dateOfJoining', 'dateOfLeaving'] as const;
 

@@ -509,6 +509,22 @@ export default function CustomerFormDrawer({
                                     <ChevronUpDownIcon className="h-4 w-4 text-slate-400" aria-hidden="true" />
                                   </Combobox.Button>
                                 </div>
+                                {/* Bare Transition (no enter/leave classes, so no visual change) —
+                                    its only job is `afterLeave`, the documented HeadlessUI pattern
+                                    for resetting local query state once the dropdown actually
+                                    finishes closing. Without this, closing the dropdown (e.g.
+                                    clicking the chevron, Escape, or blur) reverts the *input's own*
+                                    displayed text back to displayValue(projectComboValue) — that
+                                    part is built into Combobox.Input — but projectQuery (this
+                                    component's own separate filter/"+Create" state) was never told
+                                    to reset, so the options list kept rendering stale results for
+                                    whatever was typed and abandoned. Reopening the dropdown while
+                                    empty now correctly starts from the full project list again,
+                                    instead of a mismatched, blank-looking input over stale options. */}
+                                <Transition
+                                  as={Fragment}
+                                  afterLeave={() => setProjectQuery('')}
+                                >
                                 <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg bg-white py-1 text-sm shadow-lg border border-slate-200 focus:outline-none">
                                   {/* The just-created (pending, not yet saved) Project — pinned at
                                       the top and always shown once created, regardless of what's
@@ -564,6 +580,7 @@ export default function CustomerFormDrawer({
                                     </Combobox.Option>
                                   )}
                                 </Combobox.Options>
+                                </Transition>
                               </div>
                             </Combobox>
                           </div>

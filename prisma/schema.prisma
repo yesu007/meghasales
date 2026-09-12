@@ -1225,6 +1225,12 @@ model Employee {
   esiApplicable     Boolean   @default(false) @map("esi_applicable")
   ptApplicable      Boolean   @default(true) @map("pt_applicable")
   status            String    @default("ACTIVE") // ACTIVE | ON_NOTICE | EXITED
+  // Separate from `status` above (the employee's full HR/employment
+  // status) — a standalone Active/Inactive flag scoped to the Timesheet
+  // module only (Time & Attendance's own "Status" column, next to Type).
+  // Deliberately its own field rather than reusing/collapsing `status`, at
+  // the requester's explicit direction.
+  timesheetStatus   String    @default("ACTIVE") @map("timesheet_status") // ACTIVE | INACTIVE
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 

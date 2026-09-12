@@ -5,8 +5,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { periodRange, computeLeaveHours, computePaidHolidayHours, HOURS_PER_DAY } from '@/lib/payroll/timesheetEngine';
-import { round2 } from '@/lib/payroll/runEngine';
+import { periodRange, computeLeaveHours, computePaidHolidayHours, computeTotalDaysFromHours } from '@/lib/payroll/timesheetEngine';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,8 +46,11 @@ export async function GET(request: NextRequest) {
         const overtimeHours = entry ? Number(entry.overtimeHours) : 0;
         const { sickLeaveHours, ptoHours } = await computeLeaveHours(prisma, emp.id, start, end);
         const paidHolidayHours = computePaidHolidayHours(holidays, start, end, emp);
-        const totalHours = regularHours + overtimeHours + sickLeaveHours + ptoHours + paidHolidayHours;
-        const totalDays = round2(totalHours / HOURS_PER_DAY);
+        // Regular/Overtime are entered directly as days (no 8-hours=1-day
+        // conversion) — only Sick Leave/PTO/Paid Holiday are still tracked
+        // internally as hours (see timesheetEngine.ts), so those three stay
+        // divided by HOURS_PER_DAY to fold into the same day-based total.
+        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, sickLeaveHours, ptoHours, paidHolidayHours);
 
         return {
           employeeId: emp.id,
@@ -58,6 +60,7 @@ export async function GET(request: NextRequest) {
           designation: emp.designation,
           employmentType: emp.employmentType,
           status: emp.status,
+          timesheetStatus: emp.timesheetStatus,
           regularHours,
           overtimeHours,
           sickLeaveHours,
@@ -103,7 +106,7 @@ export async function PATCH(request: NextRequest) {
     const regularHours = body.regularHours != null ? Number(body.regularHours) : 0;
     const overtimeHours = body.overtimeHours != null ? Number(body.overtimeHours) : 0;
     if (!Number.isFinite(regularHours) || regularHours < 0 || !Number.isFinite(overtimeHours) || overtimeHours < 0) {
-      return NextResponse.json({ message: 'Hours must be non-negative numbers' }, { status: 400 });
+      return NextResponse.json({ message: 'Regular and Overtime days must be non-negative numbers' }, { status: 400 });
     }
 
     const period = await prisma.timesheetPeriod.findUnique({ where: { periodYear_periodMonth: { periodYear: year, periodMonth: month } } });
@@ -125,7 +128,7 @@ export async function PATCH(request: NextRequest) {
       entityType: 'TIMESHEET_ENTRY',
       entityId: entry.id,
       newValue: { regularHours, overtimeHours },
-      description: `Timesheet hours for employee ${employeeId}, ${month}/${year} set to ${regularHours}h regular / ${overtimeHours}h overtime`,
+      description: `Timesheet days for employee ${employeeId}, ${month}/${year} set to ${regularHours} regular / ${overtimeHours} overtime`,
       request,
     });
 

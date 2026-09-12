@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeAutoLopDaysFromRequests } from './leaveEngine';
+import { computeAutoLopDaysFromRequests, computeAccruedPoolDays } from './leaveEngine';
 
 describe('computeAutoLopDaysFromRequests', () => {
   const periodStart = new Date('2026-08-01');
@@ -69,5 +69,27 @@ describe('computeAutoLopDaysFromRequests', () => {
 
   it('returns 0 for no requests', () => {
     expect(computeAutoLopDaysFromRequests([], periodStart, periodEnd)).toBe(0);
+  });
+});
+
+describe('computeAccruedPoolDays', () => {
+  it('accrues 1 day per elapsed month within the current year (January = 1)', () => {
+    expect(computeAccruedPoolDays(2026, new Date('2026-01-15'))).toBe(1);
+  });
+
+  it('accrues cumulatively by March (3 days) — matches the worked example', () => {
+    expect(computeAccruedPoolDays(2026, new Date('2026-03-20'))).toBe(3);
+  });
+
+  it('caps at 12 days even in December', () => {
+    expect(computeAccruedPoolDays(2026, new Date('2026-12-31'))).toBe(12);
+  });
+
+  it('treats a past year as fully accrued (12)', () => {
+    expect(computeAccruedPoolDays(2025, new Date('2026-06-01'))).toBe(12);
+  });
+
+  it('treats a future year as not yet accrued (0)', () => {
+    expect(computeAccruedPoolDays(2027, new Date('2026-06-01'))).toBe(0);
   });
 });

@@ -108,3 +108,18 @@ export function computePaidHolidayHours(holidays: HolidayInput[], periodStart: D
 
   return round2(count * HOURS_PER_DAY);
 }
+
+// The same "Total Days" formula the Timesheet screen's own column computes
+// (GET /api/payroll/timesheet) — pulled out as a pure function so payroll
+// generation's own zero-days business rule (see generateRunPayslips) reads
+// off the exact same number the user sees on that screen, rather than a
+// second, independently-maintained formula that could drift out of sync
+// with it. Takes the already-resolved hour breakdown (regularHours/
+// overtimeHours from the period's TimesheetEntry, sickLeaveHours/ptoHours/
+// paidHolidayHours from computeLeaveHours/computePaidHolidayHours above) —
+// every caller already has to fetch/compute those for its own purposes
+// anyway, so this stays a plain sync calculation instead of re-querying.
+export function computeTotalDaysFromHours(regularHours: number, overtimeHours: number, sickLeaveHours: number, ptoHours: number, paidHolidayHours: number): number {
+  const otherDays = (sickLeaveHours + ptoHours + paidHolidayHours) / HOURS_PER_DAY;
+  return round2(regularHours + overtimeHours + otherDays);
+}

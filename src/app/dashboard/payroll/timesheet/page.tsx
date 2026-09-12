@@ -22,6 +22,9 @@ interface TimesheetEmployeeRow {
   designation: string | null;
   employmentType: string;
   status: string;
+  // Standalone Active/Inactive flag for this Timesheet column specifically
+  // — separate from `status` above (the employee's full HR status).
+  timesheetStatus: string;
   regularHours: number;
   overtimeHours: number;
   sickLeaveHours: number;
@@ -98,7 +101,20 @@ export default function TimeAndAttendancePage() {
   const saveHours = useMutation({
     mutationFn: async ({ employeeId, regularHours, overtimeHours }: { employeeId: number; regularHours: number; overtimeHours: number }) => {
       const res = await fetch('/api/payroll/timesheet', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employeeId, year, month, regularHours, overtimeHours }) });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save hours'); }
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save timesheet entry'); }
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['timesheet', year, month] }),
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  // Lives on the Employee record (not per-period, unlike Regular/Overtime
+  // above) — same PATCH /api/payroll/employees/[id] the Employee profile's
+  // own Status field already uses, just this one column instead.
+  const saveTimesheetStatus = useMutation({
+    mutationFn: async ({ employeeId, timesheetStatus }: { employeeId: number; timesheetStatus: string }) => {
+      const res = await fetch(`/api/payroll/employees/${employeeId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ timesheetStatus }) });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to update status'); }
       return res.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['timesheet', year, month] }),
@@ -148,7 +164,14 @@ export default function TimeAndAttendancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, search]);
 
-  const fmtHours = (n: number) => (n > 0 ? `${n} Hours` : '-');
+  // Sick Leave/PTO/Paid Holiday are still tracked internally as hours (see
+  // timesheetEngine.ts) — matches HOURS_PER_DAY there, kept as a local
+  // constant instead of importing it so this client page doesn't pull in
+  // that Prisma-dependent module (same reasoning as isWeeklyOff's own
+  // split into saturdayPolicy.ts). Displayed in Days here for consistency
+  // with Regular/Overtime/Total Days, which are already day-based.
+  const HOURS_PER_DAY = 8;
+  const fmtDays = (hours: number) => (hours > 0 ? `${Math.round((hours / HOURS_PER_DAY) * 100) / 100} Days` : '-');
 
   const getDraft = (row: TimesheetEmployeeRow) => drafts[row.employeeId] ?? { regularHours: row.regularHours ? String(row.regularHours) : '', overtimeHours: row.overtimeHours ? String(row.overtimeHours) : '' };
   const setDraft = (employeeId: number, patch: Partial<{ regularHours: string; overtimeHours: string }>) =>
@@ -269,6 +292,7 @@ export default function TimeAndAttendancePage() {
                     <tr>
                       <th className="px-4 py-3 text-left font-semibold text-white">Name</th>
                       <th className="px-4 py-3 text-left font-semibold text-white">Type</th>
+                      <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Regular</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Overtime</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Sick Leave</th>
@@ -297,6 +321,17 @@ export default function TimeAndAttendancePage() {
                             <p>{EMPLOYMENT_LABELS[row.employmentType] || row.employmentType}</p>
                             <p className="text-xs text-slate-400">Salaried</p>
                           </td>
+                          <td className="px-4 py-3">
+                            <select
+                              value={row.timesheetStatus}
+                              disabled={isSubmitted || saveTimesheetStatus.isPending}
+                              onChange={(e) => saveTimesheetStatus.mutate({ employeeId: row.employeeId, timesheetStatus: e.target.value })}
+                              className={`px-2 py-1 rounded text-xs font-medium border-0 ${row.timesheetStatus === 'INACTIVE' ? 'bg-slate-100 text-slate-500' : 'bg-green-100 text-green-700'}`}
+                            >
+                              <option value="ACTIVE">Active</option>
+                              <option value="INACTIVE">Inactive</option>
+                            </select>
+                          </td>
                           <td className="px-4 py-3 text-right">
                             <input
                               type="number" min={0} step={0.5} disabled={isSubmitted}
@@ -315,9 +350,9 @@ export default function TimeAndAttendancePage() {
                               className="w-20 text-right px-2 py-1 border border-transparent hover:border-slate-300 focus:border-amber-500 rounded text-slate-700 disabled:bg-transparent disabled:text-slate-500"
                             />
                           </td>
-                          <td className="px-4 py-3 text-right text-slate-600">{fmtHours(row.sickLeaveHours)}</td>
-                          <td className="px-4 py-3 text-right text-slate-600">{fmtHours(row.ptoHours)}</td>
-                          <td className="px-4 py-3 text-right text-slate-600">{fmtHours(row.paidHolidayHours)}</td>
+                          <td className="px-4 py-3 text-right text-slate-600">{fmtDays(row.sickLeaveHours)}</td>
+                          <td className="px-4 py-3 text-right text-slate-600">{fmtDays(row.ptoHours)}</td>
+                          <td className="px-4 py-3 text-right text-slate-600">{fmtDays(row.paidHolidayHours)}</td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-800">{row.totalDays} Days</td>
                         </tr>
                       );
