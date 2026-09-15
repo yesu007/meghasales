@@ -55,26 +55,19 @@ export async function computeAutoLopDays(tx: Client, employeeId: number, periodS
   return computeAutoLopDaysFromRequests(requests, periodStart, periodEnd);
 }
 
-// --- Common paid-leave pool ---------------------------------------------
-// Any leave type code listed here draws from ONE combined 12-day annual
-// paid leave entitlement that accrues at 1 day per elapsed calendar month
-// (capped at 12) rather than being available in full from January, instead
-// of carrying its own independent annual quota. Each type's own
-// `annualQuota` column is intentionally left untouched in the database but
-// ignored in the balance calculation for a code listed here — it's
-// superseded by the formula below. Any OTHER leave type that carries its
-// own `annualQuota` (Annual Leave included — deliberately standalone, not
-// pooled) keeps the old, unrelated per-type quota check in the POST
-// handler instead. Loss of Pay and any dedicated Paid Leave category (e.g.
-// Maternity Leave) are always excluded from this pool.
-//
-// Originally Casual Leave and Sick Leave were pool members alongside
-// Earned Leave; both were removed as leave types entirely (replaced by a
-// standalone Annual Leave), leaving Earned Leave as the pool's only
-// current member — kept pooled (rather than reverted to its own instant
-// 12-day quota) since nothing asked for that member's own behavior to
-// change.
-export const COMMON_POOL_LEAVE_CODES = ['EARNED'];
+// --- Common paid-leave pool ("Annual Leave") ----------------------------
+// Earned Leave, Casual Leave, and Sick Leave all draw from ONE combined
+// 12-day annual entitlement — branded "Annual Leave" wherever the combined
+// balance is shown — that accrues at 1 day per elapsed calendar month
+// (capped at 12) rather than being available in full from January. Each
+// member type's own `annualQuota` column is intentionally left untouched
+// in the database but ignored in the balance calculation — it's superseded
+// by the formula below. The old standalone "Annual Leave" LeaveType row
+// (its own instant 12-day quota, unrelated to this pool) is deactivated
+// now that the name refers to this combined pool instead. Loss of Pay and
+// any dedicated Paid Leave category (e.g. the renamed Maternity Leave) are
+// always excluded from this pool.
+export const COMMON_POOL_LEAVE_CODES = ['EARNED', 'CASUAL', 'SICK'];
 export const COMMON_POOL_ANNUAL_DAYS = 12;
 export const COMMON_POOL_MONTHLY_ACCRUAL = 1;
 

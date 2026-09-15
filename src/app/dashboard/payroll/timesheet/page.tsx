@@ -28,8 +28,10 @@ interface TimesheetEmployeeRow {
   regularHours: number;
   overtimeHours: number;
   sickLeaveHours: number;
-  ptoHours: number;
+  ptoHours: number; // Casual Leave
   paidHolidayHours: number;
+  earnedLeaveHours: number;
+  lopDays: number; // already in days, not hours — see computeAutoLopDays
   totalDays: number;
 }
 interface TimesheetResponse {
@@ -172,6 +174,9 @@ export default function TimeAndAttendancePage() {
   // with Regular/Overtime/Total Days, which are already day-based.
   const HOURS_PER_DAY = 8;
   const fmtDays = (hours: number) => (hours > 0 ? `${Math.round((hours / HOURS_PER_DAY) * 100) / 100} Days` : '-');
+  // lopDays comes pre-computed in days (see computeAutoLopDays), not hours —
+  // no /HOURS_PER_DAY conversion needed here, unlike fmtDays above.
+  const fmtLopDays = (days: number) => (days > 0 ? `${Math.round(days * 100) / 100} Days` : '-');
 
   const getDraft = (row: TimesheetEmployeeRow) => drafts[row.employeeId] ?? { regularHours: row.regularHours ? String(row.regularHours) : '', overtimeHours: row.overtimeHours ? String(row.overtimeHours) : '' };
   const setDraft = (employeeId: number, patch: Partial<{ regularHours: string; overtimeHours: string }>) =>
@@ -296,8 +301,10 @@ export default function TimeAndAttendancePage() {
                       <th className="px-4 py-3 text-right font-semibold text-white">Regular</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Overtime</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Sick Leave</th>
-                      <th className="px-4 py-3 text-right font-semibold text-white">PTO</th>
+                      <th className="px-4 py-3 text-right font-semibold text-white">PTO (Casual Leave)</th>
+                      <th className="px-4 py-3 text-right font-semibold text-white">Loss of Pay</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Paid Holiday</th>
+                      <th className="px-4 py-3 text-right font-semibold text-white">Earned Leave</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Total Days</th>
                     </tr>
                   </thead>
@@ -352,7 +359,9 @@ export default function TimeAndAttendancePage() {
                           </td>
                           <td className="px-4 py-3 text-right text-slate-600">{fmtDays(row.sickLeaveHours)}</td>
                           <td className="px-4 py-3 text-right text-slate-600">{fmtDays(row.ptoHours)}</td>
+                          <td className="px-4 py-3 text-right text-slate-600">{fmtLopDays(row.lopDays)}</td>
                           <td className="px-4 py-3 text-right text-slate-600">{fmtDays(row.paidHolidayHours)}</td>
+                          <td className="px-4 py-3 text-right text-slate-600">{fmtDays(row.earnedLeaveHours)}</td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-800">{row.totalDays} Days</td>
                         </tr>
                       );

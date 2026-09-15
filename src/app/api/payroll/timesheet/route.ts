@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { periodRange, computeLeaveHours, computePaidHolidayHours, computeTotalDaysFromHours } from '@/lib/payroll/timesheetEngine';
+import { computeAutoLopDays } from '@/lib/payroll/leaveEngine';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,13 +45,14 @@ export async function GET(request: NextRequest) {
         const entry = entryByEmployee.get(emp.id);
         const regularHours = entry ? Number(entry.regularHours) : 0;
         const overtimeHours = entry ? Number(entry.overtimeHours) : 0;
-        const { sickLeaveHours, ptoHours } = await computeLeaveHours(prisma, emp.id, start, end);
+        const { sickLeaveHours, ptoHours, earnedLeaveHours } = await computeLeaveHours(prisma, emp.id, start, end);
         const paidHolidayHours = computePaidHolidayHours(holidays, start, end, emp);
+        const lopDays = await computeAutoLopDays(prisma, emp.id, start, end);
         // Regular/Overtime are entered directly as days (no 8-hours=1-day
-        // conversion) — only Sick Leave/PTO/Paid Holiday are still tracked
-        // internally as hours (see timesheetEngine.ts), so those three stay
-        // divided by HOURS_PER_DAY to fold into the same day-based total.
-        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, sickLeaveHours, ptoHours, paidHolidayHours);
+        // conversion). Sick/PTO(Casual)/Paid Holiday/Earned are shown as
+        // their own informational columns only — only LOP (already in days)
+        // reduces Total Days, see computeTotalDaysFromHours.
+        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, lopDays);
 
         return {
           employeeId: emp.id,
@@ -66,6 +68,8 @@ export async function GET(request: NextRequest) {
           sickLeaveHours,
           ptoHours,
           paidHolidayHours,
+          earnedLeaveHours,
+          lopDays,
           totalDays,
         };
       })

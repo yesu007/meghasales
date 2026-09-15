@@ -51,7 +51,15 @@ export default function LeaveRequestsPanel({ initialStatus = 'PENDING' }: { init
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to update request'); }
       return res.json();
     },
-    onSuccess: (_, { status }) => { queryClient.invalidateQueries({ queryKey: ['leave-requests'] }); toast.success(`Request ${status.toLowerCase()}`); },
+    onSuccess: (_, { status }) => {
+      queryClient.invalidateQueries({ queryKey: ['leave-requests'] });
+      // Approving/rejecting/cancelling here changes the balances shown on
+      // My Leave (it reads the same leave requests) — without this, that
+      // page could keep showing pre-decision numbers until its own 30s
+      // staleTime lapses or the user hard-refreshes.
+      queryClient.invalidateQueries({ queryKey: ['my-leave'] });
+      toast.success(`Request ${status.toLowerCase()}`);
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 

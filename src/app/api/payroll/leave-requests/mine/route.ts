@@ -41,26 +41,35 @@ export async function GET() {
       prisma.leaveType.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
     ]);
 
-    // Casual/Sick/Earned no longer get their own card each — they share one
-    // combined, accrual-based balance (see leaveEngine.ts), so they're
-    // collapsed into a single synthetic entry here instead of three
-    // separately-computed ones. Everything else (Loss of Pay, any Paid
-    // Leave category) keeps its own card exactly as before.
-    const poolTypes = leaveTypes.filter((lt) => COMMON_POOL_LEAVE_CODES.includes(lt.code));
+    // Casual/Sick/Earned each still get their own card (showing just their
+    // individual used-days, no quota of their own — see leaveType interface
+    // comment on `remaining: null`), plus one extra synthetic "Annual
+    // Leave" card summing all three against the shared accrual-based pool
+    // (see leaveEngine.ts). Everything else (Loss of Pay, any Paid Leave
+    // category) keeps its own card exactly as before.
+    const poolTypes = COMMON_POOL_LEAVE_CODES.map((code) => leaveTypes.find((lt) => lt.code === code)).filter((lt): lt is (typeof leaveTypes)[number] => !!lt);
     const otherTypes = leaveTypes.filter((lt) => !COMMON_POOL_LEAVE_CODES.includes(lt.code));
 
     const balances: Array<{ leaveTypeId: number; name: string; code: string; isPaid: boolean; quota: number | null; usedDays: number; remaining: number | null; accruedDays?: number }> = [];
 
-    if (poolTypes.length > 0) {
-      const poolTypeIds = poolTypes.map((lt) => lt.id);
+    const poolUsedDaysByType = new Map<number, number>();
+    for (const lt of poolTypes) {
       const usedDays = requests
-        .filter((r) => poolTypeIds.includes(r.leaveTypeId) && r.status === 'APPROVED' && new Date(r.startDate).getFullYear() === currentYear)
+        .filter((r) => r.leaveTypeId === lt.id && r.status === 'APPROVED' && new Date(r.startDate).getFullYear() === currentYear)
         .reduce((s, r) => s + Number(r.days), 0);
+      poolUsedDaysByType.set(lt.id, usedDays);
+      // No quota/remaining of its own — the shared cap lives on the
+      // combined "Annual Leave" card pushed below, not per member type.
+      balances.push({ leaveTypeId: lt.id, name: lt.name, code: lt.code, isPaid: true, quota: null, usedDays, remaining: null });
+    }
+
+    if (poolTypes.length > 0) {
+      const usedDays = Array.from(poolUsedDaysByType.values()).reduce((s, d) => s + d, 0);
       const accruedDays = computeAccruedPoolDays(currentYear);
       const remaining = Math.max(0, round2(accruedDays - usedDays));
       balances.push({
         leaveTypeId: 0, // synthetic — not a real LeaveType row, represents the combined pool
-        name: `Paid Leave (${poolTypes.map((t) => t.name).join(' / ')})`,
+        name: 'Annual Leave',
         code: 'COMMON_POOL',
         isPaid: true,
         quota: COMMON_POOL_ANNUAL_DAYS,

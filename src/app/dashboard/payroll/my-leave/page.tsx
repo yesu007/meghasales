@@ -116,22 +116,34 @@ export default function MyLeavePage() {
     );
   }
 
+  // The combined Annual Leave pool card is pulled out of the grid and shown
+  // as a small badge next to the page title instead (see the header row
+  // below) — every other balance (Earned/Casual/Sick/Loss of Pay/Paid
+  // Holidays) still renders as its own full-size card.
+  const annualLeave = data.balances.find((b) => b.accruedDays != null);
+  const otherBalances = data.balances.filter((b) => b.accruedDays == null);
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-slate-800">My Leave</h1>
-        <p className="text-slate-500 mt-0.5 text-sm sm:text-base">{data.employee.employeeCode}</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-800">My Leave</h1>
+          <p className="text-slate-500 mt-0.5 text-sm sm:text-base">{data.employee.employeeCode}</p>
+        </div>
+        {annualLeave && (
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 px-3 py-2 text-right max-w-[190px]">
+            <p className="text-[15px] font-bold text-slate-500">Annual Leave · {annualLeave.quota}</p>
+            <p className="text-lg font-bold text-slate-700 leading-tight">{annualLeave.remaining ?? '∞'}</p>
+            <p className="text-[11px] text-slate-400">{annualLeave.usedDays} used of {annualLeave.accruedDays} accrued</p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {data.balances.map((b) => (
+        {otherBalances.map((b) => (
           <div key={b.leaveTypeId} className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4">
             <p className="text-xs sm:text-sm text-slate-500">{b.name}</p>
-            <p className="text-xl sm:text-2xl font-bold mt-1 text-slate-700">{b.remaining ?? '∞'}</p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {b.usedDays} used{b.accruedDays != null ? ` of ${b.accruedDays} accrued` : b.quota != null ? ` of ${b.quota}` : ''}
-            </p>
-            {b.accruedDays != null && <p className="text-[11px] text-slate-300 mt-0.5">{b.quota} days/year, accruing 1/month</p>}
+            <p className="text-xl sm:text-2xl font-bold mt-1 text-slate-700">{b.usedDays}</p>
           </div>
         ))}
       </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeLeaveHoursFromRequests, computePaidHolidayHours, isWeeklyOff } from './timesheetEngine';
+import { computeLeaveHoursFromRequests, computePaidHolidayHours, computeTotalDaysFromHours, isWeeklyOff } from './timesheetEngine';
 
 describe('computeLeaveHoursFromRequests', () => {
   const periodStart = new Date('2026-08-01');
@@ -11,19 +11,38 @@ describe('computeLeaveHoursFromRequests', () => {
       periodStart,
       periodEnd
     );
-    expect(result).toEqual({ sickLeaveHours: 16, ptoHours: 0 });
+    expect(result).toEqual({ sickLeaveHours: 16, ptoHours: 0, earnedLeaveHours: 0 });
   });
 
-  it('buckets every other paid type into ptoHours', () => {
+  it('buckets a CASUAL request into ptoHours (PTO/Casual Leave)', () => {
+    const result = computeLeaveHoursFromRequests(
+      [{ startDate: new Date('2026-08-05'), endDate: new Date('2026-08-05'), days: 1, leaveType: { code: 'CASUAL', isPaid: true } }],
+      periodStart,
+      periodEnd
+    );
+    expect(result).toEqual({ sickLeaveHours: 0, ptoHours: 8, earnedLeaveHours: 0 });
+  });
+
+  it('buckets an EARNED request into earnedLeaveHours', () => {
+    const result = computeLeaveHoursFromRequests(
+      [{ startDate: new Date('2026-08-20'), endDate: new Date('2026-08-20'), days: 1, leaveType: { code: 'EARNED', isPaid: true } }],
+      periodStart,
+      periodEnd
+    );
+    expect(result).toEqual({ sickLeaveHours: 0, ptoHours: 0, earnedLeaveHours: 8 });
+  });
+
+  it('keeps Sick, Casual, and Earned in separate buckets when combined', () => {
     const result = computeLeaveHoursFromRequests(
       [
+        { startDate: new Date('2026-08-03'), endDate: new Date('2026-08-04'), days: 2, leaveType: { code: 'SICK', isPaid: true } },
         { startDate: new Date('2026-08-05'), endDate: new Date('2026-08-05'), days: 1, leaveType: { code: 'CASUAL', isPaid: true } },
         { startDate: new Date('2026-08-20'), endDate: new Date('2026-08-20'), days: 1, leaveType: { code: 'EARNED', isPaid: true } },
       ],
       periodStart,
       periodEnd
     );
-    expect(result).toEqual({ sickLeaveHours: 0, ptoHours: 16 });
+    expect(result).toEqual({ sickLeaveHours: 16, ptoHours: 8, earnedLeaveHours: 8 });
   });
 
   it('excludes unpaid leave (LOP) entirely', () => {
@@ -32,7 +51,7 @@ describe('computeLeaveHoursFromRequests', () => {
       periodStart,
       periodEnd
     );
-    expect(result).toEqual({ sickLeaveHours: 0, ptoHours: 0 });
+    expect(result).toEqual({ sickLeaveHours: 0, ptoHours: 0, earnedLeaveHours: 0 });
   });
 
   it('pro-rates a request spanning a period boundary', () => {
@@ -43,11 +62,26 @@ describe('computeLeaveHoursFromRequests', () => {
       periodStart,
       periodEnd
     );
-    expect(result).toEqual({ sickLeaveHours: 0, ptoHours: 24 });
+    expect(result).toEqual({ sickLeaveHours: 0, ptoHours: 24, earnedLeaveHours: 0 });
   });
 
   it('returns zeros for no requests', () => {
-    expect(computeLeaveHoursFromRequests([], periodStart, periodEnd)).toEqual({ sickLeaveHours: 0, ptoHours: 0 });
+    expect(computeLeaveHoursFromRequests([], periodStart, periodEnd)).toEqual({ sickLeaveHours: 0, ptoHours: 0, earnedLeaveHours: 0 });
+  });
+});
+
+describe('computeTotalDaysFromHours', () => {
+  it('is Regular + Overtime - LOP', () => {
+    // From the requirement's own example: 20 regular + 2 overtime - 1 LOP = 21.
+    expect(computeTotalDaysFromHours(20, 2, 1)).toBe(21);
+  });
+
+  it('is unaffected when there is no LOP', () => {
+    expect(computeTotalDaysFromHours(20, 2, 0)).toBe(22);
+  });
+
+  it('deducts fractional LOP days', () => {
+    expect(computeTotalDaysFromHours(20, 0, 0.5)).toBe(19.5);
   });
 });
 
