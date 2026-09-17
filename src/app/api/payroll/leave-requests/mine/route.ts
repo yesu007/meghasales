@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { findOverlappingDepartmentColleagues, COMMON_POOL_LEAVE_CODES, COMMON_POOL_ANNUAL_DAYS, computeAccruedPoolDays } from '@/lib/payroll/leaveEngine';
+import { findOverlappingDepartmentColleagues, ANNUAL_LEAVE_EXCLUDED_CODES, ANNUAL_LEAVE_CONFIG_CODE, countsTowardAnnualLeave, getAnnualLeaveConfig, computeAccruedPoolDays } from '@/lib/payroll/leaveEngine';
 import { round2 } from '@/lib/payroll/runEngine';
 import { isPushConfigured, sendPushToUser } from '@/lib/push';
 
@@ -32,23 +32,34 @@ export async function GET() {
     if (!employee) return NextResponse.json({ employee: null, requests: [], balances: [] });
 
     const currentYear = new Date().getFullYear();
-    const [requests, leaveTypes] = await Promise.all([
+    const [requests, leaveTypes, annualLeaveConfig] = await Promise.all([
       prisma.leaveRequest.findMany({
         where: { employeeId: employee.id },
         include: { leaveType: { select: { name: true, code: true, isPaid: true } } },
         orderBy: { startDate: 'desc' },
       }),
       prisma.leaveType.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
+      getAnnualLeaveConfig(prisma),
     ]);
 
-    // Casual/Sick/Earned each still get their own card (showing just their
-    // individual used-days, no quota of their own — see leaveType interface
-    // comment on `remaining: null`), plus one extra synthetic "Annual
-    // Leave" card summing all three against the shared accrual-based pool
-    // (see leaveEngine.ts). Everything else (Loss of Pay, any Paid Leave
-    // category) keeps its own card exactly as before.
-    const poolTypes = COMMON_POOL_LEAVE_CODES.map((code) => leaveTypes.find((lt) => lt.code === code)).filter((lt): lt is (typeof leaveTypes)[number] => !!lt);
-    const otherTypes = leaveTypes.filter((lt) => !COMMON_POOL_LEAVE_CODES.includes(lt.code));
+    // The ANNUAL_LEAVE_CONFIG_CODE row (Time-off Policy's "Annual Leave"
+    // entry) is a configuration source only — it's where the admin sets the
+    // pool's entitlement, not something an employee requests or sees as its
+    // own balance card, so it's dropped here before building any of the
+    // per-type cards below.
+    const applicableLeaveTypes = leaveTypes.filter((lt) => lt.code !== ANNUAL_LEAVE_CONFIG_CODE);
+
+    // Every leave type except LOP/Earned/Paid Holidays (see
+    // countsTowardAnnualLeave in leaveEngine.ts) gets its own card (showing
+    // just its individual used-days, no quota of its own — see leaveType
+    // interface comment on `remaining: null`), plus one extra synthetic
+    // "Annual Leave" card summing all of them against the shared
+    // accrual-based pool. This is exclusion-based, not a fixed list, so a
+    // new paid leave type added later automatically joins the pool.
+    // Everything excluded (Loss of Pay, Earned, Paid Holidays) keeps its
+    // own card exactly as before.
+    const poolTypes = applicableLeaveTypes.filter((lt) => countsTowardAnnualLeave(lt.code));
+    const otherTypes = applicableLeaveTypes.filter((lt) => !countsTowardAnnualLeave(lt.code));
 
     const balances: Array<{ leaveTypeId: number; name: string; code: string; isPaid: boolean; quota: number | null; usedDays: number; remaining: number | null; accruedDays?: number }> = [];
 
@@ -63,16 +74,22 @@ export async function GET() {
       balances.push({ leaveTypeId: lt.id, name: lt.name, code: lt.code, isPaid: true, quota: null, usedDays, remaining: null });
     }
 
-    if (poolTypes.length > 0) {
+    // The combined "Annual Leave" card only appears once the entitlement is
+    // actually configured (Time & Attendance > Time-off Policy > a leave
+    // type named "Annual Leave", code ANNUAL, with its Annual Quota set —
+    // see getAnnualLeaveConfig in leaveEngine.ts). Unconfigured, each pool
+    // type above still shows its own used-days card, just with no combined
+    // cap — never a fake/default entitlement.
+    if (poolTypes.length > 0 && annualLeaveConfig) {
       const usedDays = Array.from(poolUsedDaysByType.values()).reduce((s, d) => s + d, 0);
-      const accruedDays = computeAccruedPoolDays(currentYear);
+      const accruedDays = computeAccruedPoolDays(annualLeaveConfig.annualDays, currentYear);
       const remaining = Math.max(0, round2(accruedDays - usedDays));
       balances.push({
         leaveTypeId: 0, // synthetic — not a real LeaveType row, represents the combined pool
         name: 'Annual Leave',
         code: 'COMMON_POOL',
         isPaid: true,
-        quota: COMMON_POOL_ANNUAL_DAYS,
+        quota: annualLeaveConfig.annualDays,
         usedDays,
         remaining,
         accruedDays,
@@ -113,6 +130,12 @@ export async function POST(request: NextRequest) {
 
     const leaveType = await prisma.leaveType.findUnique({ where: { id: Number(leaveTypeId) } });
     if (!leaveType || !leaveType.isActive) return NextResponse.json({ message: 'Leave type not found' }, { status: 404 });
+    // The Annual Leave pool's own entitlement config row is not something
+    // to apply for directly (the My Leave form already hides it from the
+    // dropdown) — reject it here too in case it's ever hit directly.
+    if (leaveType.code === ANNUAL_LEAVE_CONFIG_CODE) {
+      return NextResponse.json({ message: 'Annual Leave is a configuration entry, not a leave type you can apply for — apply for Casual/Sick/etc. instead' }, { status: 400 });
+    }
 
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -126,20 +149,28 @@ export async function POST(request: NextRequest) {
     });
     if (overlapping) return NextResponse.json({ message: 'You already have a pending or approved request overlapping these dates' }, { status: 409 });
 
-    // Casual/Sick/Earned draw from ONE shared, monthly-accruing 12-day
-    // balance instead of each carrying its own annual quota — checked here
-    // ahead of (and instead of) that type's own annualQuota column. Any
-    // other quota'd leave type an admin adds later keeps the original
-    // per-type check in the else-if below, untouched.
-    if (COMMON_POOL_LEAVE_CODES.includes(leaveType.code)) {
+    // Every leave type except LOP/Earned/Paid Holidays (see
+    // countsTowardAnnualLeave in leaveEngine.ts) draws from ONE shared,
+    // monthly-accruing balance instead of each carrying its own annual
+    // quota — checked here ahead of (and instead of) that type's own
+    // annualQuota column. This is exclusion-based: a new paid leave type an
+    // admin adds later automatically joins this shared pool unless its code
+    // is added to ANNUAL_LEAVE_EXCLUDED_CODES. The excluded types keep the
+    // original per-type check in the else-if below, untouched. The pool's
+    // entitlement itself comes from Time-off Policy (getAnnualLeaveConfig)
+    // — if it hasn't been configured yet, no cap applies at all here (falls
+    // straight through to the plain create at the bottom), rather than
+    // enforcing a made-up default.
+    const annualLeaveConfig = countsTowardAnnualLeave(leaveType.code) ? await getAnnualLeaveConfig(prisma) : null;
+    if (annualLeaveConfig) {
       const currentYear = start.getFullYear();
-      const poolTypeIds = (await prisma.leaveType.findMany({ where: { code: { in: COMMON_POOL_LEAVE_CODES } }, select: { id: true } })).map((t) => t.id);
+      const poolTypeIds = (await prisma.leaveType.findMany({ where: { code: { notIn: ANNUAL_LEAVE_EXCLUDED_CODES } }, select: { id: true } })).map((t) => t.id);
       const used = await prisma.leaveRequest.aggregate({
         where: { employeeId: employee.id, leaveTypeId: { in: poolTypeIds }, status: 'APPROVED', startDate: { gte: new Date(`${currentYear}-01-01`) } },
         _sum: { days: true },
       });
       const usedDays = Number(used._sum.days || 0);
-      const accruedDays = computeAccruedPoolDays(currentYear);
+      const accruedDays = computeAccruedPoolDays(annualLeaveConfig.annualDays, currentYear);
       const requestedDays = Number(days);
 
       if (usedDays + requestedDays > accruedDays) {

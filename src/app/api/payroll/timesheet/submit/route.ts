@@ -5,7 +5,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { periodRange, computeTotalDaysFromHours } from '@/lib/payroll/timesheetEngine';
+import { periodRange, computeOtherLeaveDays, computeTotalDaysFromHours } from '@/lib/payroll/timesheetEngine';
 import { computeAutoLopDays } from '@/lib/payroll/leaveEngine';
 
 export const dynamic = 'force-dynamic';
@@ -54,7 +54,8 @@ export async function POST(request: NextRequest) {
         const regularHours = entry ? Number(entry.regularHours) : 0;
         const overtimeHours = entry ? Number(entry.overtimeHours) : 0;
         const lopDays = await computeAutoLopDays(prisma, emp.id, start, end);
-        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, lopDays);
+        const otherLeaveDays = await computeOtherLeaveDays(prisma, emp.id, start, end);
+        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, otherLeaveDays, lopDays);
         if (totalDays === 0) zeroDayActiveEmployees.push(`${emp.firstName} ${emp.lastName}`);
       }
 

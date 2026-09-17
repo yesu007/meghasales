@@ -156,7 +156,14 @@ export default function MyLeavePage() {
             <AddableSelect
               value={form.leaveTypeId}
               onChange={(v) => setForm((f) => ({ ...f, leaveTypeId: v }))}
-              options={leaveTypes.filter((t) => t.isActive).map((t) => ({ value: String(t.id), label: `${t.name}${!t.isPaid ? ' (unpaid)' : ''}` }))}
+              // code 'ANNUAL' is the Annual Leave pool's own entitlement
+              // config row (Time-off Policy), not something to apply for
+              // directly — Casual/Sick/etc. are what draw from that pool.
+              // Duplicated as a literal rather than imported from
+              // leaveEngine.ts (ANNUAL_LEAVE_CONFIG_CODE) since that module
+              // pulls in @prisma/client, kept out of this client bundle —
+              // same reasoning as HOURS_PER_DAY on the Timesheet page.
+              options={leaveTypes.filter((t) => t.isActive && t.code !== 'ANNUAL').map((t) => ({ value: String(t.id), label: `${t.name}${!t.isPaid ? ' (unpaid)' : ''}` }))}
               placeholder="Select type"
             />
           </div>

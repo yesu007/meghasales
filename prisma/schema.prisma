@@ -1506,7 +1506,12 @@ model LeaveRequest {
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+  // Cascade, at the requester's explicit direction: deleting a LeaveType
+  // (Time-off Policy > Delete) permanently deletes every LeaveRequest that
+  // used it too, even approved/historical ones — there is no soft-delete
+  // or archival step. Deactivating a type (isActive) remains the
+  // non-destructive alternative and doesn't touch any request.
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId, startDate])
   @@map("leave_requests")
