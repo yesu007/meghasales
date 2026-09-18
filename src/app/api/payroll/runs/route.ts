@@ -62,8 +62,8 @@ export async function POST(request: NextRequest) {
 
     const result = await prisma.$transaction(async (tx) => {
       const run = await tx.payrollRun.create({ data: { payPeriodYear: year, payPeriodMonth: month, initiatedById } });
-      const { created, skipped } = await generateRunPayslips(tx, run.id, year, month);
-      return { run, created, skipped };
+      const { created, skipped, notEligible } = await generateRunPayslips(tx, run.id, year, month);
+      return { run, created, skipped, notEligible };
     });
 
     await logAudit({
@@ -71,11 +71,11 @@ export async function POST(request: NextRequest) {
       entityType: 'PAYROLL_RUN',
       entityId: result.run.id,
       newValue: result.run,
-      description: `Payroll run for ${month}/${year} generated — ${result.created} payslip(s), ${result.skipped} employee(s) skipped (no active salary assignment)`,
+      description: `Payroll run for ${month}/${year} generated — ${result.created} payslip(s), ${result.skipped} skipped (no active salary assignment), ${result.notEligible} not eligible (not part of this period's Time & Attendance submission)`,
       request,
     });
 
-    return NextResponse.json({ ...result.run, created: result.created, skipped: result.skipped }, { status: 201 });
+    return NextResponse.json({ ...result.run, created: result.created, skipped: result.skipped, notEligible: result.notEligible }, { status: 201 });
   } catch (error: any) {
     console.error('POST /api/payroll/runs error:', error);
     return NextResponse.json({ message: error.message || 'Failed to generate payroll run' }, { status: 400 });

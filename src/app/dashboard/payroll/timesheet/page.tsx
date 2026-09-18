@@ -54,7 +54,7 @@ function ordinal(n: number): string {
   if (n % 10 === 3 && n !== 13) return `${n}rd`;
   return `${n}th`;
 }
-const EMPLOYMENT_LABELS: Record<string, string> = { FULL_TIME: 'Fulltime', PART_TIME: 'Part-time', CONTRACT: 'Contractor', INTERN: 'Intern' };
+const EMPLOYMENT_LABELS: Record<string, string> = { FULL_TIME: 'Fulltime', PART_TIME: 'Part-time', CONTRACT: 'Contractor', INTERN: 'Intern', PROBATION: 'Probation' };
 
 async function fetchTimesheet(year: number, month: number): Promise<TimesheetResponse> {
   const res = await fetch(`/api/payroll/timesheet?year=${year}&month=${month}`);

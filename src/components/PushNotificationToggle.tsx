@@ -18,11 +18,37 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+interface PushNotificationToggleProps {
+  // All default to the original Admin Tickets copy — every existing call
+  // site (that page) renders identically to before these props existed.
+  // The header's global instance passes its own generic copy, since a
+  // subscription here isn't scoped to any one reminder type (deadline
+  // reminders, probation reminders, leave overlaps, ... all reuse the same
+  // sendPushToUser fan-out and the same subscription).
+  hint?: string;
+  enabledLabel?: string;
+  disabledLabel?: string;
+  enabledToast?: string;
+  disabledToast?: string;
+  className?: string;
+}
+
 // A per-user opt-in for browser push notifications, scoped to wherever it's
-// dropped in — used on the Admin Tickets page so ticket-deadline reminders
-// (already generated server-side, see lib/adminTicket/dispatcher.ts) can
-// reach the assignee even when the CRM tab isn't open.
-export default function PushNotificationToggle() {
+// dropped in — originally used on the Admin Tickets page so ticket-deadline
+// reminders (already generated server-side, see lib/adminTicket/
+// dispatcher.ts) can reach the assignee even when the CRM tab isn't open;
+// also rendered globally in the header notification dropdown (dashboard/
+// layout.tsx) since the underlying subscription is per-user, not per-
+// feature — enabling it once here covers every server-side sendPushToUser
+// call site (admin-ticket, leave overlap, probation reminders, ...).
+export default function PushNotificationToggle({
+  hint = "Get a browser notification when a ticket's deadline is approaching or overdue",
+  enabledLabel = 'Deadline reminders on',
+  disabledLabel = 'Enable deadline reminders',
+  enabledToast = 'Deadline reminders enabled for this browser',
+  disabledToast = 'Deadline reminders turned off for this browser',
+  className,
+}: PushNotificationToggleProps = {}) {
   const [status, setStatus] = useState<Status>('checking');
   const [busy, setBusy] = useState(false);
 
@@ -77,7 +103,7 @@ export default function PushNotificationToggle() {
       if (!res.ok) throw new Error('Failed to save subscription');
 
       setStatus('subscribed');
-      toast.success('Deadline reminders enabled for this browser');
+      toast.success(enabledToast);
     } catch (error) {
       console.error('Push subscribe failed:', error);
       toast.error('Could not enable notifications');
@@ -101,7 +127,7 @@ export default function PushNotificationToggle() {
         }).catch(() => undefined);
       }
       setStatus('unsubscribed');
-      toast.success('Deadline reminders turned off for this browser');
+      toast.success(disabledToast);
     } catch (error) {
       console.error('Push unsubscribe failed:', error);
       toast.error('Could not turn off notifications');
@@ -125,13 +151,13 @@ export default function PushNotificationToggle() {
     <button
       onClick={subscribed ? disable : enable}
       disabled={busy}
-      className={`flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium border disabled:opacity-60 ${
+      className={className || `flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium border disabled:opacity-60 ${
         subscribed ? 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
       }`}
-      title="Get a browser notification when a ticket's deadline is approaching or overdue"
+      title={hint}
     >
       {subscribed ? <BellIcon className="h-4 w-4" /> : <BellSlashIcon className="h-4 w-4" />}
-      {subscribed ? 'Deadline reminders on' : 'Enable deadline reminders'}
+      {subscribed ? enabledLabel : disabledLabel}
     </button>
   );
 }

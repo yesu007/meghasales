@@ -49,7 +49,7 @@ export default function PayrollRunsPage() {
     },
     onSuccess: (run) => {
       queryClient.invalidateQueries({ queryKey: ['payroll-runs'] });
-      toast.success(`Run generated — ${run.created} payslip(s), ${run.skipped} employee(s) skipped`);
+      toast.success(`Run generated — ${run.created} payslip(s), ${run.skipped} skipped, ${run.notEligible} not eligible for this period`);
     },
     onError: (err: Error) => toast.error(err.message),
   });

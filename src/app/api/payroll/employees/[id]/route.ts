@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
+import { isProbationEmploymentType } from '@/lib/payroll/probationEngine';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ const EDITABLE_FIELDS = [
   'bankAccountNumber', 'bankIfsc', 'bankAccountHolder', 'bankName', 'taxRegime',
   'pfApplicable', 'esiApplicable', 'ptApplicable', 'status', 'timesheetStatus',
 ] as const;
-const DATE_FIELDS = ['dateOfJoining', 'dateOfLeaving'] as const;
+const DATE_FIELDS = ['dateOfJoining', 'dateOfLeaving', 'probationEndDate'] as const;
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
@@ -83,6 +84,37 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         if (!vertical) return NextResponse.json({ message: 'Vertical not found' }, { status: 400 });
       }
       data.verticalId = verticalId;
+    }
+    // Needs int parsing + a positive-number check, so handled separately
+    // from the generic EDITABLE_FIELDS pass-through above.
+    if (body.probationDurationMonths !== undefined) {
+      if (body.probationDurationMonths === '' || body.probationDurationMonths === null) {
+        data.probationDurationMonths = null;
+      } else {
+        const months = parseInt(body.probationDurationMonths, 10);
+        if (!Number.isFinite(months) || months <= 0) {
+          return NextResponse.json({ message: 'Probation Duration must be a positive number of months' }, { status: 400 });
+        }
+        data.probationDurationMonths = months;
+      }
+    }
+
+    // Probation Duration/End Date only apply to the PROBATION employment
+    // type — forced null the moment the (possibly just-updated)
+    // employmentType isn't PROBATION, same as on create. Otherwise,
+    // validate the (possibly just-updated) Probation End Date against the
+    // (possibly just-updated) Date of Joining — the source-of-truth
+    // End Date the user saved, whether auto-calculated or manually
+    // adjusted client-side, must never be allowed to precede it.
+    const effectiveEmploymentType = data.employmentType !== undefined ? String(data.employmentType) : existing.employmentType;
+    if (!isProbationEmploymentType(effectiveEmploymentType)) {
+      data.probationDurationMonths = null;
+      data.probationEndDate = null;
+    } else if (data.probationEndDate) {
+      const effectiveDateOfJoining = data.dateOfJoining !== undefined ? (data.dateOfJoining as Date | null) : existing.dateOfJoining;
+      if (effectiveDateOfJoining && (data.probationEndDate as Date) < effectiveDateOfJoining) {
+        return NextResponse.json({ message: 'Probation End Date cannot be earlier than Date of Joining' }, { status: 400 });
+      }
     }
 
     // The Employee ID (employeeCode) is normally auto-assigned at onboarding,

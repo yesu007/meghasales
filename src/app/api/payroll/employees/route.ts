@@ -4,6 +4,7 @@ import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { nextEmployeeCode } from '@/lib/payroll/employeeCode';
+import { computeProbationEndDate, isProbationEmploymentType } from '@/lib/payroll/probationEngine';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,6 +121,36 @@ export async function POST(request: NextRequest) {
       if (!vertical) return NextResponse.json({ message: 'Vertical not found' }, { status: 400 });
     }
 
+    const employmentType = body.employmentType || 'FULL_TIME';
+    const dateOfJoining = body.dateOfJoining ? new Date(body.dateOfJoining) : null;
+
+    // Probation Duration/End Date only ever apply to the PROBATION
+    // employment type — left null (not merely unvalidated) for every
+    // other type, same "forced null when the field doesn't apply" pattern
+    // used for Annual Quota on non-Annual-Leave leave types. End Date
+    // defaults to Date of Joining + Duration (computeProbationEndDate),
+    // but an explicitly-submitted probationEndDate (the form's own
+    // possibly-manually-edited value) always wins — the API never
+    // silently overrides what the user actually saved.
+    let probationDurationMonths: number | null = null;
+    let probationEndDate: Date | null = null;
+    if (isProbationEmploymentType(employmentType)) {
+      if (body.probationDurationMonths !== undefined && body.probationDurationMonths !== '' && body.probationDurationMonths !== null) {
+        probationDurationMonths = parseInt(body.probationDurationMonths, 10);
+        if (!Number.isFinite(probationDurationMonths) || probationDurationMonths <= 0) {
+          return NextResponse.json({ message: 'Probation Duration must be a positive number of months' }, { status: 400 });
+        }
+      }
+      if (body.probationEndDate) {
+        probationEndDate = new Date(body.probationEndDate);
+      } else if (dateOfJoining && probationDurationMonths != null) {
+        probationEndDate = computeProbationEndDate(dateOfJoining, probationDurationMonths);
+      }
+      if (probationEndDate && dateOfJoining && probationEndDate < dateOfJoining) {
+        return NextResponse.json({ message: 'Probation End Date cannot be earlier than Date of Joining' }, { status: 400 });
+      }
+    }
+
     const employee = await prisma.$transaction(async (tx) => {
       const employeeCode = await nextEmployeeCode(tx);
       return tx.employee.create({
@@ -134,8 +165,10 @@ export async function POST(request: NextRequest) {
           role: body.role || null,
           managerId,
           verticalId,
-          dateOfJoining: body.dateOfJoining ? new Date(body.dateOfJoining) : null,
-          employmentType: body.employmentType || 'FULL_TIME',
+          dateOfJoining,
+          employmentType,
+          probationDurationMonths,
+          probationEndDate,
           panNumber: body.panNumber || null,
           uanNumber: body.uanNumber || null,
           esicNumber: body.esicNumber || null,

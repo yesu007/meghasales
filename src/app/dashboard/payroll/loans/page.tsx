@@ -35,7 +35,12 @@ async function fetchLoans(): Promise<LoanRow[]> {
   return res.json();
 }
 async function fetchEmployees(): Promise<EmployeeOption[]> {
-  const res = await fetch('/api/payroll/employees');
+  // size=200&status=ACTIVE — same convention as every other full-roster
+  // employee picker (e.g. the Manager dropdown on Employee Details). No
+  // query params here previously meant this silently fell back to the
+  // API's default page size of 10, so only the 10 most-recently-created
+  // employees ever showed up in the dropdown.
+  const res = await fetch('/api/payroll/employees?size=200&status=ACTIVE');
   if (!res.ok) throw new Error('Failed to fetch employees');
   return (await res.json()).content;
 }
