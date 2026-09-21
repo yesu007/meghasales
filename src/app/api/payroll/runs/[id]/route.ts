@@ -76,3 +76,51 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({ message: error.message || 'Failed to update payroll run' }, { status: 400 });
   }
 }
+
+// Hard-deletes a run and its payslips — only ever offered in the UI for
+// DRAFT/CANCELLED runs (an already-committed PROCESSED/PAID run should be
+// reopened to DRAFT — or just cancelled — rather than erased, same
+// "reversible, not destructive" philosophy as changeRunStatus above). Also
+// enforced server-side here, not just hidden client-side: a PROCESSED/PAID
+// run's LoanRepayment rows are APPLIED (already moved a real loan balance),
+// and applyOrReverseLoanRepayments is what knows how to unwind that — a raw
+// delete would silently orphan the balance change. DRAFT/CANCELLED runs
+// never carry an APPLIED repayment (see that function's own comment: the
+// balance only ever moves while a run is PROCESSED/PAID, and reversing back
+// out of that state — including straight to CANCELLED — always restores
+// them to PENDING first), so any repayments left on a deletable run are
+// safe to delete outright alongside it.
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
+  const denied = await requirePermission('run_payroll');
+  if (denied) return denied;
+
+  try {
+    const id = parseInt(params.id);
+    const run = await prisma.payrollRun.findUnique({ where: { id } });
+    if (!run) return NextResponse.json({ message: 'Payroll run not found' }, { status: 404 });
+    if (run.status !== 'DRAFT' && run.status !== 'CANCELLED') {
+      return NextResponse.json({ message: 'Only a DRAFT or CANCELLED run can be deleted — reopen or cancel it first' }, { status: 409 });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.loanRepayment.deleteMany({ where: { runId: id } });
+      // Cascades to Payslip -> PayslipLineItem (see schema.prisma's onDelete: Cascade).
+      await tx.payrollRun.delete({ where: { id } });
+    });
+
+    await logAudit({
+      action: 'DELETE',
+      entityType: 'PAYROLL_RUN',
+      entityId: id,
+      oldValue: run,
+      description: `Payroll run for ${run.payPeriodMonth}/${run.payPeriodYear} deleted`,
+      request,
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('DELETE /api/payroll/runs/[id] error:', error);
+    return NextResponse.json({ message: error.message || 'Failed to delete payroll run' }, { status: 400 });
+  }
+}

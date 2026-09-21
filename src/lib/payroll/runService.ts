@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import { isValidRunStatusTransition, RunStatus } from './constants';
 import { computePayableDays, daysInMonth, resolveStructureLineItems, round2, StatutoryConfig } from './runEngine';
 import { computeAutoLopDays } from './leaveEngine';
+import { computeOtherLeaveDays, computeTotalDaysFromHours } from './timesheetEngine';
 
 export class OptimisticLockError extends Error {}
 export class InvalidStatusTransitionError extends Error {}
@@ -28,14 +29,15 @@ async function fetchStatutoryConfig(tx: Client): Promise<StatutoryConfig> {
 
 // Generates one Payslip per qualifying employee for the run's period.
 // Qualifying = ACTIVE/ON_NOTICE, or EXITED with a dateOfLeaving that falls
-// inside this period (their final settlement month). An employee with no
-// SalaryStructureAssignment covering the period's last day is skipped —
-// there's nothing to compute from.
+// inside this period (their final settlement month) — AND actually part of
+// this period's Time & Attendance submission (see the eligibility filter
+// below). An employee with no SalaryStructureAssignment covering the
+// period's last day is skipped — there's nothing to compute from.
 //
 // The assignment effective on the LAST day of the period drives the whole
 // month's numbers; a structure/CTC change mid-month is not split across two
 // assignments in this phase — a documented simplification, not a bug.
-export async function generateRunPayslips(tx: Client, runId: number, year: number, month: number): Promise<{ created: number; skipped: number }> {
+export async function generateRunPayslips(tx: Client, runId: number, year: number, month: number): Promise<{ created: number; skipped: number; notEligible: number }> {
   const periodStart = dayjs(`${year}-${String(month).padStart(2, '0')}-01`).toDate();
   const periodEnd = dayjs(`${year}-${String(month).padStart(2, '0')}-01`).endOf('month').toDate();
   const totalDays = daysInMonth(year, month);
@@ -50,10 +52,57 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
   });
   const statutory = await fetchStatutoryConfig(tx);
 
+  // Payroll must only ever include employees who were actually part of
+  // THIS period's Time & Attendance submission — not every globally-
+  // active employee who happens to have a salary structure/Basic Salary.
+  // A TimesheetEntry row only exists once HR has entered Regular/Overtime
+  // days for that employee for this exact (year, month) — that's the
+  // signal "Total Days are provided", read directly rather than re-derived.
+  const timesheetEntries = await tx.timesheetEntry.findMany({ where: { periodYear: year, periodMonth: month } });
+  const timesheetEntryByEmployee = new Map(timesheetEntries.map((e) => [e.employeeId, e]));
+
   let created = 0;
   let skipped = 0;
+  let notEligible = 0;
 
   for (const employee of employees) {
+    // Auto-computed from APPROVED unpaid-leave requests overlapping this
+    // period — Phase 5's Attendance & Leave replacing the "always starts
+    // at 0, HR fills it in by hand" behavior from Phase 2. Still just the
+    // starting value: recalculatePayslip's manual lopDays override (while
+    // the run is DRAFT) still works exactly as before, same interface, in
+    // case HR needs to correct it. Computed up front (not just inside the
+    // eligibility branch below) since it's also this employee's payroll
+    // lopDays either way.
+    const autoLopDays = await computeAutoLopDays(tx, employee.id, periodStart, periodEnd);
+
+    // Eligibility gate — three conditions, all required, matching exactly
+    // what the Timesheet screen itself shows as "included this period":
+    //   1. A TimesheetEntry exists for them this (year, month) — they were
+    //      actually part of the Time & Attendance submission, not just
+    //      present in the employee master.
+    //   2. Employee.timesheetStatus is ACTIVE — the Timesheet screen's own
+    //      per-period Active/Inactive flag (distinct from the employee's
+    //      overall HR `status`, already checked above).
+    //   3. Their Total Days — computed with the exact same formula the
+    //      Timesheet screen's own column and its "Send To Payroll" zero-
+    //      days gate use (computeTotalDaysFromHours) — is > 0.
+    // Failing any of these means Time & Attendance never actually sent
+    // this employee over for this period, so they get no payslip at all —
+    // not even a zero-net-pay one — regardless of Basic Salary or an
+    // active SalaryStructureAssignment.
+    const timesheetEntry = timesheetEntryByEmployee.get(employee.id);
+    if (!timesheetEntry || employee.timesheetStatus !== 'ACTIVE') {
+      notEligible += 1;
+      continue;
+    }
+    const otherLeaveDays = await computeOtherLeaveDays(tx, employee.id, periodStart, periodEnd);
+    const timesheetTotalDays = computeTotalDaysFromHours(Number(timesheetEntry.regularHours), Number(timesheetEntry.overtimeHours), otherLeaveDays, autoLopDays);
+    if (timesheetTotalDays <= 0) {
+      notEligible += 1;
+      continue;
+    }
+
     const assignment = await tx.salaryStructureAssignment.findFirst({
       where: {
         employeeId: employee.id,
@@ -69,13 +118,6 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
       continue;
     }
 
-    // Auto-computed from APPROVED unpaid-leave requests overlapping this
-    // period — Phase 5's Attendance & Leave replacing the "always starts
-    // at 0, HR fills it in by hand" behavior from Phase 2. Still just the
-    // starting value: recalculatePayslip's manual lopDays override (while
-    // the run is DRAFT) still works exactly as before, same interface, in
-    // case HR needs to correct it.
-    const autoLopDays = await computeAutoLopDays(tx, employee.id, periodStart, periodEnd);
     const payableDays = computePayableDays({ year, month, totalDays, lopDays: autoLopDays, dateOfJoining: employee.dateOfJoining, dateOfLeaving: employee.dateOfLeaving });
     const ratio = totalDays > 0 ? payableDays / totalDays : 0;
 
@@ -104,7 +146,7 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
     created += 1;
   }
 
-  return { created, skipped };
+  return { created, skipped, notEligible };
 }
 
 // Recomputes a single payslip's structure-derived line items from scratch

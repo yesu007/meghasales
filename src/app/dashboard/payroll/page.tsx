@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, Transition } from '@headlessui/react';
 import { PlusIcon, XMarkIcon, InboxIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
 
 interface EmployeeRow {
@@ -83,7 +84,8 @@ function getPageNumbers(current: number, total: number): (number | 'ellipsis')[]
 
 const blankForm = {
   firstName: '', lastName: '', email: '', department: '', designation: '', role: '', managerId: '', verticalId: '', dateOfJoining: '',
-  employmentType: 'FULL_TIME', bankAccountNumber: '', bankIfsc: '', bankAccountHolder: '', bankName: '',
+  employmentType: 'FULL_TIME', probationDurationMonths: '', probationEndDate: '',
+  bankAccountNumber: '', bankIfsc: '', bankAccountHolder: '', bankName: '',
 };
 
 export default function PayrollEmployeesPage() {
@@ -95,11 +97,29 @@ export default function PayrollEmployeesPage() {
   const [size, setSize] = useState(10);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState(blankForm);
+  // True once the user has directly edited the Probation End Date field
+  // itself — while false, it's kept in sync with Date of Joining +
+  // Probation Duration (see the effect below); once true, further DOJ/
+  // Duration changes stop overwriting whatever the user typed. Reset
+  // whenever Probation Period is freshly (re-)selected, or the drawer is
+  // reset — same "calculated but user-editable" shape as other computed-
+  // default fields elsewhere in the app.
+  const [probationEndDateTouched, setProbationEndDateTouched] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => { setSearch(searchInput); setPage(0); }, 400);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  useEffect(() => {
+    if (form.employmentType !== 'PROBATION' || probationEndDateTouched) return;
+    if (!form.dateOfJoining || !form.probationDurationMonths) return;
+    const months = Number(form.probationDurationMonths);
+    if (!Number.isFinite(months) || months <= 0) return;
+    const computed = dayjs(form.dateOfJoining).add(months, 'month').format('YYYY-MM-DD');
+    setForm((f) => (f.probationEndDate === computed ? f : { ...f, probationEndDate: computed }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.dateOfJoining, form.probationDurationMonths, form.employmentType, probationEndDateTouched]);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['payroll-employees', search, page, size],
@@ -137,6 +157,7 @@ export default function PayrollEmployeesPage() {
       toast.success('Employee onboarded to payroll');
       setDrawerOpen(false);
       setForm(blankForm);
+      setProbationEndDateTouched(false);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -315,6 +336,10 @@ export default function PayrollEmployeesPage() {
                       onSubmit={(e) => {
                         e.preventDefault();
                         if (!form.firstName || !form.lastName || !form.email) { toast.error('First name, last name, and email are required'); return; }
+                        if (form.employmentType === 'PROBATION' && form.dateOfJoining && form.probationEndDate && form.probationEndDate < form.dateOfJoining) {
+                          toast.error('Probation End Date cannot be earlier than Date of Joining');
+                          return;
+                        }
                         createMutation.mutate(form);
                       }}
                       className="flex-1 px-6 py-4 space-y-4"
@@ -377,17 +402,51 @@ export default function PayrollEmployeesPage() {
                           <label className="block text-sm font-medium text-slate-700 mb-1">Employment Type</label>
                           <AddableSelect
                             value={form.employmentType}
-                            onChange={(v) => setForm((f) => ({ ...f, employmentType: v }))}
+                            onChange={(v) => {
+                              // Probation Duration/End Date only make sense
+                              // for PROBATION — cleared when switching away
+                              // (they'll be hidden below anyway, and the
+                              // API forces them null regardless), and the
+                              // manual-edit flag resets so freshly
+                              // (re-)selecting Probation Period starts with
+                              // a clean auto-calculated End Date again.
+                              setForm((f) => ({ ...f, employmentType: v, ...(v !== 'PROBATION' ? { probationDurationMonths: '', probationEndDate: '' } : {}) }));
+                              setProbationEndDateTouched(false);
+                            }}
                             options={[
                               { value: 'FULL_TIME', label: 'Full-time' },
                               { value: 'PART_TIME', label: 'Part-time' },
                               { value: 'CONTRACT', label: 'Contract' },
                               { value: 'INTERN', label: 'Intern' },
+                              { value: 'PROBATION', label: 'Probation Period' },
                             ]}
                             placeholder="Select employment type"
                           />
                         </div>
                       </div>
+                      {form.employmentType === 'PROBATION' && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Probation Duration (months)</label>
+                            <input
+                              type="number" min="1" step="1" placeholder="e.g. 3"
+                              value={form.probationDurationMonths}
+                              onChange={(e) => setForm((f) => ({ ...f, probationDurationMonths: e.target.value }))}
+                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Probation End Date</label>
+                            <input
+                              type="date"
+                              value={form.probationEndDate}
+                              onChange={(e) => { setForm((f) => ({ ...f, probationEndDate: e.target.value })); setProbationEndDateTouched(true); }}
+                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+                            />
+                            <p className="text-xs text-slate-400 mt-1">Auto-calculated from Date of Joining + Probation Duration — you can override it.</p>
+                          </div>
+                        </div>
+                      )}
                       <div className="pt-2 border-t border-slate-100">
                         <p className="text-xs font-medium text-slate-500 uppercase mb-3">Bank details</p>
                         <div className="grid grid-cols-2 gap-4">

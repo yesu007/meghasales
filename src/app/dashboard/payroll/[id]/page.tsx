@@ -8,6 +8,8 @@ import { ArrowLeftIcon, PencilIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
+import LegalDocumentsPanel from '@/components/payroll/LegalDocumentsPanel';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface StructureOption {
   id: number;
@@ -49,6 +51,8 @@ interface EmployeeDetail {
   dateOfJoining: string | null;
   dateOfLeaving: string | null;
   employmentType: string;
+  probationDurationMonths: number | null;
+  probationEndDate: string | null;
   panNumber: string | null;
   uanNumber: string | null;
   esicNumber: string | null;
@@ -94,6 +98,10 @@ export default function EmployeeDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  // Same permission the rest of this page's edit form already requires —
+  // reused rather than introducing a separate documents-specific one.
+  const canManageEmployees = has('manage_employees');
 
   const { data: employee, isLoading } = useQuery({ queryKey: ['payroll-employee', id], queryFn: () => fetchEmployee(id) });
   const { data: structures = [] } = useQuery({ queryKey: ['payroll-structures'], queryFn: fetchStructures });
@@ -101,6 +109,14 @@ export default function EmployeeDetailPage() {
   const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticals });
 
   const [form, setForm] = useState<Record<string, any>>({});
+  // Starts true (not false, like the create form's default) — the already-
+  // saved probationEndDate loaded below is the current source of truth
+  // (see Employee.probationEndDate's schema comment) and must not be
+  // silently recomputed just because the page rendered; it's the Date of
+  // Joining/Probation Duration onChange handlers further down that
+  // explicitly flip this back to false, so THEIR edits (not the initial
+  // load) are what triggers a fresh auto-calculation.
+  const [probationEndDateTouched, setProbationEndDateTouched] = useState(true);
   useEffect(() => {
     if (employee) {
       setForm({
@@ -109,15 +125,29 @@ export default function EmployeeDetailPage() {
         department: employee.department || '', designation: employee.designation || '',
         role: employee.role || '', managerId: employee.managerId ? String(employee.managerId) : '',
         verticalId: employee.verticalId ? String(employee.verticalId) : '',
+        dateOfJoining: employee.dateOfJoining ? dayjs(employee.dateOfJoining).format('YYYY-MM-DD') : '',
         employmentType: employee.employmentType, panNumber: employee.panNumber || '',
+        probationDurationMonths: employee.probationDurationMonths != null ? String(employee.probationDurationMonths) : '',
+        probationEndDate: employee.probationEndDate ? dayjs(employee.probationEndDate).format('YYYY-MM-DD') : '',
         uanNumber: employee.uanNumber || '', esicNumber: employee.esicNumber || '',
         bankAccountNumber: employee.bankAccountNumber || '', bankIfsc: employee.bankIfsc || '',
         bankAccountHolder: employee.bankAccountHolder || '', bankName: employee.bankName || '',
         taxRegime: employee.taxRegime, pfApplicable: employee.pfApplicable,
         esiApplicable: employee.esiApplicable, ptApplicable: employee.ptApplicable, status: employee.status,
       });
+      setProbationEndDateTouched(true);
     }
   }, [employee]);
+
+  useEffect(() => {
+    if (form.employmentType !== 'PROBATION' || probationEndDateTouched) return;
+    if (!form.dateOfJoining || !form.probationDurationMonths) return;
+    const months = Number(form.probationDurationMonths);
+    if (!Number.isFinite(months) || months <= 0) return;
+    const computed = dayjs(form.dateOfJoining).add(months, 'month').format('YYYY-MM-DD');
+    setForm((f) => (f.probationEndDate === computed ? f : { ...f, probationEndDate: computed }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.dateOfJoining, form.probationDurationMonths, form.employmentType, probationEndDateTouched]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: Record<string, any>) => {
@@ -223,6 +253,10 @@ export default function EmployeeDetailPage() {
             onSubmit={(e) => {
               e.preventDefault();
               if (!String(form.employeeCode || '').trim()) { toast.error('Employee ID cannot be empty'); return; }
+              if (form.employmentType === 'PROBATION' && form.dateOfJoining && form.probationEndDate && form.probationEndDate < form.dateOfJoining) {
+                toast.error('Probation End Date cannot be earlier than Date of Joining');
+                return;
+              }
               saveMutation.mutate(form);
             }}
             className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-4"
@@ -259,19 +293,54 @@ export default function EmployeeDetailPage() {
                   placeholder="—"
                 />
               </Field>
+              <Field label="Date of Joining">
+                <input
+                  type="date"
+                  value={form.dateOfJoining || ''}
+                  onChange={(e) => { setForm((f) => ({ ...f, dateOfJoining: e.target.value })); setProbationEndDateTouched(false); }}
+                  className={inputCls}
+                />
+              </Field>
               <Field label="Employment Type">
                 <AddableSelect
                   value={form.employmentType || 'FULL_TIME'}
-                  onChange={(v) => setForm((f) => ({ ...f, employmentType: v }))}
+                  onChange={(v) => {
+                    // Same "clear + fresh calc on re-entering Probation"
+                    // convention as the Onboard Employee drawer.
+                    setForm((f) => ({ ...f, employmentType: v, ...(v !== 'PROBATION' ? { probationDurationMonths: '', probationEndDate: '' } : {}) }));
+                    setProbationEndDateTouched(false);
+                  }}
                   options={[
                     { value: 'FULL_TIME', label: 'Full-time' },
                     { value: 'PART_TIME', label: 'Part-time' },
                     { value: 'CONTRACT', label: 'Contract' },
                     { value: 'INTERN', label: 'Intern' },
+                    { value: 'PROBATION', label: 'Probation Period' },
                   ]}
                   placeholder="Select employment type"
                 />
               </Field>
+              {form.employmentType === 'PROBATION' && (
+                <>
+                  <Field label="Probation Duration (months)">
+                    <input
+                      type="number" min="1" step="1" placeholder="e.g. 3"
+                      value={form.probationDurationMonths || ''}
+                      onChange={(e) => { setForm((f) => ({ ...f, probationDurationMonths: e.target.value })); setProbationEndDateTouched(false); }}
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Probation End Date">
+                    <input
+                      type="date"
+                      value={form.probationEndDate || ''}
+                      onChange={(e) => { setForm((f) => ({ ...f, probationEndDate: e.target.value })); setProbationEndDateTouched(true); }}
+                      className={inputCls}
+                    />
+                    <p className="text-xs text-slate-400 mt-1">Auto-calculated from Date of Joining + Probation Duration — you can override it.</p>
+                  </Field>
+                </>
+              )}
               <Field label="Status">
                 <AddableSelect
                   value={form.status || 'ACTIVE'}
@@ -375,6 +444,20 @@ export default function EmployeeDetailPage() {
               </form>
             )}
           </div>
+
+          {/* Same underlying record shows up here (HR/admin view — this
+              page also serves as "Payroll Employee") and in My Space >
+              My Documents for this employee's own login, if they have
+              one — see LegalDocumentsPanel and EmployeeLegalDocument's
+              schema comment. canDelete is gated by manage_employees,
+              the same permission the rest of this page's edit form
+              already requires — no new permission introduced. */}
+          <LegalDocumentsPanel
+            apiBase={`/api/payroll/employees/${id}/documents`}
+            queryKey={`employee-documents-${id}`}
+            canUpload={canManageEmployees}
+            canDelete={canManageEmployees}
+          />
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 h-fit">

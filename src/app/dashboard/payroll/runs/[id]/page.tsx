@@ -77,7 +77,7 @@ export default function PayrollRunDetailPage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to regenerate'); }
       return res.json();
     },
-    onSuccess: (result) => { invalidate(); toast.success(`Regenerated — ${result.created} payslip(s), ${result.skipped} skipped`); },
+    onSuccess: (result) => { invalidate(); toast.success(`Regenerated — ${result.created} payslip(s), ${result.skipped} skipped, ${result.notEligible} not eligible for this period`); },
     onError: (err: Error) => toast.error(err.message),
   });
 

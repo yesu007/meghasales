@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusIcon, InboxIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, InboxIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
@@ -49,10 +49,21 @@ export default function PayrollRunsPage() {
     },
     onSuccess: (run) => {
       queryClient.invalidateQueries({ queryKey: ['payroll-runs'] });
-      toast.success(`Run generated — ${run.created} payslip(s), ${run.skipped} employee(s) skipped`);
+      toast.success(`Run generated — ${run.created} payslip(s), ${run.skipped} skipped, ${run.notEligible} not eligible for this period`);
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  // Only DRAFT/CANCELLED runs are deletable — see the DELETE handler's own
+  // comment for why a PROCESSED/PAID run has to be reopened or cancelled
+  // first instead.
+  const deleteRun = async (run: RunRow) => {
+    if (!window.confirm(`Delete the ${MONTH_NAMES[run.payPeriodMonth - 1]} ${run.payPeriodYear} payroll run? This cannot be undone.`)) return;
+    const res = await fetch(`/api/payroll/runs/${run.id}`, { method: 'DELETE' });
+    if (!res.ok) { const err = await res.json().catch(() => ({})); toast.error(err.message || 'Failed to delete run'); return; }
+    queryClient.invalidateQueries({ queryKey: ['payroll-runs'] });
+    toast.success('Payroll run deleted');
+  };
 
   return (
     <div className="space-y-4">
@@ -101,10 +112,13 @@ export default function PayrollRunsPage() {
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Employees</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Total Net Pay</th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {runs.map((r) => (
+                {runs.map((r) => {
+                  const deletable = r.status === 'DRAFT' || r.status === 'CANCELLED';
+                  return (
                   <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
                       <Link href={`/dashboard/payroll/runs/${r.id}`} className="font-medium text-slate-800 hover:text-amber-700">{MONTH_NAMES[r.payPeriodMonth - 1]} {r.payPeriodYear}</Link>
@@ -112,8 +126,24 @@ export default function PayrollRunsPage() {
                     <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[r.status] || 'bg-slate-100 text-slate-600'}`}>{r.status}</span></td>
                     <td className="px-4 py-3 text-slate-600">{r.employeeCount}</td>
                     <td className="px-4 py-3 text-slate-800 font-medium">₹{r.totalNetPay.toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <Link href={`/dashboard/payroll/runs/${r.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-block" title="Edit">
+                          <PencilIcon className="h-4 w-4" />
+                        </Link>
+                        <button
+                          onClick={() => deletable && deleteRun(r)}
+                          disabled={!deletable}
+                          className={`p-1.5 rounded ${deletable ? 'text-slate-400 hover:text-red-600 hover:bg-red-50' : 'text-slate-200 cursor-not-allowed'}`}
+                          title={deletable ? 'Delete' : 'Only a DRAFT or CANCELLED run can be deleted — reopen or cancel it first'}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

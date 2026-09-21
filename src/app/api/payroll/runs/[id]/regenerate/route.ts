@@ -36,7 +36,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return generateRunPayslips(tx, id, run.payPeriodYear, run.payPeriodMonth);
     });
 
-    await logAudit({ action: 'UPDATE', entityType: 'PAYROLL_RUN', entityId: id, description: `Payroll run ${run.payPeriodMonth}/${run.payPeriodYear} regenerated — ${result.created} payslip(s), ${result.skipped} skipped`, request });
+    await logAudit({ action: 'UPDATE', entityType: 'PAYROLL_RUN', entityId: id, description: `Payroll run ${run.payPeriodMonth}/${run.payPeriodYear} regenerated — ${result.created} payslip(s), ${result.skipped} skipped, ${result.notEligible} not eligible (not part of this period's Time & Attendance submission)`, request });
 
     return NextResponse.json(result);
   } catch (error: any) {

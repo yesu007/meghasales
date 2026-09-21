@@ -511,16 +511,40 @@ async function main() {
   console.log('  ✓ approve_leave permission granted to ADMIN, MANAGEMENT, FINANCE roles');
 
   // Starter leave types — upsert by code so re-seeding never duplicates.
+  // Earned/Casual/Sick share one common accrual-based pool, branded
+  // "Annual Leave" wherever the combined balance is shown (accruing 1
+  // day/month, capped at 12/year — see COMMON_POOL_LEAVE_CODES in
+  // leaveEngine.ts); each keeps its own card but none carries its own
+  // quota here since the pool formula supersedes it.
   const leaveTypes = [
-    { name: 'Casual Leave', code: 'CASUAL', isPaid: true, annualQuota: 12 },
-    { name: 'Sick Leave', code: 'SICK', isPaid: true, annualQuota: 12 },
-    { name: 'Earned Leave', code: 'EARNED', isPaid: true, annualQuota: 15 },
+    { name: 'Earned Leave', code: 'EARNED', isPaid: true, annualQuota: 12 },
+    { name: 'Casual Leave', code: 'CASUAL', isPaid: true, annualQuota: null },
+    { name: 'Sick Leave', code: 'SICK', isPaid: true, annualQuota: null },
     { name: 'Loss of Pay', code: 'LOP', isPaid: false, annualQuota: null },
+    // Special Paid Leave category (formerly "Maternity Leave", renamed to
+    // "Paid Holidays"; code kept as MATERNITY since it's the stable handle
+    // referenced elsewhere) — deliberately separate from the common pool
+    // (see leaveEngine.ts): it has no annualQuota here, so it never
+    // triggers a quota/LOP check and is simply recorded as its own paid
+    // leave type.
+    { name: 'Paid Holidays', code: 'MATERNITY', isPaid: true, annualQuota: null },
   ];
   for (const lt of leaveTypes) {
     await prisma.leaveType.upsert({ where: { code: lt.code }, update: {}, create: lt });
   }
   console.log('  ✓ Leave types seeded');
+
+  // Old standalone "Annual Leave" (its own instant 12-day quota, unrelated
+  // to the pool above) is retired now that the name refers to the
+  // Earned/Casual/Sick combined pool instead. Kept in the database — never
+  // deleted, since a LeaveRequest FK to it has no cascade — but deactivated
+  // so it can no longer be picked on the apply-for-leave form.
+  await prisma.leaveType.upsert({
+    where: { code: 'ANNUAL' },
+    update: { isActive: false },
+    create: { name: 'Annual Leave', code: 'ANNUAL', isPaid: true, annualQuota: 12, isActive: false },
+  });
+  console.log('  ✓ Standalone Annual Leave type deactivated (superseded by the Earned/Casual/Sick pool)');
 
   console.log('✅ Seeding complete!');
 }

@@ -20,6 +20,10 @@
     {
       "path": "/api/quotations/milestones/generate",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/payroll/probation/reminders/generate",
+      "schedule": "0 10 * * *"
     }
   ]
 }

@@ -1212,7 +1212,19 @@ model Employee {
   verticalId        Int?      @map("vertical_id")
   dateOfJoining     DateTime? @map("date_of_joining")
   dateOfLeaving     DateTime? @map("date_of_leaving")
-  employmentType    String    @default("FULL_TIME") @map("employment_type") // FULL_TIME | PART_TIME | CONTRACT | INTERN
+  employmentType    String    @default("FULL_TIME") @map("employment_type") // FULL_TIME | PART_TIME | CONTRACT | INTERN | PROBATION
+  // Only meaningful when employmentType is PROBATION — null/cleared for
+  // every other type by the API, same convention as other type-specific
+  // fields elsewhere in this schema. probationEndDate starts out computed
+  // from dateOfJoining + probationDurationMonths (see
+  // computeProbationEndDate in probationEngine.ts) but is a plain editable
+  // column once set — same "calculated but user-editable" shape as
+  // Lead.nextFollowUpDate — so HR can manually extend/adjust it, and that
+  // saved value (not a live recomputation) is the source of truth
+  // probationReminders.ts schedules the 6-day/1-day/end-date notifications
+  // against.
+  probationDurationMonths Int?      @map("probation_duration_months")
+  probationEndDate        DateTime? @map("probation_end_date")
   panNumber         String?   @map("pan_number")
   uanNumber         String?   @map("uan_number") // PF Universal Account Number
   esicNumber        String?   @map("esic_number")
@@ -1225,6 +1237,12 @@ model Employee {
   esiApplicable     Boolean   @default(false) @map("esi_applicable")
   ptApplicable      Boolean   @default(true) @map("pt_applicable")
   status            String    @default("ACTIVE") // ACTIVE | ON_NOTICE | EXITED
+  // Separate from `status` above (the employee's full HR/employment
+  // status) — a standalone Active/Inactive flag scoped to the Timesheet
+  // module only (Time & Attendance's own "Status" column, next to Type).
+  // Deliberately its own field rather than reusing/collapsing `status`, at
+  // the requester's explicit direction.
+  timesheetStatus   String    @default("ACTIVE") @map("timesheet_status") // ACTIVE | INACTIVE
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
@@ -1238,8 +1256,66 @@ model Employee {
   loans               Loan[]
   timesheetEntries    TimesheetEntry[]
   verticalAllocations EmployeeVerticalAllocation[]
+  probationReminderLogs ProbationReminderLog[]
+  legalDocuments      EmployeeLegalDocument[]
 
   @@map("employees")
+}
+
+// Legal Documents — uploaded either by HR/admin from Employee Details
+// (Employee → Legal Documents; the same page also serves as "Payroll
+// Employee", so no separate copy is needed there) or by the employee
+// themself from My Space → My Documents. Both paths write to this one
+// table keyed by employeeId, so the same record shows up in both places —
+// there is deliberately no separate "self-uploaded" vs "HR-uploaded" table.
+// documentType is a free-text pseudo-enum, same convention as
+// Employee.employmentType/status and CustomerContract.contractType — no
+// lookup table exists elsewhere in this schema for a "document type"
+// concept, so introducing one here would be a new pattern, not a reused
+// one. uploadedById is a loose (non-relation) reference to User.id, same
+// convention as AdminTicketAttachment.uploadedById, so deleting a User
+// never cascades into (or blocks deleting) someone's document history.
+// Deleting is intentionally only reachable through the Employee-module API
+// (requires manage_employees) — there is no delete endpoint under the
+// self-service My Documents API at all, so an employee can never delete
+// their own uploaded document, in the UI or directly against the backend.
+model EmployeeLegalDocument {
+  id           Int      @id @default(autoincrement())
+  employeeId   Int      @map("employee_id")
+  documentType String   @map("document_type") // AADHAAR | PAN | OFFER_LETTER | EDUCATION_CERTIFICATE | EXPERIENCE_LETTER | ID_PROOF | ADDRESS_PROOF | OTHER
+  documentName String   @map("document_name")
+  filePath     String   @map("file_path") // Vercel Blob URL
+  mimeType     String?  @map("mime_type")
+  size         Int?
+  uploadedById Int?     @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("employee_legal_documents")
+}
+
+// Dedup log for the probation-notification cron (probationReminders.ts) —
+// same purpose and shape as DeadlineReminderLog, just scoped to a single
+// entity type (Employee) so a real relation makes sense here, unlike that
+// generic multi-entity-type log. Uniqueness includes probationEndDate, not
+// just (employeeId, stage): if HR later changes/extends the Probation End
+// Date, that's a new date value, so the 6-day/1-day/end-date notifications
+// become eligible again automatically under their own fresh keys — no
+// explicit "invalidate the old schedule" step needed, and the old rows are
+// simply harmless history for a date that's no longer current.
+model ProbationReminderLog {
+  id                Int      @id @default(autoincrement())
+  employeeId        Int      @map("employee_id")
+  probationEndDate  DateTime @map("probation_end_date")
+  stage             String // SIX_DAYS_BEFORE | ONE_DAY_BEFORE | END_DATE
+  sentAt            DateTime @default(now()) @map("sent_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, stage, probationEndDate])
+  @@map("probation_reminder_logs")
 }
 
 // Payroll Phase 1 — a named, reusable pay-slip line item (Basic, HRA,
@@ -1500,7 +1576,12 @@ model LeaveRequest {
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+  // Cascade, at the requester's explicit direction: deleting a LeaveType
+  // (Time-off Policy > Delete) permanently deletes every LeaveRequest that
+  // used it too, even approved/historical ones — there is no soft-delete
+  // or archival step. Deactivating a type (isActive) remains the
+  // non-destructive alternative and doesn't touch any request.
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId, startDate])
   @@map("leave_requests")
