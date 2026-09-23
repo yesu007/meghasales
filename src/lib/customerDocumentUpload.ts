@@ -1,4 +1,4 @@
-import { put } from '@vercel/blob';
+import { put } from '@/lib/storage';
 
 // Customer Documents (KYC / NDA & Contract) — a standalone copy of
 // src/lib/eventDocumentUpload.ts's validate/upload pair rather than a

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { put } from '@vercel/blob';
+import { put } from '@/lib/storage';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { validateEventDocumentFile, isBlobConfigured } from '@/lib/eventDocumentUpload';
+import { validateEventDocumentFile, isStorageConfigured } from '@/lib/eventDocumentUpload';
 import { documentsWithUploaderNames } from '@/lib/payroll/employeeLegalDocuments';
 
 export const dynamic = 'force-dynamic';
@@ -48,7 +48,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  if (!isBlobConfigured()) {
+  if (!isStorageConfigured()) {
     return NextResponse.json(
       { message: 'File upload is not configured (missing BLOB_READ_WRITE_TOKEN) — provision a Vercel Blob store to enable document uploads' },
       { status: 503 }
