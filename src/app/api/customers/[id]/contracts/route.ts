@@ -4,7 +4,8 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
-import { validateCustomerDocumentFile, uploadCustomerDocumentBlob, fileExtension } from '@/lib/customerDocumentUpload';
+import { validateCustomerDocumentFile, fileExtension } from '@/lib/customerDocumentUpload';
+import { isS3Configured, uploadContractFileToS3, resolveContractFileUrl } from '@/lib/customerContractS3';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +29,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         uploadedBy: { select: { firstName: true, lastName: true } },
       },
     });
-    return NextResponse.json(contracts);
+    // Sign a fresh S3 URL for every contract's attachment on the way out —
+    // see resolveContractFileUrl in customerContractS3.ts for why this is
+    // needed (private bucket, short-lived links) and why it's a no-op for
+    // pre-migration rows that still hold a plain Vercel Blob URL.
+    const withResolvedUrls = await Promise.all(
+      contracts.map(async (c) => (c.fileUrl ? { ...c, fileUrl: await resolveContractFileUrl(c.fileUrl, c.fileName) } : c))
+    );
+    return NextResponse.json(withResolvedUrls);
   } catch (error) {
     console.error('GET /api/customers/[id]/contracts error:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
@@ -71,20 +79,20 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     let fileFields: Record<string, any> = {};
     if (file) {
-      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      if (!isS3Configured()) {
         return NextResponse.json(
-          { message: 'File upload is not configured (missing BLOB_READ_WRITE_TOKEN) — provision a Vercel Blob store to enable attachments' },
+          { message: 'File upload is not configured (missing AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION / AWS_S3_BUCKET) — set these to enable attachments' },
           { status: 503 }
         );
       }
       const validationError = validateCustomerDocumentFile(file);
       if (validationError) return NextResponse.json({ message: validationError }, { status: 400 });
-      const blob = await uploadCustomerDocumentBlob(file, 'customer-contracts');
+      const { key } = await uploadContractFileToS3(file, 'customer-contracts');
       fileFields = {
         fileName: file.name,
         fileType: fileExtension(file.name) || null,
         mimeType: file.type || null,
-        fileUrl: blob.url,
+        fileUrl: key,
         fileSize: file.size,
         uploadedAt: new Date(),
       };
@@ -122,7 +130,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     await logAudit({ action: 'CREATE', entityType: 'CUSTOMER_CONTRACT', entityId: contract.id, newValue: contract, description: `Customer contract created: ${lead.companyName}`, request });
 
-    return NextResponse.json(contract, { status: 201 });
+    const response = contract.fileUrl ? { ...contract, fileUrl: await resolveContractFileUrl(contract.fileUrl, contract.fileName) } : contract;
+    return NextResponse.json(response, { status: 201 });
   } catch (error: any) {
     console.error('POST /api/customers/[id]/contracts error:', error);
     return NextResponse.json({ message: error.message || 'Failed to create contract' }, { status: 400 });
