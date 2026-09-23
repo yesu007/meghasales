@@ -113,6 +113,7 @@ model User {
   approvedExpenseBudgets ExpenseBudget[]         @relation("ExpenseBudgetApprovedBy")
   createdExpenseBudgets  ExpenseBudget[]         @relation("ExpenseBudgetCreatedBy")
   revisedExpenseBudgets  ExpenseBudgetRevision[] @relation("ExpenseBudgetRevisedBy")
+  decidedExpenseClaims   ExpenseClaim[]          @relation("ExpenseClaimDecidedBy")
   headOfVerticals        Vertical[]              @relation("VerticalHead")
   headOfProjects         Project[]               @relation("ProjectHead")
   headOfProducts         Product[]               @relation("ProductHead")
@@ -289,6 +290,7 @@ model Lead {
   events             Event[]
   documents          EventDocument[]
   vendorExpenses     Expense[]           @relation("ExpenseVendor")
+  expenseClaims      ExpenseClaim[]
   // Project master — two independent relations: this Lead/Customer row as
   // the project's required Customer (Project.customerId) vs. as the
   // project's optional Lead reference (Project.leadId, added alongside the
@@ -308,8 +310,8 @@ model Lead {
   // as projectId/linkedProject above (independent of productsAsCustomer/
   // productsAsLead, which are ownership relations, not this reference).
   // Added for the Customer creation form's "Product / Project" field.
-  productId     Int?     @map("product_id")
-  linkedProduct Product? @relation("LeadProductLink", fields: [productId], references: [id])
+  productId          Int?                @map("product_id")
+  linkedProduct      Product?            @relation("LeadProductLink", fields: [productId], references: [id])
 
   // Customer Documents (KYC / NDA & Contract) — Customer-tab only, not
   // read/written by any Lead-owned page or API.
@@ -1193,26 +1195,26 @@ model PushSubscription {
 // actually onboards them into payroll (Phase 1) — plenty of Users (e.g.
 // a demo login) will never have one.
 model Employee {
-  id                Int       @id @default(autoincrement())
+  id                      Int       @id @default(autoincrement())
   // Optional — most staff never need CRM login access, but still need a
   // payroll record. When onboarding finds a User with a matching email,
   // this gets linked automatically (enabling that person's self-service
   // My Payslips/My Leave); otherwise the employee is payroll-only and HR-
   // managed. firstName/lastName/email live on Employee itself rather than
   // being read through this relation, precisely so they don't require it.
-  userId            Int?      @unique @map("user_id")
-  employeeCode      String    @unique @map("employee_code")
-  firstName         String    @map("first_name")
-  lastName          String    @map("last_name")
-  email             String    @map("email")
-  department        String?
-  designation       String?
-  role              String?
-  managerId         Int?      @map("manager_id")
-  verticalId        Int?      @map("vertical_id")
-  dateOfJoining     DateTime? @map("date_of_joining")
-  dateOfLeaving     DateTime? @map("date_of_leaving")
-  employmentType    String    @default("FULL_TIME") @map("employment_type") // FULL_TIME | PART_TIME | CONTRACT | INTERN | PROBATION
+  userId                  Int?      @unique @map("user_id")
+  employeeCode            String    @unique @map("employee_code")
+  firstName               String    @map("first_name")
+  lastName                String    @map("last_name")
+  email                   String    @map("email")
+  department              String?
+  designation             String?
+  role                    String?
+  managerId               Int?      @map("manager_id")
+  verticalId              Int?      @map("vertical_id")
+  dateOfJoining           DateTime? @map("date_of_joining")
+  dateOfLeaving           DateTime? @map("date_of_leaving")
+  employmentType          String    @default("FULL_TIME") @map("employment_type") // FULL_TIME | PART_TIME | CONTRACT | INTERN | PROBATION
   // Only meaningful when employmentType is PROBATION — null/cleared for
   // every other type by the API, same convention as other type-specific
   // fields elsewhere in this schema. probationEndDate starts out computed
@@ -1225,39 +1227,42 @@ model Employee {
   // against.
   probationDurationMonths Int?      @map("probation_duration_months")
   probationEndDate        DateTime? @map("probation_end_date")
-  panNumber         String?   @map("pan_number")
-  uanNumber         String?   @map("uan_number") // PF Universal Account Number
-  esicNumber        String?   @map("esic_number")
-  bankAccountNumber String?   @map("bank_account_number")
-  bankIfsc          String?   @map("bank_ifsc")
-  bankAccountHolder String?   @map("bank_account_holder")
-  bankName          String?   @map("bank_name")
-  taxRegime         String    @default("NEW") @map("tax_regime") // OLD | NEW
-  pfApplicable      Boolean   @default(true) @map("pf_applicable")
-  esiApplicable     Boolean   @default(false) @map("esi_applicable")
-  ptApplicable      Boolean   @default(true) @map("pt_applicable")
-  status            String    @default("ACTIVE") // ACTIVE | ON_NOTICE | EXITED
+  panNumber               String?   @map("pan_number")
+  uanNumber               String?   @map("uan_number") // PF Universal Account Number
+  esicNumber              String?   @map("esic_number")
+  bankAccountNumber       String?   @map("bank_account_number")
+  bankIfsc                String?   @map("bank_ifsc")
+  bankAccountHolder       String?   @map("bank_account_holder")
+  bankName                String?   @map("bank_name")
+  taxRegime               String    @default("NEW") @map("tax_regime") // OLD | NEW
+  pfApplicable            Boolean   @default(true) @map("pf_applicable")
+  esiApplicable           Boolean   @default(false) @map("esi_applicable")
+  ptApplicable            Boolean   @default(true) @map("pt_applicable")
+  status                  String    @default("ACTIVE") // ACTIVE | ON_NOTICE | EXITED
   // Separate from `status` above (the employee's full HR/employment
   // status) — a standalone Active/Inactive flag scoped to the Timesheet
   // module only (Time & Attendance's own "Status" column, next to Type).
   // Deliberately its own field rather than reusing/collapsing `status`, at
   // the requester's explicit direction.
-  timesheetStatus   String    @default("ACTIVE") @map("timesheet_status") // ACTIVE | INACTIVE
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  timesheetStatus         String    @default("ACTIVE") @map("timesheet_status") // ACTIVE | INACTIVE
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
 
-  user                User?                        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  manager             Employee?                    @relation("EmployeeManager", fields: [managerId], references: [id])
-  directReports       Employee[]                   @relation("EmployeeManager")
-  vertical            Vertical?                    @relation(fields: [verticalId], references: [id])
-  salaryAssignments   SalaryStructureAssignment[]
-  payslips            Payslip[]
-  leaveRequests       LeaveRequest[]
-  loans               Loan[]
-  timesheetEntries    TimesheetEntry[]
-  verticalAllocations EmployeeVerticalAllocation[]
+  user                  User?                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manager               Employee?                    @relation("EmployeeManager", fields: [managerId], references: [id])
+  directReports         Employee[]                   @relation("EmployeeManager")
+  vertical              Vertical?                    @relation(fields: [verticalId], references: [id])
+  salaryAssignments     SalaryStructureAssignment[]
+  payslips              Payslip[]
+  leaveRequests         LeaveRequest[]
+  loans                 Loan[]
+  timesheetEntries      TimesheetEntry[]
+  verticalAllocations   EmployeeVerticalAllocation[]
   probationReminderLogs ProbationReminderLog[]
-  legalDocuments      EmployeeLegalDocument[]
+  legalDocuments        EmployeeLegalDocument[]
+  documentFolders       EmployeeDocumentFolder[]
+  expenseClaims         ExpenseClaim[]
+  shiftAssignments      EmployeeShiftAssignment[]
 
   @@map("employees")
 }
@@ -1288,12 +1293,54 @@ model EmployeeLegalDocument {
   mimeType     String?  @map("mime_type")
   size         Int?
   uploadedById Int?     @map("uploaded_by")
+  // Which folder this file sits in — null means the tree's root, same
+  // "optional FK, null when not applicable" convention as Demo.projectId.
+  // See EmployeeDocumentFolder's own comment for why this is SetNull
+  // rather than Cascade: a folder can only ever be deleted while empty
+  // (enforced in application code), so in practice this never fires, but
+  // it's the safe default if that invariant were ever bypassed.
+  folderId     Int?     @map("folder_id")
   createdAt    DateTime @default(now()) @map("created_at")
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  folder   EmployeeDocumentFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
   @@index([employeeId])
+  @@index([folderId])
   @@map("employee_legal_documents")
+}
+
+// Nested folder tree for My Documents / Employee → Legal Documents
+// (LegalDocumentsPanel) — purely organizational, scoped per-employee like
+// the documents themselves. parentId null means a root-level folder.
+// Deleting a folder is only ever allowed while it holds zero direct files
+// and zero direct subfolders (enforced in application code, not the
+// schema) — a folder with contents must be emptied first, so this never
+// needs to decide what happens to orphaned documents/descendants. Folder
+// management (create/delete/move-into) is gated by the same canUpload
+// flag LegalDocumentsPanel already uses for file uploads, not a separate
+// permission — organizing your own attachments into folders carries none
+// of the compliance weight that deleting an actual legal document does.
+model EmployeeDocumentFolder {
+  id          Int      @id @default(autoincrement())
+  employeeId  Int      @map("employee_id")
+  parentId    Int?     @map("parent_id")
+  name        String
+  createdById Int?     @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  employee  Employee                 @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  parent    EmployeeDocumentFolder?  @relation("EmployeeDocumentFolderChildren", fields: [parentId], references: [id], onDelete: Restrict)
+  children  EmployeeDocumentFolder[] @relation("EmployeeDocumentFolderChildren")
+  documents EmployeeLegalDocument[]
+
+  // A folder name only needs to be unique among its own siblings (same
+  // parent), same as a real filesystem — "Sub1" can exist under both
+  // "Master" and a different folder without clashing.
+  @@unique([employeeId, parentId, name])
+  @@index([employeeId])
+  @@index([parentId])
+  @@map("employee_document_folders")
 }
 
 // Dedup log for the probation-notification cron (probationReminders.ts) —
@@ -1306,11 +1353,11 @@ model EmployeeLegalDocument {
 // explicit "invalidate the old schedule" step needed, and the old rows are
 // simply harmless history for a date that's no longer current.
 model ProbationReminderLog {
-  id                Int      @id @default(autoincrement())
-  employeeId        Int      @map("employee_id")
-  probationEndDate  DateTime @map("probation_end_date")
-  stage             String // SIX_DAYS_BEFORE | ONE_DAY_BEFORE | END_DATE
-  sentAt            DateTime @default(now()) @map("sent_at")
+  id               Int      @id @default(autoincrement())
+  employeeId       Int      @map("employee_id")
+  probationEndDate DateTime @map("probation_end_date")
+  stage            String // SIX_DAYS_BEFORE | ONE_DAY_BEFORE | END_DATE
+  sentAt           DateTime @default(now()) @map("sent_at")
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
@@ -1612,26 +1659,35 @@ model Loan {
   @@map("loans")
 }
 
-// One row per "this loan had an installment applied to this run" — the
-// audit trail `Loan.outstandingBalance` is derived from, and what makes
+// One row per "this loan has an installment sent for this payroll period" —
+// the audit trail `Loan.outstandingBalance` is derived from, and what makes
 // the DRAFT->PROCESSED->DRAFT reversal in changeRunStatus safe: it's what
-// gets flipped between PENDING (tentative, added while the run is still
-// DRAFT) and APPLIED (the balance has actually been decremented). A
-// regenerate on a still-DRAFT run deletes PENDING rows for that run
-// (see /api/payroll/runs/[id]/regenerate) since the payslip line item
-// they refer to gets wiped too.
+// gets flipped between PENDING (tentative — includes both "sent but its run
+// is still DRAFT" and "sent before that period even has a run yet") and
+// APPLIED (the balance has actually been decremented, only possible once a
+// run exists and is PROCESSED/PAID). Deliberately period-scoped
+// (periodYear/periodMonth), not run-scoped — a loan installment can be sent
+// to Payroll before that month's PayrollRun is even generated; runId is
+// null until generateRunPayslips finds a matching pending row for an
+// employee it's creating a payslip for and attaches it (see runService.ts).
+// A regenerate on a still-DRAFT run unlinks (not deletes) PENDING rows —
+// runId/payslipId back to null — so generateRunPayslips reattaches them
+// fresh rather than losing the installment (see
+// /api/payroll/runs/[id]/regenerate).
 model LoanRepayment {
-  id        Int      @id @default(autoincrement())
-  loanId    Int      @map("loan_id")
-  runId     Int      @map("run_id")
-  payslipId Int?     @map("payslip_id")
-  amount    Decimal  @db.Decimal(12, 2)
-  status    String   @default("PENDING") // PENDING | APPLIED
-  createdAt DateTime @default(now()) @map("created_at")
+  id          Int      @id @default(autoincrement())
+  loanId      Int      @map("loan_id")
+  runId       Int?     @map("run_id")
+  payslipId   Int?     @map("payslip_id")
+  periodYear  Int      @map("period_year")
+  periodMonth Int      @map("period_month") // 1-12
+  amount      Decimal  @db.Decimal(12, 2)
+  status      String   @default("PENDING") // PENDING | APPLIED
+  createdAt   DateTime @default(now()) @map("created_at")
 
   loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
 
-  @@unique([loanId, runId])
+  @@unique([loanId, periodYear, periodMonth])
   @@map("loan_repayments")
 }
 
@@ -1658,6 +1714,57 @@ model TimesheetEntry {
 
   @@unique([employeeId, periodYear, periodMonth])
   @@map("timesheet_entries")
+}
+
+// Shift Master — a reusable, admin-configured working-hours policy
+// template (Payroll -> Time & Attendance -> Shift Master), assignable to
+// employees via EmployeeShiftAssignment. Every threshold here is an
+// editable column, not a hardcoded rule: bufferMinutes is the grace period
+// after startTime before a login counts against the employee,
+// lateRuleMinutes/halfDayRuleMinutes/lopRuleMinutes define how a shortfall
+// (late arrival or, for LOGIN_AND_LOGOUT shifts, early logout) would
+// escalate from LATE -> HALF_DAY -> LOP; a null threshold means that
+// escalation step never triggers.
+model Shift {
+  id                       Int      @id @default(autoincrement())
+  name                     String   @unique
+  startTime                String   @map("start_time") // "HH:mm", plain local time — no timezone, same convention as this app's other time-of-day config (e.g. TIMEZONES list is handled separately, per-record, elsewhere)
+  endTime                  String   @map("end_time")
+  bufferMinutes            Int      @default(0) @map("buffer_minutes")
+  earlyLogoutBufferMinutes Int      @default(0) @map("early_logout_buffer_minutes")
+  attendanceRequirement    String   @default("LOGIN_AND_LOGOUT") @map("attendance_requirement") // LOGIN_ONLY | LOGIN_AND_LOGOUT
+  lateRuleMinutes          Int?     @map("late_rule_minutes")
+  halfDayRuleMinutes       Int?     @map("half_day_rule_minutes")
+  lopRuleMinutes           Int?     @map("lop_rule_minutes")
+  isActive                 Boolean  @default(true) @map("is_active")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  assignments EmployeeShiftAssignment[]
+
+  @@map("shifts")
+}
+
+// Same "assignment is an increment, not an edit" shape as
+// SalaryStructureAssignment — the previous open-ended assignment
+// (effectiveTo: null) gets closed the day before a new one starts, so this
+// stays a full history. The shift effective on a given date always resolves
+// via resolveShiftForEmployeeOnDate in shiftEngine.ts, never "whatever the
+// employee's shift is today".
+model EmployeeShiftAssignment {
+  id            Int       @id @default(autoincrement())
+  employeeId    Int       @map("employee_id")
+  shiftId       Int       @map("shift_id")
+  effectiveFrom DateTime  @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  createdById   Int?      @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift    Shift    @relation(fields: [shiftId], references: [id])
+
+  @@index([employeeId, effectiveFrom])
+  @@map("employee_shift_assignments")
 }
 
 // One row per company holiday (Republic Day, Diwali, ...) — feeds the
@@ -1895,6 +2002,12 @@ model ExpenseCategory {
   budgets          ExpenseBudget[]
   subCategories    ExpenseSubCategory[]
   subCategoryLinks ExpenseCategorySubCategoryLink[]
+  // Employee reimbursement claims (My Space → Expense Claim) — a distinct
+  // relation name from `expenses` above since that's Finance's own
+  // company-expense bookkeeping (Expense model: vendor, payment method,
+  // recordedById), a different concept from an employee's own
+  // reimbursement claim even though both reuse this same category master.
+  claims           ExpenseClaim[]
 
   @@map("expense_categories")
 }
@@ -1999,6 +2112,83 @@ model Expense {
   @@map("expenses")
 }
 
+// Employee reimbursement claim (My Space → Expense Claim) — deliberately a
+// separate model from Expense above, not a variant of it: Expense is
+// Finance's own company-expense ledger (vendor, payment method, who
+// recorded it), with no employee-submits/gets-reimbursed workflow at all.
+// An ExpenseClaim is the opposite shape — owned by the employee who
+// incurred it, goes through Draft -> Submitted -> Approved/Rejected -> Paid,
+// and is never folded into payroll/salary calculation (see
+// src/lib/payroll/runEngine.ts and runService.ts, neither of which
+// reference this model — reimbursement is tracked and paid separately, by
+// design, per the task that introduced this model).
+model ExpenseClaim {
+  id              Int       @id @default(autoincrement())
+  employeeId      Int       @map("employee_id")
+  expenseDate     DateTime  @map("expense_date")
+  // "Expense Type" — reuses the existing Expense Category master (Finance's
+  // Expenses > Category/Sub Category screen) rather than inventing a
+  // second, parallel type list; an admin adding a category there
+  // automatically becomes selectable here too.
+  categoryId      Int       @map("category_id")
+  // Project / Customer — same optional, independent pair as Demo/Quotation/
+  // Implementation's own projectId/leadId fields: leadId is "Customer" (a
+  // Lead row), projectId is optionally scoped to that Lead's own Projects
+  // (see GET /api/projects's leadId filter). Both nullable — a claim isn't
+  // required to be tied to any customer/project (e.g. general office
+  // supplies).
+  leadId          Int?      @map("lead_id")
+  projectId       Int?      @map("project_id")
+  // Product — same optional, independent-of-Project scoping as Product
+  // Master itself (Product.customerId/leadId, no projectId on Product at
+  // all), just displayed alongside Project in the form/tables per the UI
+  // spec; the dropdown's actual options come from the selected Customer,
+  // not the selected Project (see useProductsForLead).
+  productId       Int?      @map("product_id")
+  description     String
+  amount          Decimal   @db.Decimal(12, 2)
+  // Vercel Blob URL + original filename — same shape/convention as
+  // Expense.attachmentUrl/attachmentName and EmployeeLegalDocument.filePath.
+  attachmentUrl   String?   @map("attachment_url")
+  attachmentName  String?   @map("attachment_name")
+  status          String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | REJECTED | PAID
+  submittedAt     DateTime? @map("submitted_at")
+  // decidedById/decidedAt cover both an Approve and a Reject decision (one
+  // pair, not two), same "one decision, whichever way it went" shape as
+  // LeaveRequest.approvedById/approvedAt (which also doubles for rejections
+  // there) — rejectedAt below is additionally split out since the task
+  // explicitly asks for a Rejected Date distinct from an Approved Date.
+  decidedById     Int?      @map("decided_by")
+  approvedAt      DateTime? @map("approved_at")
+  rejectedAt      DateTime? @map("rejected_at")
+  rejectionReason String?   @map("rejection_reason")
+  paidAt          DateTime? @map("paid_at")
+  // Set only when moving to PAID, via the Mark as Paid confirmation popup —
+  // HAND_CASH | BANK_TRANSFER. Null for every other status.
+  paymentType     String?   @map("payment_type")
+  // Optimistic lock — same convention as LeaveRequest.version/PayrollRun.version,
+  // guards against two approvers (or an approver and the employee, e.g. a
+  // Submit racing an in-flight Approve) clobbering each other's update.
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  employee  Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  category  ExpenseCategory @relation(fields: [categoryId], references: [id])
+  lead      Lead?           @relation(fields: [leadId], references: [id])
+  project   Project?        @relation(fields: [projectId], references: [id])
+  product   Product?        @relation(fields: [productId], references: [id])
+  decidedBy User?           @relation("ExpenseClaimDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([categoryId])
+  @@index([leadId])
+  @@index([productId])
+  @@index([projectId])
+  @@map("expense_claims")
+}
+
 // ============================================================
 // VERTICALS & EXPENSE BUDGET (BRD §6, §10 — vertical-wise budgeting)
 //
@@ -2082,6 +2272,7 @@ model Project {
   quotations      Quotation[]
   implementations Implementation[]
   expenses        Expense[]
+  expenseClaims   ExpenseClaim[]
 
   @@index([customerId])
   @@index([leadId])
@@ -2135,6 +2326,9 @@ model Product {
   // Product from their own "Product" field, same convention as Project's
   // own linkedLeads relation.
   linkedLeads     Lead[]           @relation("LeadProductLink")
+  // Reverse side of ExpenseClaim.productId — the Reimbursements module's
+  // own Product field, same convention as Project's own reverse relation.
+  expenseClaims   ExpenseClaim[]
 
   @@index([customerId])
   @@index([leadId])

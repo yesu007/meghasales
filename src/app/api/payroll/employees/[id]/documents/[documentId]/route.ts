@@ -3,8 +3,32 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
+import { moveDocumentToFolder } from '@/lib/payroll/employeeLegalDocuments';
 
 export const dynamic = 'force-dynamic';
+
+// Move a document into a different folder (or back to root with
+// folderId: null) — gated the same as upload (manage_employees), not the
+// stricter delete-only concern below: reorganizing where a file sits
+// carries none of the compliance weight of removing it outright.
+export async function PATCH(request: NextRequest, { params }: { params: { id: string; documentId: string } }) {
+  if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
+  const denied = await requirePermission('manage_employees');
+  if (denied) return denied;
+
+  try {
+    const employeeId = parseInt(params.id, 10);
+    const documentId = parseInt(params.documentId, 10);
+    const body = await request.json();
+    const folderId = body.folderId != null ? Number(body.folderId) : null;
+
+    const document = await moveDocumentToFolder(employeeId, documentId, folderId);
+    return NextResponse.json(document);
+  } catch (error: any) {
+    console.error('PATCH /api/payroll/employees/[id]/documents/[documentId] error:', error);
+    return NextResponse.json({ message: error.message || 'Failed to move document' }, { status: 400 });
+  }
+}
 
 // Deleting is only ever reachable through this Employee-module route,
 // gated by manage_employees — there's no delete endpoint under the

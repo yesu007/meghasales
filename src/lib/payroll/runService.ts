@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import { isValidRunStatusTransition, RunStatus } from './constants';
 import { computePayableDays, daysInMonth, resolveStructureLineItems, round2, StatutoryConfig } from './runEngine';
 import { computeAutoLopDays } from './leaveEngine';
-import { computeOtherLeaveDays, computeTotalDaysFromHours } from './timesheetEngine';
+import { computeOtherLeaveDays, computeTotalDaysFromHours, computePaidHolidayHours, HOURS_PER_DAY } from './timesheetEngine';
 
 export class OptimisticLockError extends Error {}
 export class InvalidStatusTransitionError extends Error {}
@@ -51,6 +51,10 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
     },
   });
   const statutory = await fetchStatutoryConfig(tx);
+  // Same company holiday calendar the Timesheet screen's own Total Days
+  // column folds in (see GET /api/payroll/timesheet) — fetched once here,
+  // not per employee, same convention as fetchStatutoryConfig above.
+  const holidays = await tx.paidHoliday.findMany({ where: { isActive: true, date: { gte: periodStart, lte: periodEnd } } });
 
   // Payroll must only ever include employees who were actually part of
   // THIS period's Time & Attendance submission — not every globally-
@@ -60,6 +64,21 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
   // signal "Total Days are provided", read directly rather than re-derived.
   const timesheetEntries = await tx.timesheetEntry.findMany({ where: { periodYear: year, periodMonth: month } });
   const timesheetEntryByEmployee = new Map(timesheetEntries.map((e) => [e.employeeId, e]));
+
+  // Loan installments sent to Payroll (see loans/[id]/apply-to-run) before
+  // this employee had a payslip for this exact period — runId is still
+  // null, meaning "intent recorded, not yet attached". Grouped by employee
+  // so each new payslip below can fold in whatever's waiting for it.
+  const pendingLoanRepayments = await tx.loanRepayment.findMany({
+    where: { runId: null, periodYear: year, periodMonth: month },
+    include: { loan: true },
+  });
+  const pendingRepaymentsByEmployee = new Map<number, typeof pendingLoanRepayments>();
+  for (const repayment of pendingLoanRepayments) {
+    const list = pendingRepaymentsByEmployee.get(repayment.loan.employeeId) ?? [];
+    list.push(repayment);
+    pendingRepaymentsByEmployee.set(repayment.loan.employeeId, list);
+  }
 
   let created = 0;
   let skipped = 0;
@@ -97,7 +116,8 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
       continue;
     }
     const otherLeaveDays = await computeOtherLeaveDays(tx, employee.id, periodStart, periodEnd);
-    const timesheetTotalDays = computeTotalDaysFromHours(Number(timesheetEntry.regularHours), Number(timesheetEntry.overtimeHours), otherLeaveDays, autoLopDays);
+    const paidHolidayDays = round2(computePaidHolidayHours(holidays, periodStart, periodEnd, employee) / HOURS_PER_DAY);
+    const timesheetTotalDays = computeTotalDaysFromHours(Number(timesheetEntry.regularHours), Number(timesheetEntry.overtimeHours), otherLeaveDays, autoLopDays, paidHolidayDays);
     if (timesheetTotalDays <= 0) {
       notEligible += 1;
       continue;
@@ -118,7 +138,16 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
       continue;
     }
 
-    const payableDays = computePayableDays({ year, month, totalDays, lopDays: autoLopDays, dateOfJoining: employee.dateOfJoining, dateOfLeaving: employee.dateOfLeaving });
+    // payableDays is capped to whichever is stricter: the calendar-based
+    // figure (join/leave date + LOP) or the employee's actual Timesheet
+    // Total Days (regular+overtime+other-leave-days, already entered by HR
+    // for this exact period — see timesheetTotalDays above). Without this,
+    // an employee submitted with fewer Total Days than the month still got
+    // paid for the full calendar-based figure, because Total Days was only
+    // ever used as an eligibility gate (>0), never as an input to the
+    // actual payable-days ratio.
+    const calendarPayableDays = computePayableDays({ year, month, totalDays, lopDays: autoLopDays, dateOfJoining: employee.dateOfJoining, dateOfLeaving: employee.dateOfLeaving });
+    const payableDays = Math.min(calendarPayableDays, timesheetTotalDays);
     const ratio = totalDays > 0 ? payableDays / totalDays : 0;
 
     const scaledItems = resolveStructureLineItems(assignment.structure.components, statutory).map((item) => ({ ...item, amount: round2(item.amount * ratio) }));
@@ -142,6 +171,29 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
     await tx.payslipLineItem.createMany({
       data: scaledItems.map((item) => ({ payslipId: payslip.id, componentId: item.componentId, label: item.label, type: item.type, amount: item.amount, isAdjustment: false })),
     });
+
+    const pendingForEmployee = pendingRepaymentsByEmployee.get(employee.id) ?? [];
+    if (pendingForEmployee.length > 0) {
+      await tx.payslipLineItem.createMany({
+        data: pendingForEmployee.map((repayment) => ({
+          payslipId: payslip.id,
+          componentId: null,
+          label: `Loan Recovery — ${repayment.loan.reason || `Loan #${repayment.loan.id}`}`,
+          type: 'DEDUCTION',
+          amount: repayment.amount,
+          isAdjustment: true,
+        })),
+      });
+      await tx.loanRepayment.updateMany({
+        where: { id: { in: pendingForEmployee.map((r) => r.id) } },
+        data: { runId, payslipId: payslip.id },
+      });
+      const extraDeduction = round2(pendingForEmployee.reduce((s, r) => s + Number(r.amount), 0));
+      await tx.payslip.update({
+        where: { id: payslip.id },
+        data: { totalDeductions: round2(totalDeductions + extraDeduction), netPay: round2(grossEarnings - totalDeductions - extraDeduction) },
+      });
+    }
 
     created += 1;
   }
@@ -170,7 +222,7 @@ export async function recalculatePayslip(
   });
 
   const lopDays = updates.lopDays ?? Number(payslip.lopDays);
-  const payableDays = computePayableDays({
+  const calendarPayableDays = computePayableDays({
     year: payslip.run.payPeriodYear,
     month: payslip.run.payPeriodMonth,
     totalDays: payslip.totalDays,
@@ -178,6 +230,28 @@ export async function recalculatePayslip(
     dateOfJoining: payslip.employee.dateOfJoining,
     dateOfLeaving: payslip.employee.dateOfLeaving,
   });
+
+  // Same Timesheet Total Days cap generateRunPayslips applies — re-derived
+  // here (rather than trusting the payslip's original totalDays/payableDays)
+  // because a manual lopDays edit changes Total Days too (it's one of
+  // computeTotalDaysFromHours's own inputs), so this has to be recomputed
+  // against the current Timesheet entry, not just the calendar figure.
+  const periodStart = dayjs(`${payslip.run.payPeriodYear}-${String(payslip.run.payPeriodMonth).padStart(2, '0')}-01`).toDate();
+  const periodEnd = dayjs(periodStart).endOf('month').toDate();
+  const timesheetEntry = await tx.timesheetEntry.findFirst({
+    where: { employeeId: payslip.employeeId, periodYear: payslip.run.payPeriodYear, periodMonth: payslip.run.payPeriodMonth },
+  });
+  const holidays = await tx.paidHoliday.findMany({ where: { isActive: true, date: { gte: periodStart, lte: periodEnd } } });
+  const paidHolidayDays = round2(computePaidHolidayHours(holidays, periodStart, periodEnd, payslip.employee) / HOURS_PER_DAY);
+  const payableDays = timesheetEntry
+    ? Math.min(calendarPayableDays, computeTotalDaysFromHours(
+        Number(timesheetEntry.regularHours),
+        Number(timesheetEntry.overtimeHours),
+        await computeOtherLeaveDays(tx, payslip.employeeId, periodStart, periodEnd),
+        lopDays,
+        paidHolidayDays
+      ))
+    : calendarPayableDays;
   const ratio = payslip.totalDays > 0 ? payableDays / payslip.totalDays : 0;
 
   const statutory = await fetchStatutoryConfig(tx);
