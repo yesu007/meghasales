@@ -28,8 +28,20 @@ export function isBlobConfigured(): boolean {
   return !!token && token.startsWith('vercel_blob_rw_');
 }
 
+// S3_BUCKET_NAME is the original name; AWS_S3_BUCKET_NAME is accepted as
+// an alias. Credentials are never read here - the AWS SDK's default
+// provider chain picks up AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (or an
+// IAM role / ~/.aws profile) on its own, so no key ever touches source.
+function getS3BucketName(): string | undefined {
+  return process.env.S3_BUCKET_NAME || process.env.AWS_S3_BUCKET_NAME;
+}
+
+function getS3Region(): string {
+  return process.env.AWS_REGION || 'ap-south-1';
+}
+
 export function isS3Configured(): boolean {
-  return !!process.env.S3_BUCKET_NAME;
+  return !!getS3BucketName();
 }
 
 // The guard every upload route should actually check - either backend
@@ -41,18 +53,59 @@ export function isStorageConfigured(): boolean {
 let s3Client: S3Client | null = null;
 function getS3Client(): S3Client {
   if (!s3Client) {
-    s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+    s3Client = new S3Client({
+      region: getS3Region(),
+      // Fail fast instead of hanging the request on a dead connection.
+      requestHandler: { connectionTimeout: 5_000, requestTimeout: 60_000 },
+    });
   }
   return s3Client;
 }
 
 async function uploadToS3(pathname: string, body: Buffer, contentType: string): Promise<string> {
-  const bucket = process.env.S3_BUCKET_NAME!;
-  const region = process.env.AWS_REGION || 'ap-south-1';
-  await getS3Client().send(
-    new PutObjectCommand({ Bucket: bucket, Key: pathname, Body: body, ContentType: contentType })
-  );
+  const bucket = getS3BucketName()!;
+  const region = getS3Region();
+  try {
+    await getS3Client().send(
+      new PutObjectCommand({ Bucket: bucket, Key: pathname, Body: body, ContentType: contentType })
+    );
+  } catch (err) {
+    throw new Error(describeS3Error(err, bucket, region));
+  }
   return `https://${bucket}.s3.${region}.amazonaws.com/${pathname}`;
+}
+
+// Maps AWS SDK errors to a clear, secret-free message. Only the error
+// name/code and bucket/region are used - never the credentials or the raw
+// request (which carries the signed Authorization header).
+function describeS3Error(err: unknown, bucket: string, region: string): string {
+  const e = err as { name?: string; Code?: string; code?: string; $metadata?: { httpStatusCode?: number } };
+  const code = e?.name || e?.Code || e?.code || 'UnknownError';
+  switch (code) {
+    case 'InvalidAccessKeyId':
+    case 'SignatureDoesNotMatch':
+    case 'CredentialsProviderError':
+    case 'ExpiredToken':
+    case 'InvalidToken':
+      return `S3 credentials are invalid or missing (${code}) - check AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY`;
+    case 'AccessDenied':
+    case 'AllAccessDisabled':
+      return `S3 access denied for bucket "${bucket}" - the IAM user needs s3:PutObject on arn:aws:s3:::${bucket}/*`;
+    case 'NoSuchBucket':
+      return `S3 bucket "${bucket}" does not exist`;
+    case 'PermanentRedirect':
+    case 'AuthorizationHeaderMalformed':
+    case 'IllegalLocationConstraintException':
+      return `S3 bucket "${bucket}" is not in region "${region}" - check AWS_REGION`;
+    case 'TimeoutError':
+    case 'RequestTimeout':
+    case 'RequestTimeTooSkewed':
+    case 'ETIMEDOUT':
+    case 'ECONNRESET':
+      return `S3 upload timed out or the connection dropped (${code}) - please retry`;
+    default:
+      return `S3 upload failed (${code}${e?.$metadata?.httpStatusCode ? `, HTTP ${e.$metadata.httpStatusCode}` : ''})`;
+  }
 }
 
 async function uploadToBlob(pathname: string, file: File | Blob): Promise<string> {
@@ -72,6 +125,9 @@ export async function put(
     throw new Error(
       'File storage is not configured - set S3_BUCKET_NAME (and AWS_REGION) and/or BLOB_READ_WRITE_TOKEN.'
     );
+  }
+  if (!file || file.size === 0) {
+    throw new Error('Cannot upload an empty file');
   }
 
   const arrayBuffer = await file.arrayBuffer();
@@ -93,7 +149,7 @@ export async function put(
             results.s3 = url;
           })
           .catch((err) => {
-            errors.push(`S3 upload failed: ${err.message}`);
+            errors.push(err.message);
           })
       : Promise.resolve(),
     blobConfigured
