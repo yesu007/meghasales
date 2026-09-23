@@ -9,10 +9,13 @@ export const dynamic = 'force-dynamic';
 
 // Wipes and rebuilds every payslip for a still-DRAFT run — for when an
 // employee was onboarded late, a salary structure got corrected, or an LOP
-// entry needs to start over. Any manual adjustments already entered on
-// individual payslips are lost, same as re-running any other draft
-// generation step; that's why this is a separate explicit action rather
-// than something the run-detail page does automatically on every load.
+// entry needs to start over. Manual adjustments already entered on
+// individual payslips (bonus, arrears, reimbursement, extra deduction) are
+// lost, same as re-running any other draft generation step — except loan
+// installments, which are unlinked rather than deleted and reattach
+// automatically as generateRunPayslips recreates each payslip. That's why
+// this is a separate explicit action rather than something the run-detail
+// page does automatically on every load.
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
   const denied = await requirePermission('run_payroll');
@@ -29,9 +32,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const result = await prisma.$transaction(async (tx) => {
       // A regenerate only ever runs on a DRAFT run, so any LoanRepayment
       // row for it is still PENDING (nothing gets to APPLIED before
-      // PROCESSED) — safe to drop along with the payslips they were
-      // logged against.
-      await tx.loanRepayment.deleteMany({ where: { runId: id, status: 'PENDING' } });
+      // PROCESSED) — unlinked, not deleted: runId/payslipId go back to
+      // null so generateRunPayslips's own pending-repayment lookup picks
+      // them back up and reattaches them to whatever payslip it creates
+      // this time, rather than losing the installment.
+      await tx.loanRepayment.updateMany({ where: { runId: id, status: 'PENDING' }, data: { runId: null, payslipId: null } });
       await tx.payslip.deleteMany({ where: { runId: id } });
       return generateRunPayslips(tx, id, run.payPeriodYear, run.payPeriodMonth);
     });

@@ -33,6 +33,8 @@ interface TimesheetEmployeeRow {
   earnedLeaveHours: number;
   lopDays: number; // already in days, not hours — see computeAutoLopDays
   totalDays: number;
+  loanDeduction: number; // amount actually sent to Payroll for this period — see GET /api/payroll/timesheet
+  shiftName: string | null; // resolved as of the period's last day — see Shift Master
 }
 interface TimesheetResponse {
   period: { year: number; month: number; status: string; submittedAt: string | null };
@@ -177,6 +179,7 @@ export default function TimeAndAttendancePage() {
   // lopDays comes pre-computed in days (see computeAutoLopDays), not hours —
   // no /HOURS_PER_DAY conversion needed here, unlike fmtDays above.
   const fmtLopDays = (days: number) => (days > 0 ? `${Math.round(days * 100) / 100} Days` : '-');
+  const fmtLoanDeduction = (amount: number) => (amount > 0 ? `₹${amount.toLocaleString('en-IN')}` : '-');
 
   const getDraft = (row: TimesheetEmployeeRow) => drafts[row.employeeId] ?? { regularHours: row.regularHours ? String(row.regularHours) : '', overtimeHours: row.overtimeHours ? String(row.overtimeHours) : '' };
   const setDraft = (employeeId: number, patch: Partial<{ regularHours: string; overtimeHours: string }>) =>
@@ -298,6 +301,7 @@ export default function TimeAndAttendancePage() {
                       <th className="px-4 py-3 text-left font-semibold text-white">Name</th>
                       <th className="px-4 py-3 text-left font-semibold text-white">Type</th>
                       <th className="px-4 py-3 text-left font-semibold text-white">Status</th>
+                      <th className="px-4 py-3 text-left font-semibold text-white">Shift</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Regular</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Overtime</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Sick Leave</th>
@@ -305,6 +309,7 @@ export default function TimeAndAttendancePage() {
                       <th className="px-4 py-3 text-right font-semibold text-white">Loss of Pay</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Paid Holiday</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Earned Leave</th>
+                      <th className="px-4 py-3 text-right font-semibold text-white">Loan Deduction</th>
                       <th className="px-4 py-3 text-right font-semibold text-white">Total Days</th>
                     </tr>
                   </thead>
@@ -339,6 +344,7 @@ export default function TimeAndAttendancePage() {
                               <option value="INACTIVE">Inactive</option>
                             </select>
                           </td>
+                          <td className="px-4 py-3 text-slate-600">{row.shiftName ?? '—'}</td>
                           <td className="px-4 py-3 text-right">
                             <input
                               type="number" min={0} step={0.5} disabled={isSubmitted}
@@ -362,6 +368,7 @@ export default function TimeAndAttendancePage() {
                           <td className="px-4 py-3 text-right text-slate-600">{fmtLopDays(row.lopDays)}</td>
                           <td className="px-4 py-3 text-right text-slate-600">{fmtDays(row.paidHolidayHours)}</td>
                           <td className="px-4 py-3 text-right text-slate-600">{fmtDays(row.earnedLeaveHours)}</td>
+                          <td className="px-4 py-3 text-right text-slate-600">{fmtLoanDeduction(row.loanDeduction)}</td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-800">{row.totalDays} Days</td>
                         </tr>
                       );
@@ -387,7 +394,6 @@ export default function TimeAndAttendancePage() {
                 </span>
                 <div>
                   <h3 className="text-base font-semibold text-slate-800">Holiday Calendar</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Company holidays feed the Paid Holiday column</p>
                 </div>
               </div>
               <button onClick={() => setSettingsOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"><XMarkIcon className="h-5 w-5" /></button>

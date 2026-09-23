@@ -5,8 +5,9 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { periodRange, computeOtherLeaveDays, computeTotalDaysFromHours } from '@/lib/payroll/timesheetEngine';
+import { periodRange, computeOtherLeaveDays, computeTotalDaysFromHours, computePaidHolidayHours, HOURS_PER_DAY } from '@/lib/payroll/timesheetEngine';
 import { computeAutoLopDays } from '@/lib/payroll/leaveEngine';
+import { round2 } from '@/lib/payroll/runEngine';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,9 +42,10 @@ export async function POST(request: NextRequest) {
     // Inactive, then submit again.
     if (toStatus === 'SUBMITTED') {
       const { start, end } = periodRange(year, month);
-      const [employees, entries] = await Promise.all([
+      const [employees, entries, holidays] = await Promise.all([
         prisma.employee.findMany(),
         prisma.timesheetEntry.findMany({ where: { periodYear: year, periodMonth: month } }),
+        prisma.paidHoliday.findMany({ where: { isActive: true, date: { gte: start, lte: end } } }),
       ]);
       const entryByEmployee = new Map(entries.map((e) => [e.employeeId, e]));
 
@@ -55,7 +57,8 @@ export async function POST(request: NextRequest) {
         const overtimeHours = entry ? Number(entry.overtimeHours) : 0;
         const lopDays = await computeAutoLopDays(prisma, emp.id, start, end);
         const otherLeaveDays = await computeOtherLeaveDays(prisma, emp.id, start, end);
-        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, otherLeaveDays, lopDays);
+        const paidHolidayDays = round2(computePaidHolidayHours(holidays, start, end, emp) / HOURS_PER_DAY);
+        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, otherLeaveDays, lopDays, paidHolidayDays);
         if (totalDays === 0) zeroDayActiveEmployees.push(`${emp.firstName} ${emp.lastName}`);
       }
 

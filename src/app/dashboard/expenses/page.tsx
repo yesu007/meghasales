@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { invalidateExpenseData } from '@/lib/queryInvalidation';
 import AddableSelect from '@/components/AddableSelect';
+import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
 
 interface ExpenseSubCategory { id: number; categoryId: number; name: string; isActive: boolean }
 interface ExpenseCategory { id: number; name: string; description: string | null; isActive: boolean; subCategories: ExpenseSubCategory[] }
@@ -233,6 +234,7 @@ export default function ExpensesPage() {
     : products;
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
+  const { ref: formRef, trigger: scrollToForm } = useScrollFormIntoView<HTMLFormElement>();
 
   const openEdit = (row: ExpenseRow) => {
     setEditingId(row.id);
@@ -258,6 +260,7 @@ export default function ExpensesPage() {
       status: row.status,
     });
     setShowForm(true);
+    scrollToForm();
   };
 
   const save = useMutation({
@@ -385,8 +388,9 @@ export default function ExpensesPage() {
   const subCategoryOptions = selectedCategory?.subCategories || [];
 
   const closeLinkForm = () => { setShowLinkForm(false); setEditingLinkId(null); setLinkForm({ categoryId: '', subCategoryId: '' }); };
-  const openAddLink = () => { setEditingLinkId(null); setLinkForm({ categoryId: '', subCategoryId: '' }); setShowLinkForm(true); };
-  const openViewOrEditLink = (l: CategoryLink) => { setEditingLinkId(l.id); setLinkForm({ categoryId: String(l.categoryId), subCategoryId: String(l.subCategoryId) }); setShowLinkForm(true); };
+  const { ref: linkFormRef, trigger: scrollToLinkForm } = useScrollFormIntoView<HTMLFormElement>();
+  const openAddLink = () => { setEditingLinkId(null); setLinkForm({ categoryId: '', subCategoryId: '' }); setShowLinkForm(true); scrollToLinkForm(); };
+  const openViewOrEditLink = (l: CategoryLink) => { setEditingLinkId(l.id); setLinkForm({ categoryId: String(l.categoryId), subCategoryId: String(l.subCategoryId) }); setShowLinkForm(true); scrollToLinkForm(); };
 
   const saveLink = useMutation({
     mutationFn: async () => {
@@ -441,7 +445,7 @@ export default function ExpensesPage() {
             </div>
           </div>
           <button
-            onClick={() => (showForm ? closeForm() : setShowForm(true))}
+            onClick={() => { if (showForm) closeForm(); else { setShowForm(true); scrollToForm(); } }}
             className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
           >
             <PlusIcon className="h-4 w-4" /> New Expense
@@ -466,7 +470,8 @@ export default function ExpensesPage() {
             if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
             save.mutate();
           }}
-          className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
+          ref={formRef}
+          className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 scroll-mt-4"
         >
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingId ? 'Edit Expense' : 'Record Expense'}</h2>
           <div className="mb-4">
@@ -899,8 +904,9 @@ export default function ExpensesPage() {
 
         {showLinkForm && (
           <form
+            ref={linkFormRef}
             onSubmit={(e) => { e.preventDefault(); if (!linkForm.categoryId || !linkForm.subCategoryId) { toast.error('Category and Sub Category are required'); return; } saveLink.mutate(); }}
-            className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 gap-3"
+            className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 gap-3 scroll-mt-4"
           >
             <AddableSelect
               value={linkForm.categoryId}

@@ -66,8 +66,22 @@ export function resolvePtAmount(gross: number, slabs: PtSlabInput[]): number {
 // recalculatePayslip apply the payableDays/totalDays ratio afterward, so
 // slab/threshold decisions are made against the employee's normal
 // contracted monthly gross, not a pro-rated actual-paid amount.
+// "Basic" component codes recognized across existing structures — some were
+// set up with code BASIC, others with BASIC_SALARY. A structure can even
+// carry both at once (a legacy "basic (%)" row alongside a proper "Basic
+// Salary" row) — when that happens, the FLAT one is preferred, since a
+// PERCENT_OF_BASIC row is itself computed off this same lookup and can't
+// meaningfully serve as its own reference. Falls back to the first match
+// (whichever it is) when none of the candidates are FLAT.
+export const BASIC_CODES = ['BASIC', 'BASIC_SALARY'];
+
+function findBasicComponent(components: StructureComponentInput[]) {
+  const candidates = components.filter((c) => BASIC_CODES.includes(c.component.code));
+  return candidates.find((c) => c.component.calculationType !== 'PERCENT_OF_BASIC') ?? candidates[0];
+}
+
 export function resolveStructureLineItems(components: StructureComponentInput[], statutory: StatutoryConfig = NO_STATUTORY_CONFIG): GeneratedLineItem[] {
-  const basic = components.find((c) => c.component.code === 'BASIC');
+  const basic = findBasicComponent(components);
   const basicValue = basic ? Number(basic.value) : 0;
 
   const earnings = components.filter((c) => c.component.type === 'EARNING');
