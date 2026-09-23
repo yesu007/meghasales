@@ -39,11 +39,12 @@ import AddableSelect from '@/components/AddableSelect';
 // already outranks every status a follow-up could suggest, so it can
 // never downgrade a customer away from Converted.
 //
-// The Documents tab is Customer-specific rather than reused from the Lead
-// detail page: it does NOT render the generic Lead Events document list
-// (LeadDocumentsTab) — it's scoped to KYC and NDA/Contract only, as two
-// inner tabs, not a general-purpose file repository. LeadDocumentsTab
-// itself is untouched and still used as-is on the Lead detail page.
+// The Documents tab is Customer-specific rather than reused wholesale from
+// the Lead detail page: KYC and NDA/Contract are their own inner tabs, and
+// a third "Documents" inner tab reuses the generic Lead Events document
+// list (LeadDocumentsTab) as-is for regular/general file uploads that
+// aren't KYC paperwork or a contract. LeadDocumentsTab itself is untouched
+// and still used the same way on the Lead detail page.
 interface Customer {
   id: number;
   companyName: string;
@@ -305,14 +306,14 @@ export default function CustomerDetailPage() {
             <Tab.Panel>
               {isConfirmed && canView ? (
                 <div className="space-y-6">
-                  {/* KYC and NDA/Contract only — inner tabs, only one visible
-                      at a time (KYC selected by default), same horizontal
-                      Tab.List pattern as src/app/dashboard/leads/[id]/page.tsx.
-                      The generic Lead Events document list (LeadDocumentsTab)
-                      deliberately does NOT render here — Customer Documents
-                      is scoped to KYC/NDA only, not a general file
-                      repository. LeadDocumentsTab itself is untouched and
-                      still used as-is by the Lead detail page. */}
+                  {/* KYC, NDA/Contract, and a general Documents tab — inner
+                      tabs, only one visible at a time (KYC selected by
+                      default), same horizontal Tab.List pattern as
+                      src/app/dashboard/leads/[id]/page.tsx. Documents reuses
+                      the generic Lead Events document list (LeadDocumentsTab)
+                      as-is, for regular files that aren't KYC paperwork or a
+                      contract — same component still used by the Lead
+                      detail page. */}
                   <Tab.Group>
                     <Tab.List className="flex overflow-x-auto border-b border-slate-200">
                       <Tab className={({ selected }) => classNames(
@@ -327,6 +328,12 @@ export default function CustomerDetailPage() {
                       )}>
                         NDA / Contract
                       </Tab>
+                      <Tab className={({ selected }) => classNames(
+                        'px-4 py-2.5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px',
+                        selected ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+                      )}>
+                        Documents
+                      </Tab>
                     </Tab.List>
                     <Tab.Panels className="mt-4">
                       <Tab.Panel>
@@ -334,6 +341,9 @@ export default function CustomerDetailPage() {
                       </Tab.Panel>
                       <Tab.Panel>
                         <CustomerContractsCard leadId={customer.id} canManage={canManage} />
+                      </Tab.Panel>
+                      <Tab.Panel>
+                        <LeadDocumentsTab leadId={customer.id} canManage={canManage} />
                       </Tab.Panel>
                     </Tab.Panels>
                   </Tab.Group>
