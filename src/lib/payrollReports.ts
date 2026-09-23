@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import { round2 } from '@/lib/payroll/runEngine';
+import { round2, BASIC_CODES } from '@/lib/payroll/runEngine';
 
 export type PayrollReportType = 'salary-register' | 'department-cost' | 'ytd-earnings' | 'pf-contribution' | 'esi-contribution' | 'pt-summary';
 
@@ -168,7 +168,11 @@ async function buildPfContributionReport(filters: ReportFilters): Promise<Report
       const pfItem = p.lineItems.find((li) => li.component?.statutoryType === 'PF');
       if (!pfItem || Number(pfItem.amount) === 0) return null;
 
-      const basicItem = p.lineItems.find((li) => li.component?.code === 'BASIC');
+      // Same FLAT-over-PERCENT_OF_BASIC preference as resolveStructureLineItems's
+      // findBasicComponent — a structure can carry both a proper "Basic Salary"
+      // row and a legacy "basic (%)" row under the codes BASIC_CODES matches.
+      const basicCandidates = p.lineItems.filter((li) => li.component?.code && BASIC_CODES.includes(li.component.code));
+      const basicItem = basicCandidates.find((li) => li.component?.calculationType !== 'PERCENT_OF_BASIC') ?? basicCandidates[0];
       const basicAmount = basicItem ? Number(basicItem.amount) : 0;
       const totalDays = p.totalDays;
       const payableDays = Number(p.payableDays);

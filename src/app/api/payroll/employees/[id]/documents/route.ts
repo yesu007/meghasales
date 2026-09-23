@@ -7,7 +7,7 @@ import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { validateEventDocumentFile, isStorageConfigured } from '@/lib/eventDocumentUpload';
-import { documentsWithUploaderNames } from '@/lib/payroll/employeeLegalDocuments';
+import { documentTreeForEmployee } from '@/lib/payroll/employeeLegalDocuments';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
     if (!employee) return NextResponse.json({ message: 'Employee not found' }, { status: 404 });
 
-    return NextResponse.json(await documentsWithUploaderNames(employeeId));
+    return NextResponse.json(await documentTreeForEmployee(employeeId));
   } catch (error) {
     console.error('GET /api/payroll/employees/[id]/documents error:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
@@ -49,10 +49,17 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const documentType = String(formData.get('documentType') || '').trim();
+    const folderIdRaw = formData.get('folderId');
+    const folderId = folderIdRaw ? Number(folderIdRaw) : null;
     if (!file) return NextResponse.json({ message: 'No file provided' }, { status: 400 });
     if (!documentType) return NextResponse.json({ message: 'Document Type is required' }, { status: 400 });
     const validationError = validateEventDocumentFile(file);
     if (validationError) return NextResponse.json({ message: validationError }, { status: 400 });
+
+    if (folderId != null) {
+      const folder = await prisma.employeeDocumentFolder.findUnique({ where: { id: folderId } });
+      if (!folder || folder.employeeId !== employeeId) return NextResponse.json({ message: 'Destination folder not found' }, { status: 404 });
+    }
 
     const blob = await put(`employee-legal-documents/${employeeId}/${Date.now()}-${file.name}`, file, { access: 'public' });
 
@@ -67,6 +74,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         filePath: blob.url,
         mimeType: file.type || null,
         size: file.size,
+        folderId,
         uploadedById: Number.isFinite(uploadedById) ? uploadedById : null,
       },
     });

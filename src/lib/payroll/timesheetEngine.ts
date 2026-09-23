@@ -168,13 +168,19 @@ export async function computeOtherLeaveDays(tx: Client, employeeId: number, peri
 // The same "Total Days" formula the Timesheet screen's own column computes
 // (GET /api/payroll/timesheet) — pulled out as a pure function so the
 // "Send To Payroll" zero-days business rule (see timesheet/submit/route.ts)
-// reads off the exact same number the user sees on that screen, rather
-// than a second, independently-maintained formula that could drift out of
-// sync with it. `otherLeaveDays` (every leave type except Earned/LOP —
-// see computeOtherLeaveDays above) adds to this figure; `lopDays` (already
-// in days — see computeAutoLopDays in leaveEngine.ts, already clipped to
-// this period) subtracts; Earned Leave, tracked in its own informational
-// column, never touches it either way.
-export function computeTotalDaysFromHours(regularHours: number, overtimeHours: number, otherLeaveDays: number, lopDays: number): number {
-  return round2(regularHours + overtimeHours + otherLeaveDays - lopDays);
+// and the actual payroll proration (see runService.ts) all read off the
+// exact same number the user sees on that screen, rather than a second,
+// independently-maintained formula that could drift out of sync with it.
+// `otherLeaveDays` (every leave type except Earned/LOP — see
+// computeOtherLeaveDays above) adds to this figure; `paidHolidayDays` is
+// the company holiday calendar's own contribution (computePaidHolidayHours
+// / HOURS_PER_DAY) — deliberately NOT the combined Paid Holiday column
+// shown on screen, since that column also folds in APPROVED "Paid
+// Holidays" leave requests (code MATERNITY), which are already counted via
+// otherLeaveDays above; adding the combined figure here would double-count
+// that portion. `lopDays` (already in days — see computeAutoLopDays in
+// leaveEngine.ts, already clipped to this period) subtracts; Earned Leave,
+// tracked in its own informational column, never touches it either way.
+export function computeTotalDaysFromHours(regularHours: number, overtimeHours: number, otherLeaveDays: number, lopDays: number, paidHolidayDays: number = 0): number {
+  return round2(regularHours + overtimeHours + otherLeaveDays + paidHolidayDays - lopDays);
 }

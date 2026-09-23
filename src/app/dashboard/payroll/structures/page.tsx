@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, XMarkIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import AddableSelect from '@/components/AddableSelect';
+import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
 
 interface SalaryComponent {
   id: number;
@@ -93,12 +94,14 @@ export default function SalaryStructuresPage() {
     setStructureName(''); setStructureDesc(''); setStructureRows([{ componentId: '', value: '' }]);
     setShowStructureForm(false); setEditingStructureId(null);
   };
+  const { ref: structureFormRef, trigger: scrollToStructureForm } = useScrollFormIntoView<HTMLFormElement>();
   const openEditStructure = (s: SalaryStructure) => {
     setEditingStructureId(s.id);
     setStructureName(s.name);
     setStructureDesc(s.description || '');
     setStructureRows(s.components.length > 0 ? s.components.map((c) => ({ componentId: String(c.component.id), value: c.value })) : [{ componentId: '', value: '' }]);
     setShowStructureForm(true);
+    scrollToStructureForm();
   };
 
   const saveStructure = useMutation({
@@ -217,13 +220,13 @@ export default function SalaryStructuresPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-800">Salary Structure Templates</h2>
-          <button onClick={() => (showStructureForm ? resetStructureForm() : setShowStructureForm(true))} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
+          <button onClick={() => { if (showStructureForm) resetStructureForm(); else { setShowStructureForm(true); scrollToStructureForm(); } }} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
             <PlusIcon className="h-4 w-4" /> New Structure
           </button>
         </div>
 
         {showStructureForm && (
-          <form onSubmit={(e) => { e.preventDefault(); if (!structureName) { toast.error('Name is required'); return; } saveStructure.mutate(); }} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+          <form ref={structureFormRef} onSubmit={(e) => { e.preventDefault(); if (!structureName) { toast.error('Name is required'); return; } saveStructure.mutate(); }} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3 scroll-mt-4">
             <div className="grid grid-cols-2 gap-3">
               <input placeholder="Structure name (e.g. Standard L1)" value={structureName} onChange={(e) => setStructureName(e.target.value)} className={inputCls} />
               <input placeholder="Description (optional)" value={structureDesc} onChange={(e) => setStructureDesc(e.target.value)} className={inputCls} />

@@ -10,6 +10,7 @@ import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
 import LegalDocumentsPanel from '@/components/payroll/LegalDocumentsPanel';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
 
 interface StructureOption {
   id: number;
@@ -164,6 +165,7 @@ export default function EmployeeDetailPage() {
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
 
   const closeAssignForm = () => { setAssignForm(blankAssignForm); setEditingAssignment(null); };
+  const { ref: assignFormRef, trigger: scrollToAssignForm } = useScrollFormIntoView<HTMLDivElement>();
   const openEditAssignment = (a: Assignment) => {
     setEditingAssignment(a);
     setAssignForm({
@@ -172,6 +174,7 @@ export default function EmployeeDetailPage() {
       effectiveFrom: dayjs(a.effectiveFrom).format('YYYY-MM-DD'),
       effectiveTo: a.effectiveTo ? dayjs(a.effectiveTo).format('YYYY-MM-DD') : '',
     });
+    scrollToAssignForm();
   };
 
   const assignMutation = useMutation({
@@ -460,7 +463,7 @@ export default function EmployeeDetailPage() {
           />
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 h-fit">
+        <div ref={assignFormRef} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 h-fit scroll-mt-4">
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingAssignment ? 'Edit Assignment' : 'Assign Salary Structure'}</h2>
           <form
             onSubmit={(e) => {

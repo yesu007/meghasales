@@ -9,6 +9,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
 import { defaultMonthlySpread } from '@/lib/expenseBudgetVariance';
 import AddableSelect from '@/components/AddableSelect';
+import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
 
 interface Vertical { id: number; name: string; headName?: string | null }
 interface ExpenseCategory { id: number; name: string }
@@ -193,6 +194,7 @@ export default function ExpenseBudgetsPage() {
   );
 
   const closeForm = () => { setShowForm(false); setForm(blankForm()); setCategoryAmounts({}); setEditingBudget(null); setFormErrors({}); };
+  const { ref: formRef, trigger: scrollToForm } = useScrollFormIntoView<HTMLFormElement>();
 
   const openNewForm = () => {
     setEditingBudget(null);
@@ -200,6 +202,7 @@ export default function ExpenseBudgetsPage() {
     setCategoryAmounts({});
     setFormErrors({});
     setShowForm(true);
+    scrollToForm();
   };
 
   const openEdit = async (row: BudgetRow) => {
@@ -220,6 +223,7 @@ export default function ExpenseBudgetsPage() {
       notes: detail.notes || '',
     });
     setShowForm(true);
+    scrollToForm();
   };
 
   const setCategoryAmount = (categoryId: number, value: string) =>
@@ -386,6 +390,7 @@ export default function ExpenseBudgetsPage() {
 
       {showForm && (
         <form
+          ref={formRef}
           onSubmit={(e) => {
             e.preventDefault();
             if (editingBudget) { saveEdit.mutate(); return; }
@@ -397,7 +402,7 @@ export default function ExpenseBudgetsPage() {
             if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
             save.mutate();
           }}
-          className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
+          className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 scroll-mt-4"
         >
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingBudget ? `Edit Expense Budget — ${editingBudget.categoryName}` : 'Create Expense Budget'}</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
