@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { findEmployeeForUser } from '@/lib/payroll/selfEmployee';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 
 export const dynamic = 'force-dynamic';
@@ -26,7 +27,7 @@ export async function GET() {
     const userId = currentUserId(session);
     if (!userId) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
-    const employee = await prisma.employee.findUnique({ where: { userId } });
+    const employee = await findEmployeeForUser(userId);
     if (!employee) return NextResponse.json({ employee: null, payslips: [] });
 
     const payslips = await prisma.payslip.findMany({
