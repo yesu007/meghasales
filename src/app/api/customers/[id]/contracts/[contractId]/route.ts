@@ -4,8 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
-import { validateCustomerDocumentFile, fileExtension } from '@/lib/customerDocumentUpload';
-import { isS3Configured, uploadContractFileToS3, resolveContractFileUrl } from '@/lib/customerContractS3';
+import { validateCustomerDocumentFile, uploadCustomerDocumentBlob, fileExtension } from '@/lib/customerDocumentUpload';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +23,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       include: { implementation: { select: { id: true, projectName: true } }, uploadedBy: { select: { firstName: true, lastName: true } } },
     });
     if (!contract || contract.leadId !== leadId) return NextResponse.json({ message: 'Contract not found' }, { status: 404 });
-    const response = contract.fileUrl ? { ...contract, fileUrl: await resolveContractFileUrl(contract.fileUrl, contract.fileName) } : contract;
-    return NextResponse.json(response);
+    return NextResponse.json(contract);
   } catch (error) {
     console.error('GET /api/customers/[id]/contracts/[contractId] error:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
@@ -76,20 +74,20 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     let fileFields: Record<string, any> = {};
     if (file) {
-      if (!isS3Configured()) {
+      if (!process.env.BLOB_READ_WRITE_TOKEN) {
         return NextResponse.json(
-          { message: 'File upload is not configured (missing AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION / AWS_S3_BUCKET) — set these to enable attachments' },
+          { message: 'File upload is not configured (missing BLOB_READ_WRITE_TOKEN) — provision a Vercel Blob store to enable attachments' },
           { status: 503 }
         );
       }
       const validationError = validateCustomerDocumentFile(file);
       if (validationError) return NextResponse.json({ message: validationError }, { status: 400 });
-      const { key } = await uploadContractFileToS3(file, 'customer-contracts');
+      const blob = await uploadCustomerDocumentBlob(file, 'customer-contracts');
       fileFields = {
         fileName: file.name,
         fileType: fileExtension(file.name) || null,
         mimeType: file.type || null,
-        fileUrl: key,
+        fileUrl: blob.url,
         fileSize: file.size,
         uploadedById: Number.isFinite(performedById) ? performedById : null,
         uploadedAt: new Date(),
@@ -123,8 +121,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     await logAudit({ action: 'UPDATE', entityType: 'CUSTOMER_CONTRACT', entityId: contract.id, oldValue: existing, newValue: contract, description: `Customer contract updated`, request });
 
-    const response = contract.fileUrl ? { ...contract, fileUrl: await resolveContractFileUrl(contract.fileUrl, contract.fileName) } : contract;
-    return NextResponse.json(response);
+    return NextResponse.json(contract);
   } catch (error: any) {
     console.error('PUT /api/customers/[id]/contracts/[contractId] error:', error);
     return NextResponse.json({ message: error.message || 'Failed to update contract' }, { status: 400 });
