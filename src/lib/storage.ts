@@ -40,6 +40,13 @@ function getS3Region(): string {
   return process.env.AWS_REGION || 'ap-south-1';
 }
 
+// Optional folder inside the bucket, e.g. S3_KEY_PREFIX="dev" puts every
+// upload under dev/ so environments sharing one bucket stay separated.
+function getS3KeyPrefix(): string {
+  const prefix = (process.env.S3_KEY_PREFIX || '').trim().replace(/^\/+|\/+$/g, '');
+  return prefix ? `${prefix}/` : '';
+}
+
 export function isS3Configured(): boolean {
   return !!getS3BucketName();
 }
@@ -65,14 +72,15 @@ function getS3Client(): S3Client {
 async function uploadToS3(pathname: string, body: Buffer, contentType: string): Promise<string> {
   const bucket = getS3BucketName()!;
   const region = getS3Region();
+  const key = `${getS3KeyPrefix()}${pathname.replace(/^\/+/, '')}`;
   try {
     await getS3Client().send(
-      new PutObjectCommand({ Bucket: bucket, Key: pathname, Body: body, ContentType: contentType })
+      new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType })
     );
   } catch (err) {
     throw new Error(describeS3Error(err, bucket, region));
   }
-  return `https://${bucket}.s3.${region}.amazonaws.com/${pathname}`;
+  return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
 }
 
 // Maps AWS SDK errors to a clear, secret-free message. Only the error
