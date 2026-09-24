@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import { usePermissions } from '@/hooks/usePermissions';
 import AddableSelect from '@/components/AddableSelect';
+import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
 
 async function fetchProfile() {
   const res = await fetch('/api/settings/profile');
@@ -95,24 +96,37 @@ function CountryMasterManager() {
     onError: () => toast.error('Failed to update country'),
   });
 
+  const { ref: countryFormRef, trigger: scrollToCountryForm } = useScrollFormIntoView<HTMLDivElement>();
   const openEditCountry = (c: CountryRow) => {
     setCountryForm({ countryName: c.countryName, isoCode: c.isoCode, currencyCode: c.currencyCode, defaultTaxType: c.defaultTaxType, defaultTaxPercentage: Number(c.defaultTaxPercentage), flagEmoji: c.flagEmoji || '' });
     setEditingCountryId(c.id);
     setCountryFormErrors({});
     setShowForm(true);
+    scrollToCountryForm();
   };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-700">Manage Countries</h3>
-        <button type="button" onClick={() => { setCountryForm(blankCountryForm); setEditingCountryId(null); setCountryFormErrors({}); setShowForm(s => !s); }} className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700">
+        <button
+          type="button"
+          onClick={() => {
+            setCountryForm(blankCountryForm); setEditingCountryId(null); setCountryFormErrors({});
+            setShowForm((s) => {
+              const next = !s;
+              if (next) scrollToCountryForm();
+              return next;
+            });
+          }}
+          className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+        >
           {showForm ? 'Cancel' : '+ Add Country'}
         </button>
       </div>
 
       {showForm && (
-        <div className="grid grid-cols-2 gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50">
+        <div ref={countryFormRef} className="grid grid-cols-2 gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50 scroll-mt-4">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Country Name</label>
             <input value={countryForm.countryName} onChange={(e) => { setCountryForm(f => ({ ...f, countryName: e.target.value })); clearCountryFieldError('countryName'); }} className={`w-full px-3 py-2 border rounded-lg text-sm ${countryFormErrors.countryName ? 'border-red-400' : 'border-slate-300'}`} />

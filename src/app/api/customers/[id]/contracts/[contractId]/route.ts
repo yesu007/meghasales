@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { validateCustomerDocumentFile, uploadCustomerDocumentBlob, fileExtension } from '@/lib/customerDocumentUpload';
+import { isStorageConfigured } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,9 +75,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     let fileFields: Record<string, any> = {};
     if (file) {
-      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      if (!isStorageConfigured()) {
         return NextResponse.json(
-          { message: 'File upload is not configured (missing BLOB_READ_WRITE_TOKEN) — provision a Vercel Blob store to enable attachments' },
+          { message: 'File upload is not configured (missing S3_BUCKET_NAME and/or BLOB_READ_WRITE_TOKEN) — configure at least one storage backend to enable attachments' },
           { status: 503 }
         );
       }

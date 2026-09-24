@@ -158,6 +158,14 @@ function getNavItems(): NavSection[] {
         },
         { href: '/dashboard/expenses', label: 'Expenses', icon: ReceiptPercentIcon, permission: 'view_expenses' },
         { href: '/dashboard/expense-budgets', label: 'Expense Budgets', icon: ChartPieIcon, permission: 'view_expense_budgets' },
+        // Management review queue for employee expense reimbursement claims
+        // (My Space → Reimbursement is where employees submit them) — its
+        // own top-level item, not nested under Payroll's children, since
+        // approve_expense_claims shouldn't also require view_payroll (a much
+        // broader, salary-data-exposing grant) just to reach this screen.
+        ...(isPayrollModuleEnabled()
+          ? [{ href: '/dashboard/payroll/expense-claims', label: 'Reimbursements Approvals', icon: ReceiptPercentIcon, permission: 'approve_expense_claims' }]
+          : []),
         // Employees/Salary Structures/Runs expose everyone's salary data,
         // not just the viewer's own, so this needs view_payroll on top of
         // the module being enabled at all.
@@ -169,6 +177,7 @@ function getNavItems(): NavSection[] {
                 { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
                 { href: '/dashboard/payroll/runs', label: 'Payroll Runs' },
                 { href: '/dashboard/payroll/timesheet', label: 'Time & Attendance' },
+                { href: '/dashboard/payroll/shifts', label: 'Shift Master' },
                 { href: '/dashboard/payroll/loans', label: 'Loans & Advances' },
                 { href: '/dashboard/payroll/salary-allocation', label: 'Salary Allocation' },
                 { href: '/dashboard/payroll/reports', label: 'Reports' },
@@ -209,6 +218,7 @@ function getNavItems(): NavSection[] {
             { href: '/dashboard/payroll/my-payslips', label: 'My Payslips', icon: WalletIcon },
             { href: '/dashboard/payroll/my-leave', label: 'My Leave', icon: CalendarDaysIcon },
             { href: '/dashboard/payroll/my-documents', label: 'My Documents', icon: DocumentTextIcon },
+            { href: '/dashboard/payroll/my-expense-claims', label: 'Reimbursement', icon: ReceiptPercentIcon },
           ]
         : [],
     },

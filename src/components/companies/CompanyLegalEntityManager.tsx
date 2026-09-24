@@ -6,6 +6,7 @@ import { PlusIcon, ChevronDownIcon, ChevronUpIcon, TrashIcon, DocumentIcon } fro
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
+import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
 
 interface DocumentRow {
   id: number;
@@ -145,6 +146,7 @@ export default function CompanyLegalEntityManager({ companyId }: { companyId: nu
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const closeEntityForm = () => { setShowEntityForm(false); setEditingEntityId(null); setEntityForm(blankEntityForm); };
+  const { ref: entityFormRef, trigger: scrollToEntityForm } = useScrollFormIntoView<HTMLFormElement>();
   const openEditEntity = (e: LegalEntity) => {
     setEditingEntityId(e.id);
     setEntityForm({
@@ -160,6 +162,7 @@ export default function CompanyLegalEntityManager({ companyId }: { companyId: nu
       currencyCode: e.currencyCode || '',
     });
     setShowEntityForm(true);
+    scrollToEntityForm();
   };
   const selectEntityCountry = (c: Country) => setEntityForm((f) => ({ ...f, countryId: c.id, currencyCode: f.currencyCode || c.currencyCode }));
 
@@ -199,7 +202,7 @@ export default function CompanyLegalEntityManager({ companyId }: { companyId: nu
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Legal Entities</h3>
         <button
-          onClick={() => (showEntityForm ? closeEntityForm() : setShowEntityForm(true))}
+          onClick={() => { if (showEntityForm) closeEntityForm(); else { setShowEntityForm(true); scrollToEntityForm(); } }}
           className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800"
         >
           <PlusIcon className="h-4 w-4" /> Add Legal Entity
@@ -214,7 +217,8 @@ export default function CompanyLegalEntityManager({ companyId }: { companyId: nu
             if (!entityForm.legalName.trim()) { toast.error('Registered legal name is required'); return; }
             saveEntity.mutate();
           }}
-          className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3 mb-4"
+          ref={entityFormRef}
+          className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3 mb-4 scroll-mt-4"
         >
           <h4 className="text-sm font-semibold text-slate-700">{editingEntityId ? 'Edit Legal Entity' : 'New Legal Entity'}</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -170,6 +170,14 @@ describe('computeTotalDaysFromHours', () => {
   it('deducts fractional LOP days', () => {
     expect(computeTotalDaysFromHours(20, 0, 0, 0.5)).toBe(19.5);
   });
+
+  it('adds the company holiday calendar days when given a 5th argument', () => {
+    expect(computeTotalDaysFromHours(20, 2, 3, 1, 2)).toBe(26);
+  });
+
+  it('defaults the company holiday days to 0 when omitted, unaffected', () => {
+    expect(computeTotalDaysFromHours(20, 2, 3, 1)).toBe(24);
+  });
 });
 
 describe('isWeeklyOff', () => {

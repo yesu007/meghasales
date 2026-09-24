@@ -5,9 +5,10 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { periodRange, computeLeaveHours, computePaidHolidayHours, computeOtherLeaveDays, computeTotalDaysFromHours } from '@/lib/payroll/timesheetEngine';
+import { periodRange, computeLeaveHours, computePaidHolidayHours, computeOtherLeaveDays, computeTotalDaysFromHours, HOURS_PER_DAY } from '@/lib/payroll/timesheetEngine';
 import { computeAutoLopDays } from '@/lib/payroll/leaveEngine';
 import { round2 } from '@/lib/payroll/runEngine';
+import { resolveShiftForEmployeeOnDate } from '@/lib/payroll/shiftEngine';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,20 @@ export async function GET(request: NextRequest) {
 
     const entryByEmployee = new Map(entries.map((e) => [e.employeeId, e]));
 
+    // Loan Deduction column — the amount actually sent to Payroll for this
+    // employee's loan(s) for this exact period (see loans/[id]/apply-to-run),
+    // not a projection of what an active loan's installment would be. Kept
+    // in sync with Payroll by construction: it's the same LoanRepayment row
+    // Payroll itself reads, not a second independently-computed figure.
+    // Period-scoped rather than joined through a PayrollRun — an
+    // installment can be sent (and shown here) before that month's run
+    // even exists.
+    const loanDeductionByEmployee = new Map<number, number>();
+    const repayments = await prisma.loanRepayment.findMany({ where: { periodYear: year, periodMonth: month }, include: { loan: { select: { employeeId: true } } } });
+    for (const r of repayments) {
+      loanDeductionByEmployee.set(r.loan.employeeId, (loanDeductionByEmployee.get(r.loan.employeeId) || 0) + Number(r.amount));
+    }
+
     const rows = await Promise.all(
       employees.map(async (emp) => {
         const entry = entryByEmployee.get(emp.id);
@@ -48,19 +63,32 @@ export async function GET(request: NextRequest) {
         const overtimeHours = entry ? Number(entry.overtimeHours) : 0;
         const { sickLeaveHours, ptoHours, earnedLeaveHours, paidHolidayLeaveHours } = await computeLeaveHours(prisma, emp.id, start, end);
         // Paid Holiday combines two independent sources into one column: the
-        // company holiday calendar (computePaidHolidayHours) and any of this
+        // company holiday calendar (companyHolidayHours) and any of this
         // employee's own APPROVED "Paid Holidays" leave requests
         // (paidHolidayLeaveHours) — either one alone should show up here.
-        const paidHolidayHours = round2(computePaidHolidayHours(holidays, start, end, emp) + paidHolidayLeaveHours);
+        const companyHolidayHours = computePaidHolidayHours(holidays, start, end, emp);
+        const paidHolidayHours = round2(companyHolidayHours + paidHolidayLeaveHours);
+
+        // Shift Master — resolved independently of the hours/leave figures
+        // above. Shift is looked up as of the period's last day (same
+        // "which assignment governs this period" convention
+        // SalaryStructureAssignment already uses) — shown here purely for
+        // visibility, no bearing on lopDays/totalDays.
+        const shift = await resolveShiftForEmployeeOnDate(prisma, emp.id, end);
+
         const lopDays = await computeAutoLopDays(prisma, emp.id, start, end);
         // Regular/Overtime are entered directly as days (no 8-hours=1-day
         // conversion). otherLeaveDays sums every approved leave request in
         // this period except Earned Leave and LOP (see
-        // TOTAL_DAYS_EXCLUDED_CODES) and adds to Total Days; Earned Leave
-        // (its own informational column) never touches it; LOP (already in
-        // days) subtracts — see computeTotalDaysFromHours.
+        // TOTAL_DAYS_EXCLUDED_CODES) and adds to Total Days; the company
+        // holiday calendar's own days (companyHolidayHours — NOT the
+        // combined paidHolidayHours column, to avoid double-counting the
+        // leave-request portion already in otherLeaveDays) also add; Earned
+        // Leave (its own informational column) never touches it; LOP
+        // (already in days) subtracts — see computeTotalDaysFromHours.
         const otherLeaveDays = await computeOtherLeaveDays(prisma, emp.id, start, end);
-        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, otherLeaveDays, lopDays);
+        const companyHolidayDays = round2(companyHolidayHours / HOURS_PER_DAY);
+        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, otherLeaveDays, lopDays, companyHolidayDays);
 
         return {
           employeeId: emp.id,
@@ -79,6 +107,8 @@ export async function GET(request: NextRequest) {
           earnedLeaveHours,
           lopDays,
           totalDays,
+          loanDeduction: loanDeductionByEmployee.get(emp.id) || 0,
+          shiftName: shift?.name ?? null,
         };
       })
     );

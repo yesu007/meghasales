@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { put } from '@vercel/blob';
+import { put } from '@/lib/storage';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { validateEventDocumentFile, isBlobConfigured } from '@/lib/eventDocumentUpload';
-import { documentsWithUploaderNames } from '@/lib/payroll/employeeLegalDocuments';
+import { validateEventDocumentFile, isStorageConfigured } from '@/lib/eventDocumentUpload';
+import { documentTreeForEmployee } from '@/lib/payroll/employeeLegalDocuments';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,12 +34,10 @@ export async function GET() {
     if (!userId) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
     const employee = await prisma.employee.findUnique({ where: { userId } });
-    if (!employee) return NextResponse.json({ employee: null, documents: [] });
+    if (!employee) return NextResponse.json({ employee: null, folders: [], documents: [] });
 
-    return NextResponse.json({
-      employee: { employeeCode: employee.employeeCode },
-      documents: await documentsWithUploaderNames(employee.id),
-    });
+    const { folders, documents } = await documentTreeForEmployee(employee.id);
+    return NextResponse.json({ employee: { employeeCode: employee.employeeCode }, folders, documents });
   } catch (error) {
     console.error('GET /api/payroll/my-documents error:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
@@ -48,7 +46,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  if (!isBlobConfigured()) {
+  if (!isStorageConfigured()) {
     return NextResponse.json(
       { message: 'File upload is not configured (missing BLOB_READ_WRITE_TOKEN) — provision a Vercel Blob store to enable document uploads' },
       { status: 503 }
@@ -66,10 +64,17 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const documentType = String(formData.get('documentType') || '').trim();
+    const folderIdRaw = formData.get('folderId');
+    const folderId = folderIdRaw ? Number(folderIdRaw) : null;
     if (!file) return NextResponse.json({ message: 'No file provided' }, { status: 400 });
     if (!documentType) return NextResponse.json({ message: 'Document Type is required' }, { status: 400 });
     const validationError = validateEventDocumentFile(file);
     if (validationError) return NextResponse.json({ message: validationError }, { status: 400 });
+
+    if (folderId != null) {
+      const folder = await prisma.employeeDocumentFolder.findUnique({ where: { id: folderId } });
+      if (!folder || folder.employeeId !== employee.id) return NextResponse.json({ message: 'Destination folder not found' }, { status: 404 });
+    }
 
     const blob = await put(`employee-legal-documents/${employee.id}/${Date.now()}-${file.name}`, file, { access: 'public' });
 
@@ -81,6 +86,7 @@ export async function POST(request: NextRequest) {
         filePath: blob.url,
         mimeType: file.type || null,
         size: file.size,
+        folderId,
         uploadedById: userId,
       },
     });

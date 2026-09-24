@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
 
 interface StageRow {
   id: number;
@@ -60,6 +61,7 @@ export default function StagesPage() {
     : stages;
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); setFormErrors({}); };
+  const { ref: formRef, trigger: scrollToForm } = useScrollFormIntoView<HTMLFormElement>();
 
   const openEdit = (s: StageRow) => {
     setEditingId(s.id);
@@ -70,6 +72,7 @@ export default function StagesPage() {
     // in depth.
     setFormErrors({});
     setShowForm(true);
+    scrollToForm();
   };
 
   const save = useMutation({
@@ -112,7 +115,7 @@ export default function StagesPage() {
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Implementation stages used by the Customer and Implementation modules</p>
         </div>
         <button
-          onClick={() => (showForm ? closeForm() : setShowForm(true))}
+          onClick={() => { if (showForm) closeForm(); else { setShowForm(true); scrollToForm(); } }}
           className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
         >
           <PlusIcon className="h-4 w-4" /> Add Stage
@@ -142,6 +145,7 @@ export default function StagesPage() {
 
       {showForm && (
         <form
+          ref={formRef}
           onSubmit={(e) => {
             e.preventDefault();
             const errs: Record<string, string> = {};
@@ -150,7 +154,7 @@ export default function StagesPage() {
             if (Object.keys(errs).length > 0) { toast.error('Please fix the errors in the form'); return; }
             save.mutate();
           }}
-          className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5"
+          className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 scroll-mt-4"
         >
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingId ? 'Edit Stage' : 'New Stage'}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

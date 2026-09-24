@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { put } from '@vercel/blob';
+import { put, isStorageConfigured } from '@/lib/storage';
 import { requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
@@ -12,9 +12,9 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   const denied = await requirePermission('manage_payments');
   if (denied) return denied;
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  if (!isStorageConfigured()) {
     return NextResponse.json(
-      { message: 'File upload is not configured (missing BLOB_READ_WRITE_TOKEN) — provision a Vercel Blob store to enable attachments' },
+      { message: 'File upload is not configured (missing S3_BUCKET_NAME and/or BLOB_READ_WRITE_TOKEN) — configure at least one storage backend to enable attachments' },
       { status: 503 }
     );
   }
