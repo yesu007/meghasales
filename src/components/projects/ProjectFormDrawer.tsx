@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, Dispatch, SetStateAction, useEffect } from 'react';
+import { Fragment, Dispatch, SetStateAction, useCallback, useEffect } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
@@ -103,7 +103,9 @@ export default function ProjectFormDrawer({
   // actually changes it — validateProjectForm only runs again on the next
   // submit, so without this a message set by a failed submit attempt would
   // otherwise keep showing even after the field now holds a valid value.
-  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+  const clearFieldError = useCallback((key: string) => {
+    setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+  }, [setFormErrors]);
 
   // Vertical is freely selectable — the Lead/Customer's own business
   // vertical(s) (Lead.businessVerticals) are only used to *suggest* an
@@ -137,11 +139,11 @@ export default function ProjectFormDrawer({
     // this can't fight a manual selection made after picking a Lead/Customer.
     if (form.verticalId || !suggestedVertical) return;
     setForm(f => ({ ...f, verticalId: String(suggestedVertical.id) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately
-    // omits form.verticalId/suggestedVertical from deps: this should only
+    // Deliberately omits form.verticalId/suggestedVertical: this should only
     // react to a Lead/Customer being (de)selected, not re-fire (and
     // potentially re-suggest) every time the form's own vertical changes.
-  }, [form.leadId, form.customerId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.leadId, form.customerId, setForm]);
 
   // Head just mirrors whichever Vertical is selected — clear it here rather
   // than in the effect above so it stays in sync even when the user changes
@@ -149,16 +151,16 @@ export default function ProjectFormDrawer({
   useEffect(() => {
     const nextHeadId = selectedVertical?.headId ? String(selectedVertical.headId) : '';
     setForm(f => (f.headId === nextHeadId ? f : { ...f, headId: nextHeadId }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the
-    // primitive id, not the selectedVertical object (a new reference every
-    // render), to avoid re-running this every render.
-  }, [selectedVertical?.headId]);
+    // Keyed on the primitive id, not the selectedVertical object (a new
+    // reference every render), to avoid re-running this every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVertical?.headId, setForm]);
   // headId is never changed via a direct onChange (it just mirrors the
   // selected Vertical above) — clear its own stale "required" message here
   // instead, the moment it resolves to a real value.
   useEffect(() => {
     if (form.headId) clearFieldError('headId');
-  }, [form.headId]);
+  }, [form.headId, clearFieldError]);
 
   const handleClose = () => { setFormErrors({}); onClose(); };
 
