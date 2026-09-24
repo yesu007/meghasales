@@ -149,9 +149,11 @@ export default function LegalDocumentsPanel({ apiBase, queryKey, canUpload, canD
     queryKey: [queryKey],
     queryFn: () => fetchTree(apiBase, responseHasWrapper),
   });
-  const folders = data?.folders ?? [];
-  const documents = data?.documents ?? [];
-  const { roots, rootDocuments } = useMemo(() => buildTree(folders, documents), [folders, documents]);
+  const documents = useMemo(() => data?.documents ?? [], [data]);
+  const { roots, rootDocuments } = useMemo(
+    () => buildTree(data?.folders ?? [], documents),
+    [data, documents],
+  );
   const flatFolders = useMemo(() => flattenFolders(roots), [roots]);
 
   const toggleExpand = (id: number) => setExpanded((s) => { const next = new Set(s); if (next.has(id)) next.delete(id); else next.add(id); return next; });
@@ -495,7 +497,7 @@ export default function LegalDocumentsPanel({ apiBase, queryKey, canUpload, canD
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px] z-50 flex items-center justify-center p-4" onClick={() => setMoveTarget(null)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-base font-semibold text-slate-800 truncate">Move "{moveTarget.documentName}" to...</h3>
+              <h3 className="text-base font-semibold text-slate-800 truncate">Move &quot;{moveTarget.documentName}&quot; to...</h3>
               <button onClick={() => setMoveTarget(null)} className="p-1 text-slate-400 hover:text-slate-600"><XMarkIcon className="h-4 w-4" /></button>
             </div>
             <p className="text-xs text-slate-400 mb-3">Choose a destination folder.</p>
@@ -528,7 +530,7 @@ export default function LegalDocumentsPanel({ apiBase, queryKey, canUpload, canD
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px] z-50 flex items-center justify-center p-4" onClick={() => setMoveFolderTarget(null)}>
             <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-1">
-                <h3 className="text-base font-semibold text-slate-800 truncate">Move "{moveFolderTarget.name}" to...</h3>
+                <h3 className="text-base font-semibold text-slate-800 truncate">Move &quot;{moveFolderTarget.name}&quot; to...</h3>
                 <button onClick={() => setMoveFolderTarget(null)} className="p-1 text-slate-400 hover:text-slate-600"><XMarkIcon className="h-4 w-4" /></button>
               </div>
               <p className="text-xs text-slate-400 mb-3">Choose a destination folder. A folder can&apos;t be moved into itself or its own subfolder.</p>

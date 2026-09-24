@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, Dispatch, SetStateAction, useEffect, useMemo } from 'react';
+import { Fragment, Dispatch, SetStateAction, useCallback, useEffect, useMemo } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
@@ -104,7 +104,9 @@ export default function ProductFormDrawer({
   // actually changes it — validateProductForm only runs again on the next
   // submit, so without this a message set by a failed submit attempt would
   // otherwise keep showing even after the field now holds a valid value.
-  const clearFieldError = (key: string) => setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+  const clearFieldError = useCallback((key: string) => {
+    setFormErrors((fe) => (key in fe ? Object.fromEntries(Object.entries(fe).filter(([k]) => k !== key)) : fe));
+  }, [setFormErrors]);
 
   // Product Name is no longer free text — it's a pick from the Vertical
   // Master's own catalog of "Product Vertical"-flagged verticals (see the
@@ -131,7 +133,7 @@ export default function ProductFormDrawer({
   // "required" message the moment a Product Name sets it.
   useEffect(() => {
     if (form.verticalId) clearFieldError('verticalId');
-  }, [form.verticalId]);
+  }, [form.verticalId, clearFieldError]);
 
   // Head just mirrors whichever Vertical is selected — clear it here rather
   // than in the effect above so it stays in sync even when the user changes
@@ -139,16 +141,16 @@ export default function ProductFormDrawer({
   useEffect(() => {
     const nextHeadId = selectedVertical?.headId ? String(selectedVertical.headId) : '';
     setForm(f => (f.headId === nextHeadId ? f : { ...f, headId: nextHeadId }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the
-    // primitive id, not the selectedVertical object (a new reference every
-    // render), to avoid re-running this every render.
-  }, [selectedVertical?.headId]);
+    // Keyed on the primitive id, not the selectedVertical object (a new
+    // reference every render), to avoid re-running this every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVertical?.headId, setForm]);
   // headId is never changed via a direct onChange (it just mirrors the
   // selected Vertical above) — clear its own stale "required" message here
   // instead, the moment it resolves to a real value.
   useEffect(() => {
     if (form.headId) clearFieldError('headId');
-  }, [form.headId]);
+  }, [form.headId, clearFieldError]);
 
   const handleClose = () => { setFormErrors({}); onClose(); };
 
