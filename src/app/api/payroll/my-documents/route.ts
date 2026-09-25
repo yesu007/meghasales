@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { put } from '@/lib/storage';
+import { putEncrypted } from '@/lib/storage';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       if (!folder || folder.employeeId !== employee.id) return NextResponse.json({ message: 'Destination folder not found' }, { status: 404 });
     }
 
-    const blob = await put(`employee-legal-documents/${employee.id}/${Date.now()}-${file.name}`, file, { access: 'public' });
+    const blob = await putEncrypted(`employee-legal-documents/${employee.id}`, file);
 
     const document = await prisma.employeeLegalDocument.create({
       data: {

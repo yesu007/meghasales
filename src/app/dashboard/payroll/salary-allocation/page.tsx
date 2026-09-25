@@ -207,6 +207,8 @@ export default function SalaryAllocationPage() {
                 <AddableSelect
                   value={String(pageSize)}
                   onChange={(v) => { setPageSize(Number(v)); setPage(0); }}
+
+                  clearable={false}
                   options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
                   placeholder="Rows"
                 />

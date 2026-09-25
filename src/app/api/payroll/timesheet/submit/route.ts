@@ -5,7 +5,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { periodRange, computeOtherLeaveDays, computeTotalDaysFromHours, computePaidHolidayHours, HOURS_PER_DAY } from '@/lib/payroll/timesheetEngine';
+import { periodRange, computePaidHolidayLeaveDays, computeTotalDaysFromHours, computePaidHolidayHours, HOURS_PER_DAY } from '@/lib/payroll/timesheetEngine';
 import { computeAutoLopDays } from '@/lib/payroll/leaveEngine';
 import { round2 } from '@/lib/payroll/runEngine';
 
@@ -56,9 +56,9 @@ export async function POST(request: NextRequest) {
         const regularHours = entry ? Number(entry.regularHours) : 0;
         const overtimeHours = entry ? Number(entry.overtimeHours) : 0;
         const lopDays = await computeAutoLopDays(prisma, emp.id, start, end);
-        const otherLeaveDays = await computeOtherLeaveDays(prisma, emp.id, start, end);
+        const paidHolidayLeaveDays = await computePaidHolidayLeaveDays(prisma, emp.id, start, end);
         const paidHolidayDays = round2(computePaidHolidayHours(holidays, start, end, emp) / HOURS_PER_DAY);
-        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, otherLeaveDays, lopDays, paidHolidayDays);
+        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, paidHolidayLeaveDays, lopDays, paidHolidayDays);
         if (totalDays === 0) zeroDayActiveEmployees.push(`${emp.firstName} ${emp.lastName}`);
       }
 

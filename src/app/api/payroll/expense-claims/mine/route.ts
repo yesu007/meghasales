@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
+import { resolveClaimSubCategory } from '@/lib/payroll/expenseClaimCategory';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ function currentUserId(session: any): number | null {
 
 const INCLUDE = {
   category: { select: { id: true, name: true } },
+  subCategory: { select: { id: true, name: true } },
   lead: { select: { id: true, companyName: true } },
   project: { select: { id: true, projectName: true } },
   product: { select: { id: true, productName: true } },
@@ -65,7 +67,7 @@ export async function POST(request: NextRequest) {
     if (!employee) return NextResponse.json({ message: 'You do not have a payroll profile to file a reimbursement against' }, { status: 404 });
 
     const body = await request.json();
-    const { expenseDate, categoryId, description, amount, leadId, projectId, productId, attachmentUrl, attachmentName, submit } = body;
+    const { expenseDate, categoryId, subCategoryId, description, amount, leadId, projectId, productId, attachmentUrl, attachmentName, submit } = body;
     if (!expenseDate || !categoryId || !description || amount == null) {
       return NextResponse.json({ message: 'expenseDate, categoryId, description, and amount are required' }, { status: 400 });
     }
@@ -78,7 +80,9 @@ export async function POST(request: NextRequest) {
     if (date > new Date()) return NextResponse.json({ message: 'expenseDate cannot be in the future' }, { status: 400 });
 
     const category = await prisma.expenseCategory.findUnique({ where: { id: Number(categoryId) } });
-    if (!category || !category.isActive) return NextResponse.json({ message: 'Expense type not found' }, { status: 404 });
+    if (!category || !category.isActive) return NextResponse.json({ message: 'Category not found' }, { status: 404 });
+    const subCategory = await resolveClaimSubCategory(prisma, category.id, subCategoryId);
+    if ('error' in subCategory) return NextResponse.json({ message: subCategory.error }, { status: 400 });
 
     // Project scoped to Lead, same mutual-relationship (not mutually
     // exclusive here — a claim can carry both, e.g. "this customer, this
@@ -107,6 +111,7 @@ export async function POST(request: NextRequest) {
         employeeId: employee.id,
         expenseDate: date,
         categoryId: category.id,
+        subCategoryId: subCategory.subCategoryId,
         leadId: leadId ? Number(leadId) : null,
         projectId: projectId ? Number(projectId) : null,
         productId: productId ? Number(productId) : null,

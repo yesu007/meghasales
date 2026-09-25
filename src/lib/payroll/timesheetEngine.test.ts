@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeLeaveHoursFromRequests, computePaidHolidayHours, computeOtherLeaveDaysFromRequests, computeTotalDaysFromHours, isWeeklyOff } from './timesheetEngine';
+import { computeLeaveHoursFromRequests, computePaidHolidayHours, computePaidHolidayLeaveDaysFromRequests, computeTotalDaysFromHours, isWeeklyOff } from './timesheetEngine';
+import { computeAutoLopDaysFromRequests } from './leaveEngine';
 
 describe('computeLeaveHoursFromRequests', () => {
   const periodStart = new Date('2026-08-01');
@@ -12,6 +13,18 @@ describe('computeLeaveHoursFromRequests', () => {
       periodEnd
     );
     expect(result).toEqual({ sickLeaveHours: 16, ptoHours: 0, earnedLeaveHours: 0, paidHolidayLeaveHours: 0 });
+  });
+
+  it('buckets SICK_LEAVE / CASUAL_LEAVE (types created via Time-off Policy) like SICK / CASUAL', () => {
+    const result = computeLeaveHoursFromRequests(
+      [
+        { startDate: new Date('2026-08-03'), endDate: new Date('2026-08-04'), days: 2, leaveType: { code: 'SICK_LEAVE', isPaid: true } },
+        { startDate: new Date('2026-08-07'), endDate: new Date('2026-08-07'), days: 1, leaveType: { code: 'CASUAL_LEAVE', isPaid: true } },
+      ],
+      periodStart, periodEnd
+    );
+    expect(result.sickLeaveHours).toBe(16);
+    expect(result.ptoHours).toBe(8);
   });
 
   it('buckets a CASUAL request into ptoHours (PTO/Casual Leave)', () => {
@@ -80,103 +93,149 @@ describe('computeLeaveHoursFromRequests', () => {
   });
 });
 
-describe('computeOtherLeaveDaysFromRequests', () => {
+describe('computePaidHolidayLeaveDaysFromRequests', () => {
   const periodStart = new Date('2026-09-01');
   const periodEnd = new Date('2026-09-30');
 
-  it('Casual Leave alone: counted', () => {
-    const result = computeOtherLeaveDaysFromRequests(
-      [{ startDate: new Date('2026-09-03'), endDate: new Date('2026-09-04'), days: 2, leaveType: { code: 'CASUAL' } }],
-      periodStart, periodEnd
-    );
-    expect(result).toBe(2);
-  });
-
-  it('Sick Leave alone: counted', () => {
-    const result = computeOtherLeaveDaysFromRequests(
-      [{ startDate: new Date('2026-09-07'), endDate: new Date('2026-09-07'), days: 1, leaveType: { code: 'SICK' } }],
-      periodStart, periodEnd
-    );
-    expect(result).toBe(1);
-  });
-
-  it('Paid Holidays (MATERNITY) alone: counted', () => {
-    const result = computeOtherLeaveDaysFromRequests(
+  it('Paid Holidays (MATERNITY): counted', () => {
+    const result = computePaidHolidayLeaveDaysFromRequests(
       [{ startDate: new Date('2026-09-14'), endDate: new Date('2026-09-14'), days: 1, leaveType: { code: 'MATERNITY' } }],
       periodStart, periodEnd
     );
     expect(result).toBe(1);
   });
 
-  it('a brand-new, never-seen-before leave type code: counted by default', () => {
-    const result = computeOtherLeaveDaysFromRequests(
-      [{ startDate: new Date('2026-09-20'), endDate: new Date('2026-09-20'), days: 1, leaveType: { code: 'COMP_OFF' } }],
-      periodStart, periodEnd
-    );
-    expect(result).toBe(1);
+  it('Sick, Casual, Earned, LOP and a brand-new leave type: never counted (0)', () => {
+    for (const code of ['SICK', 'CASUAL', 'EARNED', 'LOP', 'COMP_OFF']) {
+      const result = computePaidHolidayLeaveDaysFromRequests(
+        [{ startDate: new Date('2026-09-07'), endDate: new Date('2026-09-08'), days: 2, leaveType: { code } }],
+        periodStart, periodEnd
+      );
+      expect(result, code).toBe(0);
+    }
   });
 
-  it('Earned Leave alone: excluded (0)', () => {
-    const result = computeOtherLeaveDaysFromRequests(
-      [{ startDate: new Date('2026-09-10'), endDate: new Date('2026-09-11'), days: 2, leaveType: { code: 'EARNED' } }],
-      periodStart, periodEnd
-    );
-    expect(result).toBe(0);
-  });
-
-  it('Loss of Pay alone: excluded (0) — subtracted separately via lopDays', () => {
-    const result = computeOtherLeaveDaysFromRequests(
-      [{ startDate: new Date('2026-09-17'), endDate: new Date('2026-09-17'), days: 1, leaveType: { code: 'LOP' } }],
-      periodStart, periodEnd
-    );
-    expect(result).toBe(0);
-  });
-
-  it('multiple leave types together: sums only the non-excluded ones', () => {
-    const result = computeOtherLeaveDaysFromRequests(
+  it('multiple leave types together: sums only Paid Holidays', () => {
+    const result = computePaidHolidayLeaveDaysFromRequests(
       [
         { startDate: new Date('2026-09-03'), endDate: new Date('2026-09-04'), days: 2, leaveType: { code: 'CASUAL' } },
         { startDate: new Date('2026-09-07'), endDate: new Date('2026-09-07'), days: 1, leaveType: { code: 'SICK' } },
-        { startDate: new Date('2026-09-10'), endDate: new Date('2026-09-11'), days: 2, leaveType: { code: 'EARNED' } },
+        { startDate: new Date('2026-09-14'), endDate: new Date('2026-09-15'), days: 2, leaveType: { code: 'MATERNITY' } },
         { startDate: new Date('2026-09-17'), endDate: new Date('2026-09-17'), days: 1, leaveType: { code: 'LOP' } },
       ],
       periodStart, periodEnd
     );
-    expect(result).toBe(3); // 2 Casual + 1 Sick; Earned and LOP excluded
+    expect(result).toBe(2);
+  });
+
+  it('pro-rates a Paid Holidays request spanning a period boundary', () => {
+    const result = computePaidHolidayLeaveDaysFromRequests(
+      [{ startDate: new Date('2026-09-29'), endDate: new Date('2026-10-02'), days: 4, leaveType: { code: 'MATERNITY' } }],
+      periodStart, periodEnd
+    );
+    expect(result).toBe(2);
   });
 
   it('returns 0 for no requests', () => {
-    expect(computeOtherLeaveDaysFromRequests([], periodStart, periodEnd)).toBe(0);
+    expect(computePaidHolidayLeaveDaysFromRequests([], periodStart, periodEnd)).toBe(0);
   });
 });
 
-describe('computeTotalDaysFromHours', () => {
-  it('Example 1 from the requirement: 20 regular + 2 overtime + (2 Casual + 1 Sick) other leave - 1 LOP = 24; Earned Leave (2) is ignored', () => {
-    expect(computeTotalDaysFromHours(20, 2, 3, 1)).toBe(24);
+describe('computeTotalDaysFromHours — Regular + Overtime + Paid Holidays - LOP', () => {
+  it('requirement example: 20 regular + 1 overtime + 1 paid holiday - 1 LOP = 21 (2 sick not counted)', () => {
+    expect(computeTotalDaysFromHours(20, 1, 0, 1, 1)).toBe(21);
   });
 
-  it('Example 2 from the requirement: 20 regular + 0 overtime + 0 other leave - 2 LOP = 18; Earned Leave (3) is ignored', () => {
-    expect(computeTotalDaysFromHours(20, 0, 0, 2)).toBe(18);
-  });
-
-  it('is unaffected when there is no LOP or other leave', () => {
-    expect(computeTotalDaysFromHours(20, 2, 0, 0)).toBe(22);
-  });
-
-  it('adds other leave days (e.g. Casual/Sick/Paid Holiday)', () => {
-    expect(computeTotalDaysFromHours(20, 2, 3, 0)).toBe(25);
+  it('adds Paid Holidays from both the leave type and the holiday calendar', () => {
+    expect(computeTotalDaysFromHours(20, 0, 1, 0, 2)).toBe(23);
   });
 
   it('deducts fractional LOP days', () => {
     expect(computeTotalDaysFromHours(20, 0, 0, 0.5)).toBe(19.5);
   });
 
-  it('adds the company holiday calendar days when given a 5th argument', () => {
-    expect(computeTotalDaysFromHours(20, 2, 3, 1, 2)).toBe(26);
+  it('defaults the company holiday days to 0 when omitted', () => {
+    expect(computeTotalDaysFromHours(20, 2, 0, 1)).toBe(21);
   });
+});
 
-  it('defaults the company holiday days to 0 when omitted, unaffected', () => {
-    expect(computeTotalDaysFromHours(20, 2, 3, 1)).toBe(24);
+// The 10 required cases, run through the same pipeline a Timesheet row
+// uses (see buildTimesheetRow): leave requests -> display columns +
+// Paid Holidays leave + LOP, company holiday calendar -> Total Days.
+describe('Total Days — required cases (full row pipeline)', () => {
+  const periodStart = new Date('2026-09-01');
+  const periodEnd = new Date('2026-09-30');
+  const employee = { dateOfJoining: null, dateOfLeaving: null };
+  type Req = { startDate: Date; endDate: Date; days: number; leaveType: { code: string; isPaid: boolean } };
+  const leave = (code: string, day: number, days = 1): Req => ({
+    startDate: new Date(`2026-09-${String(day).padStart(2, '0')}`),
+    endDate: new Date(`2026-09-${String(day + days - 1).padStart(2, '0')}`),
+    days,
+    leaveType: { code, isPaid: code !== 'LOP' },
+  });
+  const row = (regular: number, overtime: number, requests: Req[] = [], holidayDates: string[] = []) => {
+    const cols = computeLeaveHoursFromRequests(requests, periodStart, periodEnd);
+    const lopDays = computeAutoLopDaysFromRequests(requests.filter((r) => !r.leaveType.isPaid), periodStart, periodEnd);
+    const companyHolidayDays = computePaidHolidayHours(holidayDates.map((d) => ({ date: new Date(d) })), periodStart, periodEnd, employee) / 8;
+    const paidHolidayLeaveDays = computePaidHolidayLeaveDaysFromRequests(requests, periodStart, periodEnd);
+    return {
+      sickDays: cols.sickLeaveHours / 8,
+      ptoDays: cols.ptoHours / 8,
+      earnedDays: cols.earnedLeaveHours / 8,
+      paidHolidayDays: cols.paidHolidayLeaveHours / 8 + companyHolidayDays,
+      lopDays,
+      totalDays: computeTotalDaysFromHours(regular, overtime, paidHolidayLeaveDays, lopDays, companyHolidayDays),
+    };
+  };
+
+  it('1. Regular only: 20 -> 20', () => {
+    expect(row(20, 0).totalDays).toBe(20);
+  });
+  it('2. Regular + Overtime: 20 + 2 -> 22', () => {
+    expect(row(20, 2).totalDays).toBe(22);
+  });
+  it('3. Regular + Sick Leave: sick shown (2) but not counted -> 20', () => {
+    const r = row(20, 0, [leave('SICK', 7, 2)]);
+    expect(r.sickDays).toBe(2);
+    expect(r.totalDays).toBe(20);
+  });
+  it('4. Regular + LOP: 20 - 1 -> 19', () => {
+    const r = row(20, 0, [leave('LOP', 9)]);
+    expect(r.lopDays).toBe(1);
+    expect(r.totalDays).toBe(19);
+  });
+  it('5. Regular + Paid Holiday (calendar): 20 + 1 -> 21', () => {
+    const r = row(20, 0, [], ['2026-09-15']);
+    expect(r.paidHolidayDays).toBe(1);
+    expect(r.totalDays).toBe(21);
+  });
+  it('6. Regular + Sick + LOP: 20 - 1 -> 19 (sick 2 shown only)', () => {
+    const r = row(20, 0, [leave('SICK', 7, 2), leave('LOP', 9)]);
+    expect(r.sickDays).toBe(2);
+    expect(r.totalDays).toBe(19);
+  });
+  it('7. Regular + Sick + Paid Holiday: 20 + 1 -> 21 (sick 2 shown only)', () => {
+    const r = row(20, 0, [leave('SICK', 7, 2)], ['2026-09-15']);
+    expect(r.sickDays).toBe(2);
+    expect(r.totalDays).toBe(21);
+  });
+  it('8. Regular + LOP + Paid Holiday: 20 + 1 - 1 -> 20', () => {
+    expect(row(20, 0, [leave('LOP', 9)], ['2026-09-15']).totalDays).toBe(20);
+  });
+  it('9. Regular + Overtime + Sick + LOP + Paid Holiday (requirement example): 20 + 1 + 1 - 1 -> 21', () => {
+    const r = row(20, 1, [leave('SICK', 7, 2), leave('LOP', 9)], ['2026-09-15']);
+    expect(r.sickDays).toBe(2);
+    expect(r.lopDays).toBe(1);
+    expect(r.paidHolidayDays).toBe(1);
+    expect(r.totalDays).toBe(21);
+  });
+  it('10. Multiple leave types: sick 2, PTO 1, earned 2, new type 1, Paid Holidays leave 1 + calendar 1, LOP 1.5 -> 20 + 2 - 1.5 = 20.5', () => {
+    const r = row(20, 0, [
+      leave('SICK', 3, 2), leave('CASUAL', 7), leave('EARNED', 10, 2), leave('MATERNITY', 14), leave('COMP_OFF', 16),
+      { ...leave('LOP', 21, 2), days: 1.5 },
+    ], ['2026-09-25']);
+    expect([r.sickDays, r.ptoDays, r.earnedDays, r.paidHolidayDays, r.lopDays]).toEqual([2, 1, 2, 2, 1.5]);
+    expect(r.totalDays).toBe(20.5);
   });
 });
 

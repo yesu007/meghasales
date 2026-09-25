@@ -24,7 +24,9 @@ import {
   CurrencyRupeeIcon,
   WalletIcon,
   CalendarDaysIcon,
+  ClockIcon,
   ReceiptPercentIcon,
+  DocumentDuplicateIcon,
   ChartPieIcon,
   ChartBarSquareIcon,
   BuildingOffice2Icon,
@@ -156,6 +158,8 @@ function getNavItems(): NavSection[] {
             { href: '/dashboard/accounting/reports', label: 'Reports' },
           ],
         },
+        // Vendor bills — posting one auto-creates its Expense entry.
+        { href: '/dashboard/bills', label: 'Bills', icon: DocumentDuplicateIcon, permission: 'view_expenses' },
         { href: '/dashboard/expenses', label: 'Expenses', icon: ReceiptPercentIcon, permission: 'view_expenses' },
         { href: '/dashboard/expense-budgets', label: 'Expense Budgets', icon: ChartPieIcon, permission: 'view_expense_budgets' },
         // Management review queue for employee expense reimbursement claims
@@ -217,6 +221,7 @@ function getNavItems(): NavSection[] {
         ? [
             { href: '/dashboard/payroll/my-payslips', label: 'My Payslips', icon: WalletIcon },
             { href: '/dashboard/payroll/my-leave', label: 'My Leave', icon: CalendarDaysIcon },
+            { href: '/dashboard/payroll/my-attendance', label: 'Attendance', icon: ClockIcon },
             { href: '/dashboard/payroll/my-documents', label: 'My Documents', icon: DocumentTextIcon },
             { href: '/dashboard/payroll/my-expense-claims', label: 'Reimbursement', icon: ReceiptPercentIcon },
           ]

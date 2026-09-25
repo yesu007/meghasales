@@ -721,6 +721,8 @@ export default function ExpenseBudgetsPage() {
                   <AddableSelect
                     value={String(rowPageSize)}
                     onChange={(v) => { setRowPageSize(Number(v)); setRowPage(0); }}
+
+                    clearable={false}
                     options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
                     placeholder="Rows"
                   />

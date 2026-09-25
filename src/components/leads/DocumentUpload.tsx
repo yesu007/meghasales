@@ -2,7 +2,7 @@
 
 import { PaperClipIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { validateEventDocumentFile } from '@/lib/eventDocumentUpload';
+import { validateEventDocumentFile } from '@/lib/eventDocumentValidation';
 
 interface DocumentUploadProps {
   label?: string;

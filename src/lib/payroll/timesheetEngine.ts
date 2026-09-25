@@ -53,8 +53,15 @@ interface LeaveRequestForHours extends LeaveOverlapInput {
   leaveType: { code: string; isPaid: boolean };
 }
 
+// Codes the Sick and PTO/Casual columns recognise: the seeded code plus the
+// "<NAME>_LEAVE" form a type gets when it's created as "Sick Leave" /
+// "Casual Leave" via Time-off Policy (the code there is free text and can't
+// be edited afterwards), so either one lands in its column.
+export const SICK_LEAVE_CODES = ['SICK', 'SICK_LEAVE'];
+export const CASUAL_LEAVE_CODES = ['CASUAL', 'CASUAL_LEAVE'];
+
 // Turns APPROVED leave requests into four of the timesheet's hour columns —
-// Sick (code SICK), PTO/Casual (code CASUAL), Earned (code EARNED), and
+// Sick (SICK_LEAVE_CODES), PTO/Casual (CASUAL_LEAVE_CODES), Earned (code EARNED), and
 // Paid Holiday (code MATERNITY — the leave type is displayed as "Paid
 // Holidays" but keeps this stable code) each get their own column. Unpaid
 // leave (LOP) is excluded entirely here — it already reduces payableDays
@@ -67,8 +74,8 @@ export function computeLeaveHoursFromRequests(requests: LeaveRequestForHours[], 
   for (const r of requests) {
     if (!r.leaveType.isPaid) continue;
     const days = clippedDays(r, periodStart, periodEnd);
-    if (r.leaveType.code === 'SICK') sickDays += days;
-    else if (r.leaveType.code === 'CASUAL') casualDays += days;
+    if (SICK_LEAVE_CODES.includes(r.leaveType.code)) sickDays += days;
+    else if (CASUAL_LEAVE_CODES.includes(r.leaveType.code)) casualDays += days;
     else if (r.leaveType.code === 'EARNED') earnedDays += days;
     else if (r.leaveType.code === 'MATERNITY') paidHolidayLeaveDays += days;
   }
@@ -121,38 +128,33 @@ export function computePaidHolidayHours(holidays: HolidayInput[], periodStart: D
   return round2(count * HOURS_PER_DAY);
 }
 
-// Leave type codes excluded from "Other Leave Days" in the Total Days
-// formula below: Earned Leave (no add, no subtract — it's still shown as
-// its own informational column but never touches Total Days) and Loss of
-// Pay (subtracted separately via `lopDays`, already computed elsewhere via
-// computeAutoLopDays — including it here too would double-count it).
-// Exclusion-based, not an inclusion list, at the requester's explicit
-// direction — mirrors countsTowardAnnualLeave in leaveEngine.ts: any leave
-// type added later (Casual, Sick, Paid Holidays, or a brand new one) is
-// included in Other Leave Days by default unless its code is added here.
-export const TOTAL_DAYS_EXCLUDED_CODES = ['EARNED', 'LOP'];
+// Total Days rule: LOP is the only leave that reduces Total Days, and
+// Paid Holidays are the only leave that adds to it. Every other leave type
+// (Sick, Casual/PTO, Earned, any new one) is shown in its own column only
+// and never touches Total Days. "Paid Holidays" here is the leave-request
+// half of the Paid Holiday column — the leave type with code MATERNITY
+// (see computeLeaveHoursFromRequests, which fills that column from the same
+// code); the other half, the company holiday calendar, is passed to
+// computeTotalDaysFromHours separately.
+export const TOTAL_DAYS_ADDED_LEAVE_CODES = ['MATERNITY'];
 
-interface LeaveRequestForOtherDays extends LeaveOverlapInput {
+interface LeaveRequestForPaidHolidayDays extends LeaveOverlapInput {
   leaveType: { code: string };
 }
 
 // Sums clipped days, across every APPROVED leave request overlapping the
-// period, for every leave type except the two above — the "Other Leave
-// Days" term Total Days adds. Deliberately separate from
-// computeLeaveHoursFromRequests: that function only buckets the four named
-// display columns (Sick/PTO/Earned/Paid Holiday) and would silently drop a
-// leave type it doesn't recognize, whereas this one must count every leave
-// type generically so a brand new one is included automatically.
-export function computeOtherLeaveDaysFromRequests(requests: LeaveRequestForOtherDays[], periodStart: Date, periodEnd: Date): number {
+// period, for the Paid Holidays leave type only — the leave term Total
+// Days adds.
+export function computePaidHolidayLeaveDaysFromRequests(requests: LeaveRequestForPaidHolidayDays[], periodStart: Date, periodEnd: Date): number {
   let days = 0;
   for (const r of requests) {
-    if (TOTAL_DAYS_EXCLUDED_CODES.includes(r.leaveType.code)) continue;
+    if (!TOTAL_DAYS_ADDED_LEAVE_CODES.includes(r.leaveType.code)) continue;
     days += clippedDays(r, periodStart, periodEnd);
   }
   return round2(days);
 }
 
-export async function computeOtherLeaveDays(tx: Client, employeeId: number, periodStart: Date, periodEnd: Date): Promise<number> {
+export async function computePaidHolidayLeaveDays(tx: Client, employeeId: number, periodStart: Date, periodEnd: Date): Promise<number> {
   const requests = await tx.leaveRequest.findMany({
     where: {
       employeeId,
@@ -162,7 +164,7 @@ export async function computeOtherLeaveDays(tx: Client, employeeId: number, peri
     },
     include: { leaveType: { select: { code: true } } },
   });
-  return computeOtherLeaveDaysFromRequests(requests, periodStart, periodEnd);
+  return computePaidHolidayLeaveDaysFromRequests(requests, periodStart, periodEnd);
 }
 
 // The same "Total Days" formula the Timesheet screen's own column computes
@@ -171,16 +173,15 @@ export async function computeOtherLeaveDays(tx: Client, employeeId: number, peri
 // and the actual payroll proration (see runService.ts) all read off the
 // exact same number the user sees on that screen, rather than a second,
 // independently-maintained formula that could drift out of sync with it.
-// `otherLeaveDays` (every leave type except Earned/LOP — see
-// computeOtherLeaveDays above) adds to this figure; `paidHolidayDays` is
-// the company holiday calendar's own contribution (computePaidHolidayHours
-// / HOURS_PER_DAY) — deliberately NOT the combined Paid Holiday column
-// shown on screen, since that column also folds in APPROVED "Paid
-// Holidays" leave requests (code MATERNITY), which are already counted via
-// otherLeaveDays above; adding the combined figure here would double-count
-// that portion. `lopDays` (already in days — see computeAutoLopDays in
-// leaveEngine.ts, already clipped to this period) subtracts; Earned Leave,
-// tracked in its own informational column, never touches it either way.
-export function computeTotalDaysFromHours(regularHours: number, overtimeHours: number, otherLeaveDays: number, lopDays: number, paidHolidayDays: number = 0): number {
-  return round2(regularHours + overtimeHours + otherLeaveDays + paidHolidayDays - lopDays);
+//
+//   Total Days = Regular + Overtime + Paid Holidays - LOP
+//
+// Paid Holidays = paidHolidayLeaveDays (approved Paid Holidays leave — see
+// computePaidHolidayLeaveDays) + companyHolidayDays (the holiday calendar —
+// computePaidHolidayHours / HOURS_PER_DAY), i.e. the Paid Holiday column.
+// `lopDays` (already in days — see computeAutoLopDays in leaveEngine.ts,
+// already clipped to this period) subtracts. Sick/Casual/Earned and any
+// other leave type are display-only and never touch it.
+export function computeTotalDaysFromHours(regularHours: number, overtimeHours: number, paidHolidayLeaveDays: number, lopDays: number, companyHolidayDays: number = 0): number {
+  return round2(regularHours + overtimeHours + paidHolidayLeaveDays + companyHolidayDays - lopDays);
 }
