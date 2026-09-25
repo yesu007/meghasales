@@ -6,8 +6,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DocumentIcon, PhotoIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, PencilIcon, DocumentTextIcon, PlusIcon, XMarkIcon, ReceiptPercentIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { CONTRACT_STATUSES, CONTRACT_TYPES, contractStatusColor } from '@/lib/customerContractStatus';
-import { validateCustomerDocumentFile } from '@/lib/customerDocumentUpload';
+import { CONTRACT_STATUSES, CONTRACT_TYPES, contractStatusColor, DELETE_NDA_DOCUMENTS_PERMISSION } from '@/lib/customerContractStatus';
+import { usePermissions } from '@/hooks/usePermissions';
+import { validateCustomerDocumentFile } from '@/lib/customerDocumentValidation';
 import CustomerDocumentUploadBox from './CustomerDocumentUploadBox';
 import AddableSelect from '@/components/AddableSelect';
 
@@ -80,6 +81,9 @@ interface CustomerContractsCardProps {
 
 export default function CustomerContractsCard({ leadId, canManage }: CustomerContractsCardProps) {
   const queryClient = useQueryClient();
+  // Delete / Remove of an NDA / Contract document needs its own permission
+  // (the API enforces it too); editing/uploading still follows canManage.
+  const canDeleteNda = usePermissions().has(DELETE_NDA_DOCUMENTS_PERMISSION);
   // The form is always visible when it can be used (same as KYC) — the
   // data model supports many contracts per customer, so "+ New Contract"
   // stays as a convenience reset action (jump back to a blank form while
@@ -326,10 +330,10 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
                     {c.expiryDate && <> · Expires: {dayjs(c.expiryDate).format('DD MMM YYYY')}</>}
                   </p>
                 </div>
-                {canManage && (
+                {(canManage || canDeleteNda) && (
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => openEdit(c)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>
-                    <button onClick={() => { if (window.confirm('Delete this contract?')) deleteMutation.mutate(c.id); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>
+                    {canManage && <button onClick={() => openEdit(c)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>}
+                    {canDeleteNda && <button onClick={() => { if (window.confirm('Delete this contract?')) deleteMutation.mutate(c.id); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>}
                   </div>
                 )}
               </div>
@@ -345,9 +349,9 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {(isImage(c.mimeType) || isPdf(c.mimeType)) && (
-                      <a href={c.fileUrl} target="_blank" rel="noreferrer" className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View"><EyeIcon className="h-4 w-4" /></a>
+                      <a href={`/api/customers/${leadId}/contracts/${c.id}/file`} target="_blank" rel="noreferrer" className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View"><EyeIcon className="h-4 w-4" /></a>
                     )}
-                    <a href={c.fileUrl} target="_blank" rel="noreferrer" download className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></a>
+                    <a href={`/api/customers/${leadId}/contracts/${c.id}/file?download=1`} target="_blank" rel="noreferrer" download className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></a>
                     {canManage && (
                       <>
                         <label className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 cursor-pointer" title="Replace">
@@ -361,7 +365,7 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
                             replaceFileMutation.mutate({ id: c.id, file });
                           }} />
                         </label>
-                        <button onClick={() => { if (window.confirm('Remove the attached document?')) removeFileMutation.mutate(c.id); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Remove"><TrashIcon className="h-4 w-4" /></button>
+                        {canDeleteNda && <button onClick={() => { if (window.confirm('Remove the attached document?')) removeFileMutation.mutate(c.id); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Remove"><TrashIcon className="h-4 w-4" /></button>}
                       </>
                     )}
                   </div>

@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
-import { validateEventDocumentFile, uploadEventDocumentBlob, isStorageConfigured } from '@/lib/eventDocumentUpload';
+import { validateEventDocumentFile, uploadEncryptedEventDocumentBlob, isStorageConfigured } from '@/lib/eventDocumentUpload';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest, { params }: { params: { documen
     if (validationError) return NextResponse.json({ message: validationError }, { status: 400 });
 
     const nextVersion = (document.versions[0]?.versionNumber ?? 0) + 1;
-    const blob = await uploadEventDocumentBlob(file, 'event-documents');
+    const blob = await uploadEncryptedEventDocumentBlob(file, 'event-documents');
 
     const session = await getServerSession(authOptions);
     const uploadedById = session?.user ? parseInt((session.user as any).id, 10) : null;

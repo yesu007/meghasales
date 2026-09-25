@@ -15,7 +15,7 @@ const COMPLETION_STYLES: Record<string, string> = {
 interface Attachment {
   id: number;
   fileName: string;
-  versions: { fileUrl: string }[];
+  versions: { id: number; fileUrl: string }[];
 }
 
 interface Discussion {
@@ -109,7 +109,7 @@ export default function DiscussionTimeline({ leadId, eventId, canAdd, canManage 
               {d.attachments.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {d.attachments.map((a) => (
-                    <a key={a.id} href={a.versions[0]?.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-amber-600 hover:underline">
+                    <a key={a.id} href={a.versions[0] ? `/api/leads/${leadId}/documents/${a.id}/versions/${a.versions[0].id}/file` : undefined} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-amber-600 hover:underline">
                       <PaperClipIcon className="h-3.5 w-3.5" /> {a.fileName}
                     </a>
                   ))}

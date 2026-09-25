@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { validateCustomerDocumentFile, uploadCustomerDocumentBlob, fileExtension } from '@/lib/customerDocumentUpload';
 import { isStorageConfigured } from '@/lib/storage';
+import { DELETE_NDA_DOCUMENTS_PERMISSION } from '@/lib/customerContractStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +57,12 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const status = formData.get('status') as string | null;
     const file = formData.get('file') as File | null;
     const removeFile = formData.get('removeFile') === 'true';
+    // Removing the attached document is a delete too — same permission as
+    // DELETE above, on top of manage_leads for editing the contract.
+    if (removeFile && !file) {
+      const deleteDenied = await requirePermission(DELETE_NDA_DOCUMENTS_PERMISSION);
+      if (deleteDenied) return deleteDenied;
+    }
 
     if (contractType && !CONTRACT_TYPES.includes(contractType)) {
       return NextResponse.json({ message: 'Invalid contract type' }, { status: 400 });
@@ -129,8 +136,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
+// Deleting an NDA / Contract document needs its own permission, checked
+// here on the server (not only by hiding the button) — 403 otherwise.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string; contractId: string } }) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requirePermission(DELETE_NDA_DOCUMENTS_PERMISSION);
   if (denied) return denied;
 
   try {

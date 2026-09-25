@@ -6,7 +6,7 @@ import { DocumentIcon, PhotoIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon,
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { KYC_VERIFICATION_STATUSES } from '@/lib/customerKycStatus';
-import { validateCustomerDocumentFile } from '@/lib/customerDocumentUpload';
+import { validateCustomerDocumentFile } from '@/lib/customerDocumentValidation';
 import CustomerDocumentUploadBox from './CustomerDocumentUploadBox';
 import AddableSelect from '@/components/AddableSelect';
 
@@ -248,9 +248,9 @@ export default function CustomerKycCard({ leadId, canManage }: CustomerKycCardPr
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {(isImage(doc.mimeType) || isPdf(doc.mimeType)) && (
-                          <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View"><EyeIcon className="h-4 w-4" /></a>
+                          <a href={`/api/customers/${leadId}/kyc/documents/${doc.id}/file`} target="_blank" rel="noreferrer" className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View"><EyeIcon className="h-4 w-4" /></a>
                         )}
-                        <a href={doc.fileUrl} target="_blank" rel="noreferrer" download className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></a>
+                        <a href={`/api/customers/${leadId}/kyc/documents/${doc.id}/file?download=1`} target="_blank" rel="noreferrer" download className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></a>
                         {canManage && (
                           <>
                             <label className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 cursor-pointer" title="Replace">

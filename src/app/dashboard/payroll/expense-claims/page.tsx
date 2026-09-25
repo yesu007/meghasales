@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, useRef, useEffect, Suspense, Fragment } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { XMarkIcon, ChevronDownIcon, ChevronUpIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
 import ReceiptViewerModal from '@/components/payroll/ReceiptViewerModal';
+import AttachmentUploadField from '@/components/AttachmentUploadField';
 
 interface ExpenseClaimRow {
   id: number;
@@ -22,8 +24,11 @@ interface ExpenseClaimRow {
   rejectionReason: string | null;
   paidAt: string | null;
   paymentType: 'HAND_CASH' | 'BANK_TRANSFER' | null;
+  paymentProofName: string | null;
+  paymentProofUrl: string | null;
   employee: { employeeCode: string; firstName: string; lastName: string; department: string | null };
   category: { id: number; name: string };
+  subCategory: { id: number; name: string } | null;
   lead: { id: number; companyName: string } | null;
   project: { id: number; projectName: string } | null;
   product: { id: number; productName: string } | null;
@@ -49,10 +54,38 @@ async function fetchClaims(status: string): Promise<ExpenseClaimRow[]> {
   return res.json();
 }
 
+// Deep-link support for "Edit" on a Reimbursement-generated Expense (see
+// src/app/dashboard/expenses/page.tsx): ?claimId=123&status=APPROVED|PAID.
+// status is the linked claim's current status, so the link lands on that
+// claim's own tab (Approved → Mark as Paid, Paid → Paid); missing/unknown
+// falls back to "All" so the claim is still visible.
+const CLAIM_STATUS_TABS = ['SUBMITTED', 'APPROVED', 'REJECTED', 'PAID'];
+
 export default function ExpenseClaimsManagementPage() {
+  return (
+    <Suspense fallback={null}>
+      <ExpenseClaimsManagement />
+    </Suspense>
+  );
+}
+
+function ExpenseClaimsManagement() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const linkedClaimId = Number(searchParams.get('claimId')) || null;
+  const linkedStatus = (searchParams.get('status') || '').toUpperCase();
   const [statusFilter, setStatusFilter] = useState('SUBMITTED');
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Bring the deep-linked claim into view once its row has rendered.
+  const scrolledToInitial = useRef(false);
+  // Re-applied whenever the link changes (useSearchParams is kept in sync
+  // with client-side navigation, unlike reading window.location at mount).
+  useEffect(() => {
+    if (!linkedClaimId) return;
+    setStatusFilter(CLAIM_STATUS_TABS.includes(linkedStatus) ? linkedStatus : '');
+    setExpandedId(linkedClaimId);
+    scrolledToInitial.current = false;
+  }, [linkedClaimId, linkedStatus]);
   // Employee/Customer/Project filters — purely client-side on top of the
   // already status-filtered `claims` list (this queue is a bounded review
   // set, not a paginated table), so no extra API round trip is needed.
@@ -65,10 +98,13 @@ export default function ExpenseClaimsManagementPage() {
   // row state so opening it never touches the Approve/Reject flows below.
   const [payingClaim, setPayingClaim] = useState<ExpenseClaimRow | null>(null);
   const [paymentType, setPaymentType] = useState('');
+  const [paymentProof, setPaymentProof] = useState<{ url: string; name: string } | null>(null);
+  const [proofUploading, setProofUploading] = useState(false);
   // The receipt preview popup — holds the claim whose attachment is being
   // viewed (null = closed), opened instead of navigating away via a plain
   // <a target="_blank">.
   const [viewingReceipt, setViewingReceipt] = useState<ExpenseClaimRow | null>(null);
+  const [viewingProof, setViewingProof] = useState<ExpenseClaimRow | null>(null);
 
   const { data: claims = [], isLoading } = useQuery({ queryKey: ['expense-claims', statusFilter], queryFn: () => fetchClaims(statusFilter) });
 
@@ -102,13 +138,16 @@ export default function ExpenseClaimsManagementPage() {
   );
 
   const decide = useMutation({
-    mutationFn: async ({ id, status, rejectionReason, paymentType }: { id: number; status: 'APPROVED' | 'REJECTED' | 'PAID'; rejectionReason?: string; paymentType?: string }) => {
-      const res = await fetch(`/api/payroll/expense-claims/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, rejectionReason, paymentType }) });
+    mutationFn: async ({ id, status, rejectionReason, paymentType, paymentProofUrl, paymentProofName }: { id: number; status: 'APPROVED' | 'REJECTED' | 'PAID'; rejectionReason?: string; paymentType?: string; paymentProofUrl?: string; paymentProofName?: string }) => {
+      const res = await fetch(`/api/payroll/expense-claims/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, rejectionReason, paymentType, paymentProofUrl, paymentProofName }) });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to update reimbursement'); }
       return res.json();
     },
     onSuccess: (_, { status }) => {
       queryClient.invalidateQueries({ queryKey: ['expense-claims'] });
+      // Approve / Mark as Paid also create / update the linked Expense row —
+      // refresh the Expenses list so its status shows without a manual reload.
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
       toast.success(`Reimbursement ${status.toLowerCase()}`);
     },
     onError: (err: Error) => toast.error(err.message),
@@ -121,11 +160,11 @@ export default function ExpenseClaimsManagementPage() {
     decide.mutate({ id: row.id, status: 'REJECTED', rejectionReason: reason.trim() });
   };
 
-  const closePayModal = () => { setPayingClaim(null); setPaymentType(''); };
+  const closePayModal = () => { setPayingClaim(null); setPaymentType(''); setPaymentProof(null); };
   const confirmPayment = () => {
     if (!payingClaim) return;
     if (!paymentType) { toast.error('Payment Type is required'); return; }
-    decide.mutate({ id: payingClaim.id, status: 'PAID', paymentType }, { onSuccess: closePayModal });
+    decide.mutate({ id: payingClaim.id, status: 'PAID', paymentType, paymentProofUrl: paymentProof?.url, paymentProofName: paymentProof?.name }, { onSuccess: closePayModal });
   };
 
   return (
@@ -168,7 +207,8 @@ export default function ExpenseClaimsManagementPage() {
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-white">Employee</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Expense Date</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Type</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Sub Category</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Customer</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Project</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Product</th>
@@ -180,13 +220,16 @@ export default function ExpenseClaimsManagementPage() {
               <tbody>
                 {filteredClaims.map((c, idx) => (
                   <Fragment key={c.id}>
-                    <tr onClick={() => setExpandedId((id) => (id === c.id ? null : c.id))} className={`cursor-pointer ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
+                    <tr
+                      ref={c.id === linkedClaimId ? (el) => { if (el && !scrolledToInitial.current) { scrolledToInitial.current = true; el.scrollIntoView({ block: 'center' }); } } : undefined}
+                      onClick={() => setExpandedId((id) => (id === c.id ? null : c.id))} className={`cursor-pointer ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                       <td className="px-4 py-3">
                         <p className="font-medium text-slate-800">{c.employee.firstName} {c.employee.lastName}</p>
                         <p className="text-xs text-slate-400">{c.employee.employeeCode}{c.employee.department ? ` · ${c.employee.department}` : ''}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-700">{dayjs(c.expenseDate).format('DD MMM YYYY')}</td>
                       <td className="px-4 py-3 text-slate-600">{c.category.name}</td>
+                      <td className="px-4 py-3 text-slate-600">{c.subCategory?.name ?? '-'}</td>
                       <td className="px-4 py-3 text-slate-600">{c.lead?.companyName || '-'}</td>
                       <td className="px-4 py-3 text-slate-600">{c.project?.projectName || '-'}</td>
                       <td className="px-4 py-3 text-slate-600">{c.product?.productName || '-'}</td>
@@ -209,7 +252,7 @@ export default function ExpenseClaimsManagementPage() {
                     </tr>
                     {expandedId === c.id && (
                       <tr className="bg-slate-50">
-                        <td colSpan={9} className="px-4 py-4">
+                        <td colSpan={10} className="px-4 py-4">
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                               <p className="text-xs font-medium text-slate-500 uppercase mb-1">Description</p>
@@ -223,6 +266,14 @@ export default function ExpenseClaimsManagementPage() {
                                 </button>
                               ) : <p className="text-sm text-slate-400">None attached</p>}
                             </div>
+                            {c.paymentProofUrl && (
+                              <div>
+                                <p className="text-xs font-medium text-slate-500 uppercase mb-1">Payment Proof</p>
+                                <button onClick={(e) => { e.stopPropagation(); setViewingProof(c); }} className="flex items-center gap-1 text-sm text-amber-700 hover:text-amber-800">
+                                  <PaperClipIcon className="h-3.5 w-3.5" /> {c.paymentProofName || 'View payment proof'}
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mt-4">
                             <div><p className="text-xs text-slate-400 uppercase">Submitted</p><p className="text-slate-700">{c.submittedAt ? dayjs(c.submittedAt).format('DD MMM YYYY') : '-'}</p></div>
@@ -258,13 +309,14 @@ export default function ExpenseClaimsManagementPage() {
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Payment Type</label>
-                <AddableSelect value={paymentType} onChange={setPaymentType} options={PAYMENT_TYPE_OPTIONS} placeholder="Select Payment Type" />
+                <AddableSelect value={paymentType} onChange={setPaymentType} options={PAYMENT_TYPE_OPTIONS} placeholder="Select Payment Type" inline />
               </div>
+              <AttachmentUploadField label="Supporting Document / Receipt" uploadUrl="/api/payroll/expense-claims/upload" value={paymentProof} onChange={setPaymentProof} onUploadingChange={setProofUploading} />
             </div>
             <div className="flex justify-end gap-2 px-6 pb-6">
               <button type="button" onClick={closePayModal} className="px-4 py-2 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Cancel</button>
-              <button type="button" disabled={decide.isPending} onClick={confirmPayment} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-                {decide.isPending ? 'Confirming...' : 'Confirm Payment'}
+              <button type="button" disabled={decide.isPending || proofUploading} onClick={confirmPayment} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                {decide.isPending ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
@@ -272,7 +324,11 @@ export default function ExpenseClaimsManagementPage() {
       )}
 
       {viewingReceipt?.attachmentUrl && (
-        <ReceiptViewerModal url={viewingReceipt.attachmentUrl} name={viewingReceipt.attachmentName} onClose={() => setViewingReceipt(null)} />
+        // Via the decrypting file route — the stored URL is encrypted.
+        <ReceiptViewerModal url={`/api/payroll/expense-claims/${viewingReceipt.id}/file`} name={viewingReceipt.attachmentName} onClose={() => setViewingReceipt(null)} />
+      )}
+      {viewingProof?.paymentProofUrl && (
+        <ReceiptViewerModal url={`/api/payroll/expense-claims/${viewingProof.id}/file?type=payment-proof`} name={viewingProof.paymentProofName} onClose={() => setViewingProof(null)} />
       )}
     </div>
   );

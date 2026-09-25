@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
+import { resolveClaimSubCategory } from '@/lib/payroll/expenseClaimCategory';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,8 +46,21 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
     if (body.categoryId !== undefined) {
       const category = await prisma.expenseCategory.findUnique({ where: { id: Number(body.categoryId) } });
-      if (!category || !category.isActive) return NextResponse.json({ message: 'Expense type not found' }, { status: 404 });
+      if (!category || !category.isActive) return NextResponse.json({ message: 'Category not found' }, { status: 404 });
       data.categoryId = category.id;
+    }
+    // Sub Category is only (re)validated when this request touches Category
+    // or Sub Category — a submit-only PATCH on a claim filed before Sub
+    // Category existed shouldn't suddenly be blocked. Changing Category
+    // without sending a Sub Category drops the old one (it belonged to the
+    // previous Category), which then has to satisfy the new Category's rule.
+    if (body.categoryId !== undefined || body.subCategoryId !== undefined) {
+      const categoryId = (data.categoryId as number | undefined) ?? existing.categoryId;
+      const categoryChanged = categoryId !== existing.categoryId;
+      const requested = body.subCategoryId !== undefined ? body.subCategoryId : categoryChanged ? null : existing.subCategoryId;
+      const subCategory = await resolveClaimSubCategory(prisma, categoryId, requested);
+      if ('error' in subCategory) return NextResponse.json({ message: subCategory.error }, { status: 400 });
+      data.subCategoryId = subCategory.subCategoryId;
     }
     if (body.description !== undefined) data.description = body.description;
     if (body.amount !== undefined) {
@@ -79,7 +93,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
     const claim = await prisma.expenseClaim.findUniqueOrThrow({
       where: { id },
-      include: { category: { select: { id: true, name: true } }, lead: { select: { id: true, companyName: true } }, project: { select: { id: true, projectName: true } }, product: { select: { id: true, productName: true } } },
+      include: { category: { select: { id: true, name: true } }, subCategory: { select: { id: true, name: true } }, lead: { select: { id: true, companyName: true } }, project: { select: { id: true, projectName: true } }, product: { select: { id: true, productName: true } } },
     });
     await logAudit({ action: 'UPDATE', entityType: 'EXPENSE_CLAIM', entityId: id, newValue: { status: claim.status }, description: `Reimbursement ${id} ${body.submit ? 'submitted' : 'updated'}`, request });
 

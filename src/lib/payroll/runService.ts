@@ -3,7 +3,8 @@ import dayjs from 'dayjs';
 import { isValidRunStatusTransition, RunStatus } from './constants';
 import { computePayableDays, daysInMonth, resolveStructureLineItems, round2, StatutoryConfig } from './runEngine';
 import { computeAutoLopDays } from './leaveEngine';
-import { computeOtherLeaveDays, computeTotalDaysFromHours, computePaidHolidayHours, HOURS_PER_DAY } from './timesheetEngine';
+import { computePaidHolidayLeaveDays, computeTotalDaysFromHours, computePaidHolidayHours, HOURS_PER_DAY } from './timesheetEngine';
+import { nextExpenseNumber } from '@/lib/nextExpenseNumber';
 
 export class OptimisticLockError extends Error {}
 export class InvalidStatusTransitionError extends Error {}
@@ -115,9 +116,9 @@ export async function generateRunPayslips(tx: Client, runId: number, year: numbe
       notEligible += 1;
       continue;
     }
-    const otherLeaveDays = await computeOtherLeaveDays(tx, employee.id, periodStart, periodEnd);
+    const paidHolidayLeaveDays = await computePaidHolidayLeaveDays(tx, employee.id, periodStart, periodEnd);
     const paidHolidayDays = round2(computePaidHolidayHours(holidays, periodStart, periodEnd, employee) / HOURS_PER_DAY);
-    const timesheetTotalDays = computeTotalDaysFromHours(Number(timesheetEntry.regularHours), Number(timesheetEntry.overtimeHours), otherLeaveDays, autoLopDays, paidHolidayDays);
+    const timesheetTotalDays = computeTotalDaysFromHours(Number(timesheetEntry.regularHours), Number(timesheetEntry.overtimeHours), paidHolidayLeaveDays, autoLopDays, paidHolidayDays);
     if (timesheetTotalDays <= 0) {
       notEligible += 1;
       continue;
@@ -247,7 +248,7 @@ export async function recalculatePayslip(
     ? Math.min(calendarPayableDays, computeTotalDaysFromHours(
         Number(timesheetEntry.regularHours),
         Number(timesheetEntry.overtimeHours),
-        await computeOtherLeaveDays(tx, payslip.employeeId, periodStart, periodEnd),
+        await computePaidHolidayLeaveDays(tx, payslip.employeeId, periodStart, periodEnd),
         lopDays,
         paidHolidayDays
       ))
@@ -319,8 +320,68 @@ export async function changeRunStatus(tx: Client, runId: number, toStatus: RunSt
   }
 
   await applyOrReverseLoanRepayments(tx, runId, fromStatus, toStatus);
+  await syncPayrollRunExpense(tx, runId, toStatus, performedById);
 
   return tx.payrollRun.findUniqueOrThrow({ where: { id: runId } });
+}
+
+// Payroll Run -> Expense integration. Once a run is approved (or moved
+// further to PROCESSED/PAID) it gets exactly ONE SALARY expense in the
+// Expense module — Category "Salary & Wages", Sub Category "Salary", amount
+// = the run's total net pay (sum of its payslips, as already calculated) —
+// whose status mirrors the run: APPROVED -> PENDING, PROCESSED -> PROCESSED,
+// PAID -> PAID. The employee-wise breakdown is not copied; the Expenses list
+// reads it from the run's payslips. Nothing is created for a DRAFT or
+// CANCELLED run, and reopening/cancelling soft-deletes the expense. Keyed on
+// the unique Expense.payrollRunId, so re-approving/re-processing the same
+// run updates (or restores) that one expense — never a duplicate — and it
+// keeps its original expense number.
+const EXPENSE_STATUS_FOR_RUN: Partial<Record<RunStatus, string>> = { APPROVED: 'PENDING', PROCESSED: 'PROCESSED', PAID: 'PAID' };
+export const SALARY_EXPENSE_CATEGORY = 'Salary & Wages';
+export const SALARY_EXPENSE_SUB_CATEGORY = 'Salary';
+
+async function syncPayrollRunExpense(tx: Client, runId: number, toStatus: RunStatus, performedById: number | null): Promise<void> {
+  const existing = await tx.expense.findUnique({ where: { payrollRunId: runId }, select: { id: true, deletedAt: true } });
+  const softDelete = async () => {
+    if (existing && !existing.deletedAt) await tx.expense.update({ where: { id: existing.id }, data: { deletedAt: new Date() } });
+  };
+
+  const expenseStatus = EXPENSE_STATUS_FOR_RUN[toStatus];
+  if (!expenseStatus) return softDelete();
+
+  const run = await tx.payrollRun.findUniqueOrThrow({ where: { id: runId }, include: { payslips: { select: { netPay: true } } } });
+  const totalNetPay = round2(run.payslips.reduce((sum, p) => sum + Number(p.netPay), 0));
+  if (totalNetPay <= 0) return softDelete();
+
+  const category = await tx.expenseCategory.findUnique({
+    where: { name: SALARY_EXPENSE_CATEGORY },
+    include: { subCategories: { where: { name: SALARY_EXPENSE_SUB_CATEGORY } } },
+  });
+  if (!category) throw new Error(`Expense category "${SALARY_EXPENSE_CATEGORY}" not found — create it before approving payroll`);
+
+  const period = dayjs(new Date(Date.UTC(run.payPeriodYear, run.payPeriodMonth - 1, 1)));
+  const data = {
+    categoryId: category.id,
+    subCategoryId: category.subCategories[0]?.id ?? null,
+    // Booked on the last day of the pay period it belongs to.
+    expenseDate: new Date(Date.UTC(run.payPeriodYear, run.payPeriodMonth, 0)),
+    amount: totalNetPay,
+    currencyCode: 'INR',
+    exchangeRate: 1,
+    paymentMethod: 'BANK_TRANSFER',
+    status: expenseStatus,
+    paidDate: expenseStatus === 'PAID' ? run.paidAt ?? new Date() : null,
+    referenceNumber: `PAYROLL-${period.format('YYYY-MM')}`,
+    notes: `Payroll – ${period.format('MMMM YYYY')} (${run.payslips.length} employee${run.payslips.length === 1 ? '' : 's'})`,
+    source: 'SALARY',
+    deletedAt: null,
+  };
+
+  if (existing) {
+    await tx.expense.update({ where: { id: existing.id }, data });
+  } else {
+    await tx.expense.create({ data: { ...data, payrollRunId: runId, expenseNumber: await nextExpenseNumber(tx), recordedById: performedById } });
+  }
 }
 
 const COMMITTED_STATUSES: RunStatus[] = ['PROCESSED', 'PAID'];

@@ -60,7 +60,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const session = await getServerSession(authOptions);
     const performedById = currentUserId(session);
 
-    const run = await prisma.$transaction((tx) => changeRunStatus(tx, id, body.status as RunStatus, Number(body.version), performedById));
+    // Longer than Prisma's 5s default: approving now also creates/updates the
+    // run's SALARY expense in the same transaction (see syncPayrollRunExpense).
+    const run = await prisma.$transaction((tx) => changeRunStatus(tx, id, body.status as RunStatus, Number(body.version), performedById), { timeout: 30_000 });
 
     await logAudit({ action: 'UPDATE', entityType: 'PAYROLL_RUN', entityId: run.id, newValue: { status: run.status }, description: `Payroll run ${run.payPeriodMonth}/${run.payPeriodYear} moved to ${run.status}`, request });
 

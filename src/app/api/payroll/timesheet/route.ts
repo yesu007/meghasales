@@ -5,10 +5,8 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { periodRange, computeLeaveHours, computePaidHolidayHours, computeOtherLeaveDays, computeTotalDaysFromHours, HOURS_PER_DAY } from '@/lib/payroll/timesheetEngine';
-import { computeAutoLopDays } from '@/lib/payroll/leaveEngine';
-import { round2 } from '@/lib/payroll/runEngine';
-import { resolveShiftForEmployeeOnDate } from '@/lib/payroll/shiftEngine';
+import { periodRange } from '@/lib/payroll/timesheetEngine';
+import { buildTimesheetRow } from '@/lib/payroll/timesheetRow';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,60 +55,16 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = await Promise.all(
-      employees.map(async (emp) => {
-        const entry = entryByEmployee.get(emp.id);
-        const regularHours = entry ? Number(entry.regularHours) : 0;
-        const overtimeHours = entry ? Number(entry.overtimeHours) : 0;
-        const { sickLeaveHours, ptoHours, earnedLeaveHours, paidHolidayLeaveHours } = await computeLeaveHours(prisma, emp.id, start, end);
-        // Paid Holiday combines two independent sources into one column: the
-        // company holiday calendar (companyHolidayHours) and any of this
-        // employee's own APPROVED "Paid Holidays" leave requests
-        // (paidHolidayLeaveHours) — either one alone should show up here.
-        const companyHolidayHours = computePaidHolidayHours(holidays, start, end, emp);
-        const paidHolidayHours = round2(companyHolidayHours + paidHolidayLeaveHours);
-
-        // Shift Master — resolved independently of the hours/leave figures
-        // above. Shift is looked up as of the period's last day (same
-        // "which assignment governs this period" convention
-        // SalaryStructureAssignment already uses) — shown here purely for
-        // visibility, no bearing on lopDays/totalDays.
-        const shift = await resolveShiftForEmployeeOnDate(prisma, emp.id, end);
-
-        const lopDays = await computeAutoLopDays(prisma, emp.id, start, end);
-        // Regular/Overtime are entered directly as days (no 8-hours=1-day
-        // conversion). otherLeaveDays sums every approved leave request in
-        // this period except Earned Leave and LOP (see
-        // TOTAL_DAYS_EXCLUDED_CODES) and adds to Total Days; the company
-        // holiday calendar's own days (companyHolidayHours — NOT the
-        // combined paidHolidayHours column, to avoid double-counting the
-        // leave-request portion already in otherLeaveDays) also add; Earned
-        // Leave (its own informational column) never touches it; LOP
-        // (already in days) subtracts — see computeTotalDaysFromHours.
-        const otherLeaveDays = await computeOtherLeaveDays(prisma, emp.id, start, end);
-        const companyHolidayDays = round2(companyHolidayHours / HOURS_PER_DAY);
-        const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, otherLeaveDays, lopDays, companyHolidayDays);
-
-        return {
-          employeeId: emp.id,
-          employeeCode: emp.employeeCode,
-          name: `${emp.firstName} ${emp.lastName}`,
-          department: emp.department,
-          designation: emp.designation,
-          employmentType: emp.employmentType,
-          status: emp.status,
-          timesheetStatus: emp.timesheetStatus,
-          regularHours,
-          overtimeHours,
-          sickLeaveHours,
-          ptoHours,
-          paidHolidayHours,
-          earnedLeaveHours,
-          lopDays,
-          totalDays,
+      employees.map((emp) =>
+        buildTimesheetRow(prisma, {
+          employee: emp,
+          periodStart: start,
+          periodEnd: end,
+          entry: entryByEmployee.get(emp.id),
+          holidays,
           loanDeduction: loanDeductionByEmployee.get(emp.id) || 0,
-          shiftName: shift?.name ?? null,
-        };
-      })
+        })
+      )
     );
 
     return NextResponse.json({

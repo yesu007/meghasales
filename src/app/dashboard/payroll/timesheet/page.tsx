@@ -12,7 +12,8 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import LeaveRequestsPanel from '@/components/payroll/LeaveRequestsPanel';
 import LeaveTypesPanel from '@/components/payroll/LeaveTypesPanel';
-import { isWeeklyOff, type SaturdayPolicy } from '@/lib/payroll/saturdayPolicy';
+import TimesheetDayStrip from '@/components/payroll/TimesheetDayStrip';
+import { type SaturdayPolicy } from '@/lib/payroll/saturdayPolicy';
 
 interface TimesheetEmployeeRow {
   employeeId: number;
@@ -96,7 +97,9 @@ export default function TimeAndAttendancePage() {
   const [drafts, setDrafts] = useState<Record<number, { regularHours: string; overtimeHours: string }>>({});
 
   const { data, isLoading } = useQuery({ queryKey: ['timesheet', year, month], queryFn: () => fetchTimesheet(year, month) });
-  const { data: holidays = [] } = useQuery({ queryKey: ['holidays'], queryFn: fetchHolidays, enabled: settingsOpen });
+  // Always loaded (not only while Settings is open) — the day strip greys out
+  // these Paid Holiday dates; add/remove below invalidates this same key.
+  const { data: holidays = [] } = useQuery({ queryKey: ['holidays'], queryFn: fetchHolidays });
   const { data: saturdayPolicy = 'SECOND_FOURTH' } = useQuery({ queryKey: ['saturday-policy'], queryFn: fetchSaturdayPolicy });
 
   const period = data?.period;
@@ -158,7 +161,6 @@ export default function TimeAndAttendancePage() {
   const goNextMonth = () => { const d = dayjs(`${year}-${month}-01`).add(1, 'month'); setYear(d.year()); setMonth(d.month() + 1); };
 
   const daysInThisMonth = dayjs(`${year}-${month}-01`).daysInMonth();
-  const todayInPeriod = now.year() === year && now.month() + 1 === month ? now.date() : null;
 
   const employees = data?.employees || [];
   const filtered = useMemo(() => {
@@ -237,40 +239,7 @@ export default function TimeAndAttendancePage() {
               </div>
             </div>
 
-            {/* Day strip — a visual marker of the period, not an entry grid (hours are entered as monthly totals below). Sunday plus whichever Saturdays the company's weekly-off policy claims (Settings > Statutory Settings) are muted; today is ringed. */}
-            <div className="space-y-2">
-              {/* py-2 (not just pb-1) reserves room inside the scroll box for the
-                  "today" ring-offset — overflow-x-auto forces overflow-y to clip too
-                  (a CSS quirk: one axis non-visible coerces the other), so anything
-                  that would render outside the row's own padding gets cut off. No
-                  scale on today's pill for the same reason — growing past the box
-                  is what clipped it in the first place; the ring+shadow is enough. */}
-              <div className="flex gap-1.5 overflow-x-auto py-2 px-0.5">
-                {Array.from({ length: daysInThisMonth }, (_, i) => i + 1).map((d) => {
-                  const isWeekend = isWeeklyOff(dayjs(`${year}-${month}-${d}`).toDate(), saturdayPolicy);
-                  const isToday = todayInPeriod === d;
-                  return (
-                    <div
-                      key={d}
-                      className={`flex-1 min-w-[30px] text-center text-[11px] font-semibold py-2 rounded-xl transition-shadow duration-150 ${
-                        isToday
-                          ? 'bg-white text-slate-800 ring-2 ring-amber-400 ring-offset-1 shadow-sm'
-                          : isWeekend
-                          ? 'bg-rose-50 text-rose-300 hover:bg-rose-100'
-                          : 'bg-gradient-to-b from-emerald-400 to-emerald-500 text-white shadow-sm shadow-emerald-100 hover:shadow-md'
-                      }`}
-                    >
-                      {d}
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex items-center gap-4 text-[11px] text-slate-400 px-0.5">
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-gradient-to-b from-emerald-400 to-emerald-500" /> Working day</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-100" /> Weekly off</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-white ring-2 ring-amber-400" /> Today</span>
-              </div>
-            </div>
+            <TimesheetDayStrip year={year} month={month} saturdayPolicy={saturdayPolicy} holidays={holidays} />
 
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="relative flex-1 min-w-[220px] max-w-sm">

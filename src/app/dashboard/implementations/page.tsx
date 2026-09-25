@@ -567,6 +567,8 @@ export default function ImplementationsPage() {
                   <AddableSelect
                     value={String(size)}
                     onChange={(v) => { setSize(Number(v)); setPage(0); }}
+
+                    clearable={false}
                     options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
                     placeholder="Rows per page"
                   />

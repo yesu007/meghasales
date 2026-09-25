@@ -6,11 +6,12 @@ import { PlusIcon, XMarkIcon, PaperClipIcon, ArrowDownTrayIcon, EyeIcon, PencilI
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
-import LeadPickerCombobox, { type LeadOption } from '@/components/leads/LeadPickerCombobox';
+import type { LeadOption } from '@/components/leads/LeadPickerCombobox';
 import { useProjectsForLead } from '@/hooks/useProjectsForLead';
 import { useProductsForLead } from '@/hooks/useProductsForLead';
 
-interface CategoryOption { id: number; name: string }
+interface SubCategoryOption { id: number; name: string }
+interface CategoryOption { id: number; name: string; subCategories: SubCategoryOption[] }
 interface ExpenseClaim {
   id: number;
   expenseDate: string;
@@ -25,6 +26,7 @@ interface ExpenseClaim {
   rejectionReason: string | null;
   paidAt: string | null;
   category: { id: number; name: string };
+  subCategory: { id: number; name: string } | null;
   lead: { id: number; companyName: string } | null;
   project: { id: number; projectName: string } | null;
   product: { id: number; productName: string } | null;
@@ -47,16 +49,26 @@ async function fetchMine(): Promise<{ employee: { employeeCode: string } | null;
 }
 async function fetchCategories(): Promise<CategoryOption[]> {
   const res = await fetch('/api/payroll/expense-claims/categories');
-  if (!res.ok) throw new Error('Failed to fetch expense types');
+  if (!res.ok) throw new Error('Failed to fetch categories');
   return res.json();
 }
+// Customer dropdown source — the full list up front (same leads the
+// search-as-you-type picker used to query 8 at a time), so the dropdown
+// shows every customer and filters locally like the Project dropdown.
+async function fetchCustomers(): Promise<LeadOption[]> {
+  const res = await fetch('/api/leads?size=1000&sortBy=companyName&sortDir=asc');
+  if (!res.ok) throw new Error('Failed to fetch customers');
+  const data = await res.json();
+  return data.content.map((l: any) => ({ id: l.id, companyName: l.companyName, contactPerson: l.contactPerson, status: l.status }));
+}
 
-const blankForm = { expenseDate: dayjs().format('YYYY-MM-DD'), categoryId: '', description: '', amount: '', attachmentUrl: '', attachmentName: '' };
+const blankForm = { expenseDate: dayjs().format('YYYY-MM-DD'), categoryId: '', subCategoryId: '', description: '', amount: '', attachmentUrl: '', attachmentName: '' };
 
 export default function MyExpenseClaimsPage() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['my-expense-claims'], queryFn: fetchMine });
   const { data: categories = [] } = useQuery({ queryKey: ['expense-claim-categories'], queryFn: fetchCategories });
+  const { data: customers = [] } = useQuery({ queryKey: ['expense-claim-customers'], queryFn: fetchCustomers });
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -71,8 +83,8 @@ export default function MyExpenseClaimsPage() {
   const { data: leadProjects = [] } = useProjectsForLead(lead?.id ?? null);
   // Product is scoped to the same Customer as Project (Product Master has
   // no projectId of its own — see the schema's own comment on
-  // ExpenseClaim.productId) — Project just has to be picked first in this
-  // form's own sequence before the Product dropdown unlocks.
+  // ExpenseClaim.productId), so both dropdowns unlock as soon as a
+  // Customer is picked, independently of each other.
   const { data: leadProducts = [] } = useProductsForLead(lead?.id ?? null);
 
   // Clicking Edit must always jump the page to the form and focus its first
@@ -103,6 +115,7 @@ export default function MyExpenseClaimsPage() {
     setForm({
       expenseDate: dayjs(c.expenseDate).format('YYYY-MM-DD'),
       categoryId: String(c.category.id),
+      subCategoryId: c.subCategory ? String(c.subCategory.id) : '',
       description: c.description,
       amount: c.amount,
       attachmentUrl: c.attachmentUrl || '',
@@ -137,6 +150,7 @@ export default function MyExpenseClaimsPage() {
   const buildPayload = (submit: boolean) => ({
     expenseDate: form.expenseDate,
     categoryId: Number(form.categoryId),
+    subCategoryId: form.subCategoryId ? Number(form.subCategoryId) : null,
     description: form.description,
     amount: Number(form.amount),
     leadId: lead?.id ?? null,
@@ -147,9 +161,17 @@ export default function MyExpenseClaimsPage() {
     submit,
   });
 
+  // Sub Category options follow the selected Category — same
+  // category-owns-its-sub-categories rule as Finance's Expenses form.
+  const subCategoryOptions = categories.find((c) => String(c.id) === form.categoryId)?.subCategories || [];
+
   const validate = () => {
     if (!form.expenseDate || !form.categoryId || !form.description || !form.amount) {
-      toast.error('Expense date, type, description, and amount are required');
+      toast.error('Expense date, category, description, and amount are required');
+      return false;
+    }
+    if (subCategoryOptions.length > 0 && !form.subCategoryId) {
+      toast.error('Sub category is required for the selected category');
       return false;
     }
     if (Number(form.amount) <= 0) {
@@ -228,23 +250,43 @@ export default function MyExpenseClaimsPage() {
               <input ref={firstFieldRef} type="date" max={dayjs().format('YYYY-MM-DD')} value={form.expenseDate} onChange={(e) => setForm((f) => ({ ...f, expenseDate: e.target.value }))} className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Expense Type</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
               <AddableSelect
                 value={form.categoryId}
-                onChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}
+                onChange={(v) => setForm((f) => ({ ...f, categoryId: v, subCategoryId: '' }))}
                 options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
-                placeholder="Select expense type"
+                placeholder="Select category"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Sub Category{subCategoryOptions.length > 0 ? ' *' : ''}</label>
+              <AddableSelect
+                value={form.subCategoryId}
+                onChange={(v) => setForm((f) => ({ ...f, subCategoryId: v }))}
+                options={subCategoryOptions.map((s) => ({ value: String(s.id), label: s.name }))}
+                placeholder={!form.categoryId ? 'Select a category first' : subCategoryOptions.length === 0 ? 'No sub categories' : 'Select sub category'}
+                disabled={subCategoryOptions.length === 0}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Customer (optional)</label>
-              <LeadPickerCombobox value={lead} onChange={(l) => { setLead(l); setProjectId(''); setProductId(''); }} placeholder="Search by company or contact name..." />
+              <AddableSelect
+                value={lead ? String(lead.id) : ''}
+                onChange={(v) => { setLead(customers.find((c) => String(c.id) === v) ?? null); setProjectId(''); setProductId(''); }}
+                // Keeps an edited claim's saved customer selectable even if
+                // it isn't in the loaded list.
+                options={[...(lead && !customers.some((c) => c.id === lead.id) ? [lead] : []), ...customers].map((c) => ({
+                  value: String(c.id),
+                  label: c.companyName,
+                }))}
+                placeholder="Select customer"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Project (optional)</label>
               <AddableSelect
                 value={projectId}
-                onChange={(v) => { setProjectId(v); setProductId(''); }}
+                onChange={setProjectId}
                 options={leadProjects.map((p) => ({ value: String(p.id), label: p.projectName }))}
                 placeholder={lead ? 'Select project' : 'Select a customer first'}
                 disabled={!lead}
@@ -256,8 +298,10 @@ export default function MyExpenseClaimsPage() {
                 value={productId}
                 onChange={setProductId}
                 options={leadProducts.map((p) => ({ value: String(p.id), label: p.productName }))}
-                placeholder={projectId ? 'Select product' : 'Select a project first'}
-                disabled={!projectId}
+                // Scoped to the Customer (not the Project), so it unlocks
+                // together with Project once a customer is picked.
+                placeholder={lead ? 'Select product' : 'Select a customer first'}
+                disabled={!lead}
               />
             </div>
             <div className="sm:col-span-2">
@@ -316,7 +360,8 @@ export default function MyExpenseClaimsPage() {
               <thead className="bg-slate-900">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-white">Expense Date</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Type</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Category</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Sub Category</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Customer</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Project</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Product</th>
@@ -332,6 +377,7 @@ export default function MyExpenseClaimsPage() {
                     <tr onClick={() => setExpandedId((id) => (id === c.id ? null : c.id))} className={`cursor-pointer ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-amber-50/60 transition-colors`}>
                       <td className="px-4 py-3 text-slate-700">{dayjs(c.expenseDate).format('DD MMM YYYY')}</td>
                       <td className="px-4 py-3 text-slate-600">{c.category.name}</td>
+                      <td className="px-4 py-3 text-slate-600">{c.subCategory?.name ?? '-'}</td>
                       <td className="px-4 py-3 text-slate-600">{c.lead?.companyName || '-'}</td>
                       <td className="px-4 py-3 text-slate-600">{c.project?.projectName || '-'}</td>
                       <td className="px-4 py-3 text-slate-600">{c.product?.productName || '-'}</td>
@@ -363,7 +409,7 @@ export default function MyExpenseClaimsPage() {
                     </tr>
                     {expandedId === c.id && (
                       <tr className="bg-slate-50">
-                        <td colSpan={9} className="px-4 py-4">
+                        <td colSpan={10} className="px-4 py-4">
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                             <div><p className="text-xs text-slate-400 uppercase">Submitted</p><p className="text-slate-700">{c.submittedAt ? dayjs(c.submittedAt).format('DD MMM YYYY') : '-'}</p></div>
                             <div><p className="text-xs text-slate-400 uppercase">Approved</p><p className="text-slate-700">{c.approvedAt ? dayjs(c.approvedAt).format('DD MMM YYYY') : '-'}</p></div>
@@ -371,7 +417,8 @@ export default function MyExpenseClaimsPage() {
                             <div>
                               <p className="text-xs text-slate-400 uppercase">Receipt</p>
                               {c.attachmentUrl ? (
-                                <a href={c.attachmentUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-amber-700 hover:text-amber-800"><ArrowDownTrayIcon className="h-3.5 w-3.5" /> {c.attachmentName || 'View'}</a>
+                                // Via the decrypting file route — the stored URL is encrypted.
+                                <a href={`/api/payroll/expense-claims/${c.id}/file`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-amber-700 hover:text-amber-800"><ArrowDownTrayIcon className="h-3.5 w-3.5" /> {c.attachmentName || 'View'}</a>
                               ) : <p className="text-slate-400">None</p>}
                             </div>
                           </div>

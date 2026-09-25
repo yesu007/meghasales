@@ -13,6 +13,25 @@ export const dynamic = 'force-dynamic';
 // edit, only its name, so the Category/Sub-Category relationship can't be
 // altered through this route.
 
+// Bill tax settings (see ExpenseSubCategory.gstType/tdsApplicable/tdsPercent
+// in prisma/schema.prisma). Only fields present in the body are returned, so
+// a name-only edit leaves them untouched.
+function parseTaxSettings(body: any): { gstType?: string; tdsApplicable?: boolean; tdsPercent?: number } | string {
+  const out: { gstType?: string; tdsApplicable?: boolean; tdsPercent?: number } = {};
+  if (body.gstType !== undefined) {
+    if (!['INPUT', 'OUTPUT'].includes(body.gstType)) return 'GST type must be INPUT or OUTPUT';
+    out.gstType = body.gstType;
+  }
+  if (body.tdsApplicable !== undefined) out.tdsApplicable = !!body.tdsApplicable;
+  if (body.tdsPercent !== undefined && body.tdsPercent !== '') {
+    const pct = Number(body.tdsPercent);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) return 'TDS % must be between 0 and 100';
+    out.tdsPercent = pct;
+  }
+  if (out.tdsApplicable === false) out.tdsPercent = 0;
+  return out;
+}
+
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   const denied = await requirePermission('manage_expenses');
   if (denied) return denied;
@@ -21,13 +40,15 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const id = parseInt(params.id);
     const body = await request.json();
     if (!body.name) return NextResponse.json({ message: 'name is required' }, { status: 400 });
+    const tax = parseTaxSettings(body);
+    if (typeof tax === 'string') return NextResponse.json({ message: tax }, { status: 400 });
 
     const existing = await prisma.expenseSubCategory.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Sub-category not found' }, { status: 404 });
 
     const subCategory = await prisma.expenseSubCategory.update({
       where: { id },
-      data: { name: body.name },
+      data: { name: body.name, ...tax },
     });
 
     await logAudit({ action: 'UPDATE', entityType: 'EXPENSE_SUB_CATEGORY', entityId: id, oldValue: existing, newValue: subCategory, description: `Expense sub-category "${subCategory.name}" updated`, request });
@@ -51,9 +72,15 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     const existing = await prisma.expenseSubCategory.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ message: 'Sub-category not found' }, { status: 404 });
 
-    const expenseCount = await prisma.expense.count({ where: { subCategoryId: id } });
-    if (expenseCount > 0) {
-      return NextResponse.json({ message: `Cannot delete — still in use (${expenseCount} expense${expenseCount === 1 ? '' : 's'})` }, { status: 409 });
+    const [expenseCount, billItemCount] = await Promise.all([
+      prisma.expense.count({ where: { subCategoryId: id } }),
+      prisma.billItem.count({ where: { subCategoryId: id } }),
+    ]);
+    if (expenseCount > 0 || billItemCount > 0) {
+      const parts: string[] = [];
+      if (expenseCount > 0) parts.push(`${expenseCount} expense${expenseCount === 1 ? '' : 's'}`);
+      if (billItemCount > 0) parts.push(`${billItemCount} bill line${billItemCount === 1 ? '' : 's'}`);
+      return NextResponse.json({ message: `Cannot delete — still in use (${parts.join(', ')})` }, { status: 409 });
     }
 
     // Only this sub-category is removed — its parent category is untouched.

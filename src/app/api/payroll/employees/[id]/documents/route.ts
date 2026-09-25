@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { put } from '@/lib/storage';
+import { putEncrypted } from '@/lib/storage';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       if (!folder || folder.employeeId !== employeeId) return NextResponse.json({ message: 'Destination folder not found' }, { status: 404 });
     }
 
-    const blob = await put(`employee-legal-documents/${employeeId}/${Date.now()}-${file.name}`, file, { access: 'public' });
+    const blob = await putEncrypted(`employee-legal-documents/${employeeId}`, file);
 
     const session = await getServerSession(authOptions);
     const uploadedById = session?.user ? parseInt((session.user as any).id, 10) : null;
