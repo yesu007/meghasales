@@ -34,7 +34,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // data instead of relying on the eventId in the URL, so this single
 // endpoint/versioning machinery serves both cases without duplication.
 export async function POST(request: NextRequest, { params }: { params: { id: string; eventId: string } }) {
-  const denied = await requirePermission('manage_lead_events');
+  const denied = await requirePermission('create_lead_events');
   if (denied) return denied;
   if (!isStorageConfigured()) {
     return NextResponse.json(

@@ -33,7 +33,7 @@ function parseTaxSettings(body: any): { gstType?: string; tdsApplicable?: boolea
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('edit_expenses');
   if (denied) return denied;
 
   try {
@@ -64,7 +64,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('delete_expenses');
   if (denied) return denied;
 
   try {

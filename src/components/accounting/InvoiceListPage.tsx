@@ -95,7 +95,7 @@ async function fetchLeads(): Promise<Lead[]> {
 }
 
 async function fetchUsers(): Promise<UserOption[]> {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) return [];
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
@@ -135,6 +135,10 @@ export interface InvoiceListPageHandle {
 const InvoiceListPage = forwardRef<InvoiceListPageHandle, { mode: 'open' | 'paid'; leadId?: number; hideHeading?: boolean }>(function InvoiceListPage({ mode, leadId, hideHeading }, ref) {
   const { has } = usePermissions();
   const canExport = has('export_accounting');
+  const canCreate = has('create_invoices');
+  const canEdit = has('edit_invoices');
+  const canDelete = has('delete_invoices');
+  const canRecordPayment = has('create_payments');
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -327,7 +331,7 @@ const InvoiceListPage = forwardRef<InvoiceListPageHandle, { mode: 'open' | 'paid
                 <ArrowDownTrayIcon className="h-4 w-4" /> Export
               </button>
             )}
-            {mode === 'open' && (
+            {mode === 'open' && canCreate && (
               <button onClick={() => { setEditingId(null); setForm(blankForm); setLineItems([]); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
                 <PlusIcon className="h-4 w-4" /> New Invoice
               </button>
@@ -451,6 +455,7 @@ const InvoiceListPage = forwardRef<InvoiceListPageHandle, { mode: 'open' | 'paid
                                 type="date"
                                 value={inv.nextFollowUpDate ? dayjs(inv.nextFollowUpDate).format('YYYY-MM-DD') : ''}
                                 onChange={(e) => updateNextFollowUp(inv.id, e.target.value)}
+                                disabled={!canEdit}
                                 className={`w-[9.5rem] pl-7 pr-2 py-1.5 text-xs bg-transparent border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${inv.isFollowUpOverdue ? 'text-red-700 font-semibold' : inv.nextFollowUpDate ? 'text-slate-700' : 'text-slate-400'}`}
                               />
                             </div>
@@ -486,15 +491,21 @@ const InvoiceListPage = forwardRef<InvoiceListPageHandle, { mode: 'open' | 'paid
                           </Link>
                           {mode === 'open' && (
                             <>
-                              <button onClick={() => setPaymentInvoice(inv)} className="p-1.5 rounded text-slate-400 hover:text-green-600 hover:bg-green-50" title="Record Payment">
-                                <BanknotesIcon className="h-4 w-4" />
-                              </button>
-                              <button onClick={() => openEdit(inv)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                                <PencilIcon className="h-4 w-4" />
-                              </button>
-                              <button onClick={() => deleteInvoice(inv.id, inv.invoiceNumber)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                                <TrashIcon className="h-4 w-4" />
-                              </button>
+                              {canRecordPayment && (
+                                <button onClick={() => setPaymentInvoice(inv)} className="p-1.5 rounded text-slate-400 hover:text-green-600 hover:bg-green-50" title="Record Payment">
+                                  <BanknotesIcon className="h-4 w-4" />
+                                </button>
+                              )}
+                              {canEdit && (
+                                <button onClick={() => openEdit(inv)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                                  <PencilIcon className="h-4 w-4" />
+                                </button>
+                              )}
+                              {canDelete && (
+                                <button onClick={() => deleteInvoice(inv.id, inv.invoiceNumber)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                                  <TrashIcon className="h-4 w-4" />
+                                </button>
+                              )}
                             </>
                           )}
                         </div>

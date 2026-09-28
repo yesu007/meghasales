@@ -32,7 +32,10 @@ interface EventDocumentRecord {
 interface DocumentListProps {
   leadId: number;
   eventId: number;
-  canManage: boolean;
+  canCreate: boolean;
+  // Replacing a version is edit_lead_events, deleting is delete_lead_events.
+  canEdit: boolean;
+  canDelete: boolean;
 }
 
 function isImage(mimeType: string | null) {
@@ -48,7 +51,7 @@ async function fetchDocuments(leadId: number, eventId: number): Promise<EventDoc
   return res.json();
 }
 
-export default function DocumentList({ leadId, eventId, canManage }: DocumentListProps) {
+export default function DocumentList({ leadId, eventId, canCreate, canEdit, canDelete }: DocumentListProps) {
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -112,7 +115,7 @@ export default function DocumentList({ leadId, eventId, canManage }: DocumentLis
     <div className="space-y-2">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <p className="text-xs font-medium text-slate-500 uppercase">Requirement Documents</p>
-        {canManage && (
+        {canCreate && (
           <DocumentUpload label="Add Document" onFileSelected={(file) => uploadMutation.mutate(file)} disabled={uploadMutation.isPending} />
         )}
       </div>
@@ -154,7 +157,7 @@ export default function DocumentList({ leadId, eventId, canManage }: DocumentLis
                         {expanded ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
                       </button>
                     )}
-                    {canManage && (
+                    {canEdit && (
                       <label className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 cursor-pointer" title="Replace with newer version">
                         <ArrowUpTrayIcon className="h-4 w-4" />
                         <input type="file" className="hidden" onChange={(e) => {
@@ -164,7 +167,7 @@ export default function DocumentList({ leadId, eventId, canManage }: DocumentLis
                         }} accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,image/*" />
                       </label>
                     )}
-                    {canManage && (
+                    {canDelete && (
                       <button onClick={() => { if (window.confirm(`Delete "${doc.fileName}"?`)) deleteMutation.mutate(doc.id); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
                         <TrashIcon className="h-4 w-4" />
                       </button>

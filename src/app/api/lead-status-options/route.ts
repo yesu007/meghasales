@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAuth, requirePermission } from '@/lib/rbac';
 import { STATUS_COLOR_PRESETS } from '@/lib/leadStatus';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +18,9 @@ export const dynamic = 'force-dynamic';
 // non-converting mid-pipeline status — it never collides with or displaces
 // that logic.
 export async function GET() {
-  const denied = await requirePermission('view_lead_status_options');
+  // Read-only labels/colors — the Dashboard's Lead Lookup shows lead
+  // statuses too, so view_dashboard can read them as well.
+  const denied = await requireAuth();
   if (denied) return denied;
 
   try {
@@ -45,7 +47,7 @@ export async function GET() {
 // ones anyone can type by hand, and new rows default to sorting after the
 // existing list rather than disturbing it.
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_lead_status_options');
+  const denied = await requirePermission('create_lead_status_options');
   if (denied) return denied;
 
   try {

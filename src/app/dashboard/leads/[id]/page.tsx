@@ -3,7 +3,6 @@
 import { useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
 import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, PhoneIcon, BuildingLibraryIcon, Squares2X2Icon, RectangleStackIcon, TagIcon } from '@heroicons/react/24/outline';
@@ -21,6 +20,7 @@ import CompanyTab from '@/components/leads/CompanyTab';
 import ProjectsTab from '@/components/leads/ProjectsTab';
 import ProductsTab from '@/components/leads/ProductsTab';
 import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface Lead {
   id: number;
@@ -65,14 +65,15 @@ function classNames(...classes: (string | boolean)[]) {
 export default function LeadDetailPage() {
   const params = useParams();
   const id = params.id as string;
-  const { data: session } = useSession();
   const queryClient = useQueryClient();
   const { options: leadStatusOptions, color: leadStatusColor } = useLeadStatusOptions();
-  const roles = session?.user?.roles || [];
-  const permissions = session?.user?.permissions || [];
-  const canManage = roles.includes('ADMIN') || permissions.includes('manage_lead_events');
-  const canView = roles.includes('ADMIN') || permissions.includes('view_lead_events');
-  const canAddDiscussion = canManage || permissions.includes('add_lead_discussion');
+  const { has, hasAny } = usePermissions();
+  const canEditLead = has('edit_leads');
+  const canView = has('view_lead_events');
+  const canCreateEvents = has('create_lead_events');
+  const canEditEvents = has('edit_lead_events');
+  const canDeleteEvents = has('delete_lead_events');
+  const canAddDiscussion = hasAny(['edit_lead_events', 'add_lead_discussion']);
 
   const { data: lead, isLoading, isError } = useQuery({
     queryKey: ['lead', id],
@@ -163,7 +164,7 @@ export default function LeadDetailPage() {
           {isConfirmed && (
             <AddableSelect
               value={lead.customerStatus}
-              disabled={customerStatusMutation.isPending}
+              disabled={!canEditLead || customerStatusMutation.isPending}
               onChange={(v) => customerStatusMutation.mutate(v)}
               options={CUSTOMER_STATUSES.map((s) => ({ value: s.value, label: s.label }))}
               placeholder="Select Customer Status"
@@ -171,7 +172,7 @@ export default function LeadDetailPage() {
           )}
           <AddableSelect
             value={lead.status}
-            disabled={statusMutation.isPending}
+            disabled={!canEditLead || statusMutation.isPending}
             onChange={(v) => statusMutation.mutate(v)}
             options={leadStatusOptions.map((s) => ({ value: s.code, label: s.label }))}
             placeholder="Select Status"
@@ -273,11 +274,11 @@ export default function LeadDetailPage() {
               <ProductsTab leadId={lead.id} />
             </Tab.Panel>
             <Tab.Panel>
-              <FollowUpsTab leadId={lead.id} />
+              <FollowUpsTab leadId={lead.id} canAdd={canEditLead} />
             </Tab.Panel>
             <Tab.Panel>
               {isConfirmed && canView ? (
-                <EventsTab leadId={lead.id} canManage={canManage} canAddDiscussion={canAddDiscussion} />
+                <EventsTab leadId={lead.id} canCreate={canCreateEvents} canEdit={canEditEvents} canDelete={canDeleteEvents} canAddDiscussion={canAddDiscussion} />
               ) : (
                 <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
                   <CalendarDaysIcon className="h-12 w-12 mx-auto text-slate-300" />
@@ -287,7 +288,7 @@ export default function LeadDetailPage() {
             </Tab.Panel>
             <Tab.Panel>
               {isConfirmed && canView ? (
-                <LeadDocumentsTab leadId={lead.id} canManage={canManage} />
+                <LeadDocumentsTab leadId={lead.id} canCreate={canCreateEvents} canEdit={canEditEvents} canDelete={canDeleteEvents} />
               ) : (
                 <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
                   <FolderOpenIcon className="h-12 w-12 mx-auto text-slate-300" />

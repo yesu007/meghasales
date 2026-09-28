@@ -11,7 +11,7 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 
 // View/download a bill's attached invoice PDF, decrypted server-side.
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_expenses');
+  const denied = await requirePermission('view_bills');
   if (denied) return denied;
 
   const bill = await prisma.bill.findFirst({ where: { id: parseInt(params.id, 10), deletedAt: null }, select: { attachmentUrl: true, attachmentName: true, paymentProofUrl: true, paymentProofName: true } });

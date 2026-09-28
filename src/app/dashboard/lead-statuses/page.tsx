@@ -6,6 +6,7 @@ import { PlusIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/ou
 import toast from 'react-hot-toast';
 import { STATUS_COLOR_PRESETS } from '@/lib/leadStatus';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface LeadStatusOptionRow {
   id: number;
@@ -40,6 +41,9 @@ async function fetchLeadStatusOptions(): Promise<LeadStatusOptionRow[]> {
 // see POST /api/lead-status-options's own comment for why that's safe.
 export default function LeadStatusesPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_lead_status_options');
+  const canEdit = has('edit_lead_status_options');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ label: '', color: '', sortOrder: 0 });
 
@@ -124,12 +128,14 @@ export default function LeadStatusesPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Lead Statuses</h1>
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Label, color, and display order for the lead pipeline — the 6 stages themselves are fixed</p>
         </div>
-        <button
-          onClick={() => (showForm ? closeCreateForm() : setShowForm(true))}
-          className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-        >
-          <PlusIcon className="h-4 w-4" /> New Status
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => (showForm ? closeCreateForm() : setShowForm(true))}
+            className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+          >
+            <PlusIcon className="h-4 w-4" /> New Status
+          </button>
+        )}
       </div>
 
       {/* Search — same bordered-card placement above the table as Leads. */}
@@ -247,7 +253,7 @@ export default function LeadStatusesPage() {
                         <td className="px-4 py-3 text-slate-500 text-xs">{STATUS_COLOR_PRESETS.find((c) => c.value === o.color)?.label || o.color}</td>
                         <td className="px-4 py-3 text-slate-600">{o.sortOrder}</td>
                         <td className="px-4 py-3 text-right">
-                          <button onClick={() => openEdit(o)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
+                          {canEdit && <button onClick={() => openEdit(o)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>}
                         </td>
                       </>
                     )}

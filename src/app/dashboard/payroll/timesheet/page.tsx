@@ -14,6 +14,7 @@ import LeaveRequestsPanel from '@/components/payroll/LeaveRequestsPanel';
 import LeaveTypesPanel from '@/components/payroll/LeaveTypesPanel';
 import TimesheetDayStrip from '@/components/payroll/TimesheetDayStrip';
 import { type SaturdayPolicy } from '@/lib/payroll/saturdayPolicy';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface TimesheetEmployeeRow {
   employeeId: number;
@@ -85,6 +86,14 @@ const TABS: { key: TabKey; label: string; icon: typeof ClipboardDocumentListIcon
 
 export default function TimeAndAttendancePage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canEditHours = has('edit_timesheet');
+  // Timesheet Status lives on the Employee record — PATCH /api/payroll/employees/[id].
+  const canEditTimesheetStatus = has('edit_employees');
+  const canCreateHoliday = has('create_timesheet');
+  const canDeleteHoliday = has('delete_timesheet');
+  // Send To Payroll and Reopen both POST /api/payroll/timesheet/submit.
+  const canSubmitPeriod = has('run_payroll');
   const now = dayjs();
   const [year, setYear] = useState(now.year());
   const [month, setMonth] = useState(now.month() + 1);
@@ -248,7 +257,7 @@ export default function TimeAndAttendancePage() {
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={remindApprovers} className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50">Remind Approvers</button>
-                {isSubmitted ? (
+                {!canSubmitPeriod ? null : isSubmitted ? (
                   <button onClick={() => submitPeriod.mutate('OPEN')} disabled={submitPeriod.isPending} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-900 disabled:opacity-50">Reopen</button>
                 ) : (
                   <button onClick={() => submitPeriod.mutate('SUBMITTED')} disabled={submitPeriod.isPending} className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50">Send To Payroll</button>
@@ -305,7 +314,7 @@ export default function TimeAndAttendancePage() {
                           <td className="px-4 py-3">
                             <select
                               value={row.timesheetStatus}
-                              disabled={isSubmitted || saveTimesheetStatus.isPending}
+                              disabled={!canEditTimesheetStatus || isSubmitted || saveTimesheetStatus.isPending}
                               onChange={(e) => saveTimesheetStatus.mutate({ employeeId: row.employeeId, timesheetStatus: e.target.value })}
                               className={`px-2 py-1 rounded text-xs font-medium border-0 ${row.timesheetStatus === 'INACTIVE' ? 'bg-slate-100 text-slate-500' : 'bg-green-100 text-green-700'}`}
                             >
@@ -316,7 +325,7 @@ export default function TimeAndAttendancePage() {
                           <td className="px-4 py-3 text-slate-600">{row.shiftName ?? '—'}</td>
                           <td className="px-4 py-3 text-right">
                             <input
-                              type="number" min={0} step={0.5} disabled={isSubmitted}
+                              type="number" min={0} step={0.5} disabled={!canEditHours || isSubmitted}
                               value={draft.regularHours}
                               onChange={(e) => setDraft(row.employeeId, { regularHours: e.target.value })}
                               onBlur={() => commitDraft(row)}
@@ -325,7 +334,7 @@ export default function TimeAndAttendancePage() {
                           </td>
                           <td className="px-4 py-3 text-right">
                             <input
-                              type="number" min={0} step={0.5} disabled={isSubmitted}
+                              type="number" min={0} step={0.5} disabled={!canEditHours || isSubmitted}
                               value={draft.overtimeHours}
                               onChange={(e) => setDraft(row.employeeId, { overtimeHours: e.target.value })}
                               onBlur={() => commitDraft(row)}
@@ -369,11 +378,13 @@ export default function TimeAndAttendancePage() {
             </div>
             <div className="p-6 space-y-5">
               <p className="text-sm text-slate-500 bg-amber-50/60 border border-amber-100 rounded-xl px-4 py-3">8 hours are credited per holiday that falls inside an employee&apos;s pay period and employment window.</p>
+              {canCreateHoliday && (
               <form onSubmit={(e) => { e.preventDefault(); if (!holidayForm.date || !holidayForm.name) { toast.error('Date and name are required'); return; } addHoliday.mutate(); }} className="flex flex-col sm:flex-row gap-3">
                 <input type="date" value={holidayForm.date} onChange={(e) => setHolidayForm((f) => ({ ...f, date: e.target.value }))} className="sm:w-48 px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
                 <input placeholder="Holiday name" value={holidayForm.name} onChange={(e) => setHolidayForm((f) => ({ ...f, name: e.target.value }))} className="flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
                 <button type="submit" disabled={addHoliday.isPending} className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-medium hover:bg-amber-700 disabled:opacity-50 shadow-sm shadow-amber-200"><PlusIcon className="h-4 w-4" /> Add</button>
               </form>
+              )}
               <div className="space-y-1.5">
                 {holidays.length === 0 ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
@@ -393,7 +404,9 @@ export default function TimeAndAttendancePage() {
                           <p className="text-xs text-slate-400">{dayjs(h.date).format('dddd, DD MMM YYYY')}</p>
                         </div>
                       </div>
-                      <button onClick={() => removeHoliday.mutate(h.id)} className="p-2 rounded-lg text-slate-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"><TrashIcon className="h-4 w-4" /></button>
+                      {canDeleteHoliday && (
+                        <button onClick={() => removeHoliday.mutate(h.id)} className="p-2 rounded-lg text-slate-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"><TrashIcon className="h-4 w-4" /></button>
+                      )}
                     </div>
                   ))
                 )}

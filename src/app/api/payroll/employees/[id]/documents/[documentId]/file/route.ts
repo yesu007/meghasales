@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 // document must belong to this employee.
 export async function GET(request: NextRequest, { params }: { params: { id: string; documentId: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_employees');
   if (denied) return denied;
 
   const employeeId = parseInt(params.id, 10);

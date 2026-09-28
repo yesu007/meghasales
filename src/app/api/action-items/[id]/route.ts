@@ -16,7 +16,7 @@ function currentUserId(session: any): number | null {
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isMeetingsModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_meetings');
+  const denied = await requirePermission('view_action_items');
   if (denied) return denied;
 
   try {

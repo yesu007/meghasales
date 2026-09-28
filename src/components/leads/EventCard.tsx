@@ -36,11 +36,13 @@ interface EventCardProps {
   event: EventRecord;
   onEdit: () => void;
   onDelete: () => void;
-  canManage: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   canAddDiscussion: boolean;
 }
 
-export default function EventCard({ leadId, event, onEdit, onDelete, canManage, canAddDiscussion }: EventCardProps) {
+export default function EventCard({ leadId, event, onEdit, onDelete, canCreate, canEdit, canDelete, canAddDiscussion }: EventCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -61,15 +63,15 @@ export default function EventCard({ leadId, event, onEdit, onDelete, canManage, 
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
-          {canManage && (
-            <>
-              <span onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 cursor-pointer" title="Edit">
-                <PencilIcon className="h-4 w-4" />
-              </span>
-              <span onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer" title="Delete">
-                <TrashIcon className="h-4 w-4" />
-              </span>
-            </>
+          {canEdit && (
+            <span onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 cursor-pointer" title="Edit">
+              <PencilIcon className="h-4 w-4" />
+            </span>
+          )}
+          {canDelete && (
+            <span onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer" title="Delete">
+              <TrashIcon className="h-4 w-4" />
+            </span>
           )}
           {expanded ? <ChevronUpIcon className="h-4 w-4 text-slate-400" /> : <ChevronDownIcon className="h-4 w-4 text-slate-400" />}
         </div>
@@ -84,8 +86,8 @@ export default function EventCard({ leadId, event, onEdit, onDelete, canManage, 
               {event.meetingLink && <div><p className="text-xs font-medium text-slate-500 uppercase">Meeting Link</p><a href={event.meetingLink} target="_blank" rel="noreferrer" className="text-amber-600 hover:underline mt-1 inline-block break-all">{event.meetingLink}</a></div>}
             </div>
           )}
-          <DocumentList leadId={leadId} eventId={event.id} canManage={canManage} />
-          <DiscussionTimeline leadId={leadId} eventId={event.id} canAdd={canAddDiscussion} canManage={canManage} />
+          <DocumentList leadId={leadId} eventId={event.id} canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} />
+          <DiscussionTimeline leadId={leadId} eventId={event.id} canAdd={canAddDiscussion} canAttach={canCreate} canDelete={canDelete} />
         </div>
       )}
     </div>

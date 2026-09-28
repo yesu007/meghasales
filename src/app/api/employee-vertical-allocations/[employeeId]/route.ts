@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // always submits the complete row, so a category/vertical dropped back to
 // 0% simply isn't sent rather than needing an explicit delete call.
 export async function PATCH(request: NextRequest, { params }: { params: { employeeId: string } }) {
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_salary_allocation');
   if (denied) return denied;
 
   const employeeId = parseInt(params.employeeId);

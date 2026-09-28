@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // existing precedent of never calling Blob's del(); orphaned blobs are an
 // acceptable, low-cost tradeoff already implicit elsewhere in the codebase.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string; entityId: string; documentId: string } }) {
-  const denied = await requirePermission('manage_companies');
+  const denied = await requirePermission('edit_companies');
   if (denied) return denied;
 
   try {

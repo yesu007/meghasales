@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!isAdminTicketModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_admin_tickets');
+  const denied = await requirePermission('create_admin_tickets');
   if (denied) return denied;
 
   try {

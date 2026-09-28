@@ -5,7 +5,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { resolveCustomerCountryFields } from '@/lib/customerCountry';
 import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
-import { requirePermission } from '@/lib/rbac';
+import { checkPermission, requirePermission } from '@/lib/rbac';
 import { isValidEmail } from '@/lib/email';
 import { CUSTOMER_STATUSES } from '@/lib/customerStatus';
 
@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
 // than calling into src/app/api/leads/route.ts, so Customer creation never
 // depends on Lead's own request handling.
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requirePermission('create_customers');
   if (denied) return denied;
 
   try {
@@ -59,10 +59,10 @@ export async function POST(request: NextRequest) {
     }
 
     const session = await getServerSession(authOptions);
-    const isAdmin = (session?.user?.roles || []).includes('ADMIN');
+    const canOverrideCurrency = checkPermission(session, 'override_currency');
     let countryFields;
     try {
-      countryFields = await resolveCustomerCountryFields(parseInt(body.countryId), { isAdmin, overrideCurrencyCode: body.currencyCode });
+      countryFields = await resolveCustomerCountryFields(parseInt(body.countryId), { canOverrideCurrency, overrideCurrencyCode: body.currencyCode });
     } catch (e: any) {
       return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
     }

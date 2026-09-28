@@ -10,7 +10,7 @@ import { linkOrCreateEmployee } from '@/lib/payroll/selfEmployee';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const denied = await requireAnyPermission(['view_users', 'manage_users']);
+  const denied = await requireAnyPermission(['view_users', 'create_users', 'edit_users', 'delete_users']);
   if (denied) return denied;
 
   try {
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_users');
+  const denied = await requirePermission('create_users');
   if (denied) return denied;
 
   try {

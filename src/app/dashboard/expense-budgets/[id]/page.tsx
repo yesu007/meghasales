@@ -7,6 +7,7 @@ import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface BudgetMonth { id: number; month: string; amount: string }
 interface Revision { id: number; previousAmount: string; newAmount: string; reason: string | null; createdAt: string; revisedBy: { firstName: string; lastName: string } | null }
@@ -47,6 +48,9 @@ export default function ExpenseBudgetDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  // Approve (PATCH status) and Revise (POST /revise) are both edits.
+  const canEdit = has('edit_expense_budgets');
   const [showRevise, setShowRevise] = useState(false);
   const [reviseForm, setReviseForm] = useState({ newAmount: '', reason: '' });
 
@@ -110,14 +114,16 @@ export default function ExpenseBudgetDetailPage() {
           </div>
           <div className="flex items-center gap-2">
             <span className={`px-2.5 py-1 rounded text-xs font-medium ${budget.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-700'}`}>{budget.status}</span>
-            {budget.status === 'DRAFT' && (
+            {canEdit && budget.status === 'DRAFT' && (
               <button onClick={() => approve.mutate()} disabled={approve.isPending} className="px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50">
                 Approve
               </button>
             )}
-            <button onClick={() => setShowRevise((v) => !v)} className="px-3 py-1.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">
-              Revise
-            </button>
+            {canEdit && (
+              <button onClick={() => setShowRevise((v) => !v)} className="px-3 py-1.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">
+                Revise
+              </button>
+            )}
           </div>
         </div>
 

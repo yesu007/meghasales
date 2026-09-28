@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission } from '@/lib/rbac';
 import { isStorageConfigured, putEncrypted } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +12,7 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 // GET /api/bills/[id]/file, which decrypts server-side. The PDF is kept for
 // reference only — bill details are keyed in manually.
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requireAnyPermission(['create_bills', 'edit_bills']);
   if (denied) return denied;
   if (!isStorageConfigured()) {
     return NextResponse.json(

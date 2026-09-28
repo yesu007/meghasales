@@ -7,7 +7,7 @@ import { requirePermission } from '@/lib/rbac';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_accounting');
+  const denied = await requirePermission('view_invoices');
   if (denied) return denied;
   try {
     const payment = await prisma.payment.findUnique({
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // silently desync the invoice balance without going through applyPayment(),
 // so amount corrections must be done via delete + re-record instead.
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_payments');
+  const denied = await requirePermission('edit_payments');
   if (denied) return denied;
   try {
     const body = await request.json();
@@ -62,7 +62,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_payments');
+  const denied = await requirePermission('delete_payments');
   if (denied) return denied;
   try {
     const id = parseInt(params.id);

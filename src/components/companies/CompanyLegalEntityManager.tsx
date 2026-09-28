@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
 import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface DocumentRow {
   id: number;
@@ -63,7 +64,7 @@ const blankEntityForm = {
   currencyCode: '',
 };
 
-function EntityDocuments({ companyId, entity }: { companyId: number; entity: LegalEntity }) {
+function EntityDocuments({ companyId, entity, canEdit }: { companyId: number; entity: LegalEntity; canEdit: boolean }) {
   const queryClient = useQueryClient();
   const [description, setDescription] = useState('');
   const { data: documents = [], isLoading } = useQuery({
@@ -114,19 +115,21 @@ function EntityDocuments({ companyId, entity }: { companyId: number; entity: Leg
               </a>
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <span>{dayjs(d.createdAt).format('DD MMM YYYY')}</span>
-                <button onClick={() => remove.mutate(d.id)} className="p-1 rounded hover:text-red-600 hover:bg-red-50"><TrashIcon className="h-3.5 w-3.5" /></button>
+                {canEdit && <button onClick={() => remove.mutate(d.id)} className="p-1 rounded hover:text-red-600 hover:bg-red-50"><TrashIcon className="h-3.5 w-3.5" /></button>}
               </div>
             </li>
           ))}
         </ul>
       )}
-      <div className="flex items-center gap-2">
-        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" className="flex-1 px-2 py-1.5 border border-slate-300 rounded text-xs" />
-        <label className="px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-xs font-medium text-amber-700 hover:bg-amber-50 cursor-pointer whitespace-nowrap">
-          {upload.isPending ? 'Uploading...' : 'Upload File'}
-          <input type="file" className="hidden" disabled={upload.isPending} onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ''; }} />
-        </label>
-      </div>
+      {canEdit && (
+        <div className="flex items-center gap-2">
+          <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" className="flex-1 px-2 py-1.5 border border-slate-300 rounded text-xs" />
+          <label className="px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-xs font-medium text-amber-700 hover:bg-amber-50 cursor-pointer whitespace-nowrap">
+            {upload.isPending ? 'Uploading...' : 'Upload File'}
+            <input type="file" className="hidden" disabled={upload.isPending} onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ''; }} />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
@@ -138,6 +141,8 @@ function EntityDocuments({ companyId, entity }: { companyId: number; entity: Leg
 // Companies list/detail page — this is the only place it's rendered).
 export default function CompanyLegalEntityManager({ companyId }: { companyId: number }) {
   const queryClient = useQueryClient();
+  // Every legal-entity/document write (add, edit, remove, upload, delete) is edit_companies on the API.
+  const canEdit = usePermissions().has('edit_companies');
   const { data: company, isLoading } = useQuery({ queryKey: ['company-for-tab', companyId], queryFn: () => fetchCompany(companyId) });
 
   const [showEntityForm, setShowEntityForm] = useState(false);
@@ -201,12 +206,14 @@ export default function CompanyLegalEntityManager({ companyId }: { companyId: nu
     <div>
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Legal Entities</h3>
-        <button
-          onClick={() => { if (showEntityForm) closeEntityForm(); else { setShowEntityForm(true); scrollToEntityForm(); } }}
-          className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800"
-        >
-          <PlusIcon className="h-4 w-4" /> Add Legal Entity
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => { if (showEntityForm) closeEntityForm(); else { setShowEntityForm(true); scrollToEntityForm(); } }}
+            className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800"
+          >
+            <PlusIcon className="h-4 w-4" /> Add Legal Entity
+          </button>
+        )}
       </div>
 
       {showEntityForm && (
@@ -299,16 +306,18 @@ export default function CompanyLegalEntityManager({ companyId }: { companyId: nu
                     <div><p className="text-xs text-slate-400">Currency</p><p className="text-slate-700">{e.currencyCode || '—'}</p></div>
                     <div className="col-span-2 sm:col-span-3"><p className="text-xs text-slate-400">Address</p><p className="text-slate-700">{[e.addressLine1, e.addressLine2, e.city, e.state, e.postalCode].filter(Boolean).join(', ') || '—'}</p></div>
                   </div>
-                  <div className="flex gap-3 mt-3">
-                    <button onClick={() => openEditEntity(e)} className="text-xs font-medium text-amber-700 hover:text-amber-800">Edit</button>
-                    <button
-                      onClick={() => { if (window.confirm(`Remove legal entity "${e.legalName}"?`)) deactivateEntity.mutate(e); }}
-                      className="text-xs font-medium text-red-600 hover:text-red-700"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                  <EntityDocuments companyId={companyId} entity={e} />
+                  {canEdit && (
+                    <div className="flex gap-3 mt-3">
+                      <button onClick={() => openEditEntity(e)} className="text-xs font-medium text-amber-700 hover:text-amber-800">Edit</button>
+                      <button
+                        onClick={() => { if (window.confirm(`Remove legal entity "${e.legalName}"?`)) deactivateEntity.mutate(e); }}
+                        className="text-xs font-medium text-red-600 hover:text-red-700"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                  <EntityDocuments companyId={companyId} entity={e} canEdit={canEdit} />
                 </div>
               )}
             </div>

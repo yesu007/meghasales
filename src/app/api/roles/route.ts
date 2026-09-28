@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // multi-select needs this list too, and a user manager isn't necessarily a
 // role manager.
 export async function GET() {
-  const denied = await requireAnyPermission(['view_roles', 'manage_roles', 'view_users', 'manage_users']);
+  const denied = await requireAnyPermission(['view_roles', 'create_roles', 'edit_roles', 'delete_roles', 'view_users', 'create_users', 'edit_users', 'delete_users']);
   if (denied) return denied;
 
   try {
@@ -26,7 +26,7 @@ export async function GET() {
       name: role.name,
       description: role.description,
       userCount: role._count.users,
-      permissions: role.permissions.map((rp) => ({ id: rp.permission.id, name: rp.permission.name, module: rp.permission.module })),
+      permissions: role.permissions.map((rp) => ({ id: rp.permission.id, name: rp.permission.name, module: rp.permission.module, page: rp.permission.page, action: rp.permission.action })),
     }));
 
     return NextResponse.json(content);
@@ -37,7 +37,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_roles');
+  const denied = await requirePermission('create_roles');
   if (denied) return denied;
 
   try {

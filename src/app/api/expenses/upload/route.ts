@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put, isStorageConfigured } from '@/lib/storage';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // gated by manage_expenses instead and its own blob path prefix so the
 // two attachment sets don't intermingle.
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requireAnyPermission(['create_expenses', 'edit_expenses']);
   if (denied) return denied;
   if (!isStorageConfigured()) {
     return NextResponse.json(

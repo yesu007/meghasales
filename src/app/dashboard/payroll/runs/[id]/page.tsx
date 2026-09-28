@@ -52,6 +52,10 @@ export default function PayrollRunDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canRun = has('run_payroll');
+  // Every status transition goes through PATCH /api/payroll/runs/[id].
+  const canApprove = has('approve_payroll');
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const { data: run, isLoading } = useQuery({ queryKey: ['payroll-run', id], queryFn: () => fetchRun(id) });
@@ -100,12 +104,12 @@ export default function PayrollRunDetailPage() {
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[run.status]}`}>{run.status}</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {isDraft && <button onClick={() => regenerate.mutate()} disabled={regenerate.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50">Regenerate</button>}
-            {run.status === 'DRAFT' && <button onClick={() => changeStatus.mutate('APPROVED')} disabled={changeStatus.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">Approve</button>}
-            {run.status === 'APPROVED' && <button onClick={() => changeStatus.mutate('PROCESSED')} disabled={changeStatus.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50">Mark Processed</button>}
-            {run.status === 'PROCESSED' && <button onClick={() => changeStatus.mutate('PAID')} disabled={changeStatus.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">Mark Paid</button>}
-            {!isDraft && <button onClick={() => changeStatus.mutate('DRAFT')} disabled={changeStatus.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50">Reopen to Draft</button>}
-            {run.status !== 'CANCELLED' && <button onClick={() => { if (window.confirm('Cancel this payroll run?')) changeStatus.mutate('CANCELLED'); }} disabled={changeStatus.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50">Cancel</button>}
+            {isDraft && canRun && <button onClick={() => regenerate.mutate()} disabled={regenerate.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50">Regenerate</button>}
+            {canApprove && run.status === 'DRAFT' && <button onClick={() => changeStatus.mutate('APPROVED')} disabled={changeStatus.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">Approve</button>}
+            {canApprove && run.status === 'APPROVED' && <button onClick={() => changeStatus.mutate('PROCESSED')} disabled={changeStatus.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50">Mark Processed</button>}
+            {canApprove && run.status === 'PROCESSED' && <button onClick={() => changeStatus.mutate('PAID')} disabled={changeStatus.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">Mark Paid</button>}
+            {canApprove && !isDraft && <button onClick={() => changeStatus.mutate('DRAFT')} disabled={changeStatus.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50">Reopen to Draft</button>}
+            {canApprove && run.status !== 'CANCELLED' && <button onClick={() => { if (window.confirm('Cancel this payroll run?')) changeStatus.mutate('CANCELLED'); }} disabled={changeStatus.isPending} className="px-3 py-2 min-h-[40px] text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50">Cancel</button>}
           </div>
         </div>
       </div>
@@ -149,6 +153,8 @@ export default function PayrollRunDetailPage() {
 function PayslipRowView({ payslip, isDraft, periodLabel, expanded, onToggle, onSaved }: { payslip: PayslipRow; isDraft: boolean; periodLabel: string; expanded: boolean; onToggle: () => void; onSaved: () => void }) {
   const { has } = usePermissions();
   const canExport = has('export_payroll');
+  // Payslip LOP/adjustment edits — PATCH /api/payroll/payslips/[id].
+  const canEdit = isDraft && has('run_payroll');
   const [lopDays, setLopDays] = useState(payslip.lopDays);
   const [adjustments, setAdjustments] = useState<Array<{ label: string; type: string; amount: string }>>(
     payslip.lineItems.filter((li) => li.isAdjustment).map((li) => ({ label: li.label, type: li.type, amount: li.amount }))
@@ -229,8 +235,8 @@ function PayslipRowView({ payslip, isDraft, periodLabel, expanded, onToggle, onS
                 </table>
               </div>
               <div>
-                <p className="text-xs font-medium text-slate-500 uppercase mb-2">Loss of pay &amp; adjustments {isDraft && '(editable)'}</p>
-                {isDraft ? (
+                <p className="text-xs font-medium text-slate-500 uppercase mb-2">Loss of pay &amp; adjustments {canEdit && '(editable)'}</p>
+                {canEdit ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <label className="text-sm text-slate-600 w-24">LOP days</label>

@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 // them, see that route's own comment). Only label/color/sortOrder are
 // editable here; `code` is never accepted, on any row.
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_lead_status_options');
+  const denied = await requirePermission('edit_lead_status_options');
   if (denied) return denied;
   try {
     const body = await request.json();

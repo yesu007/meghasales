@@ -22,7 +22,7 @@ function toResponse(config: { smtpPassword: string | null } & Record<string, any
 }
 
 export async function GET() {
-  const denied = await requirePermission('manage_email_settings');
+  const denied = await requirePermission('view_email_settings');
   if (denied) return denied;
 
   try {
@@ -38,7 +38,7 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
-  const denied = await requirePermission('manage_email_settings');
+  const denied = await requirePermission('edit_email_settings');
   if (denied) return denied;
 
   try {

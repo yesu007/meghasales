@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 const COMPANY_WIDE = 'company-wide';
 
 export async function GET() {
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_salary_allocation');
   if (denied) return denied;
 
   const today = new Date();

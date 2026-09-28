@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 // of the compliance weight of the documents themselves.
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_employees');
   if (denied) return denied;
 
   try {

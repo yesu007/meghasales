@@ -6,6 +6,7 @@ import { PlusIcon, XMarkIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon } from 
 import toast from 'react-hot-toast';
 import AddableSelect from '@/components/AddableSelect';
 import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface SalaryComponent {
   id: number;
@@ -49,6 +50,9 @@ async function fetchStructures(): Promise<SalaryStructure[]> {
 
 export default function SalaryStructuresPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_salary_structures');
+  const canEdit = has('edit_salary_structures');
   const { data: components = [] } = useQuery({ queryKey: ['payroll-components'], queryFn: fetchComponents });
   const { data: structures = [] } = useQuery({ queryKey: ['payroll-structures'], queryFn: fetchStructures });
 
@@ -143,9 +147,11 @@ export default function SalaryStructuresPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-800">Salary Components</h2>
-          <button onClick={() => setShowComponentForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
-            <PlusIcon className="h-4 w-4" /> Add Component
-          </button>
+          {canCreate && (
+            <button onClick={() => setShowComponentForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
+              <PlusIcon className="h-4 w-4" /> Add Component
+            </button>
+          )}
         </div>
 
         {showComponentForm && (
@@ -204,9 +210,15 @@ export default function SalaryStructuresPage() {
                   <td className="py-2 pr-4"><span className={`px-2 py-0.5 rounded text-xs font-medium ${c.type === 'EARNING' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{c.type}</span></td>
                   <td className="py-2 pr-4 text-slate-500">{c.calculationType === 'FLAT' ? 'Flat' : '% of Basic'}</td>
                   <td className="py-2">
-                    <button onClick={() => toggleComponentActive.mutate({ id: c.id, isActive: !c.isActive })} className={`px-2 py-0.5 rounded text-xs font-medium ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                      {c.isActive ? 'Active' : 'Inactive'}
-                    </button>
+                    {canEdit ? (
+                      <button onClick={() => toggleComponentActive.mutate({ id: c.id, isActive: !c.isActive })} className={`px-2 py-0.5 rounded text-xs font-medium ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {c.isActive ? 'Active' : 'Inactive'}
+                      </button>
+                    ) : (
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {c.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -220,9 +232,11 @@ export default function SalaryStructuresPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-800">Salary Structure Templates</h2>
-          <button onClick={() => { if (showStructureForm) resetStructureForm(); else { setShowStructureForm(true); scrollToStructureForm(); } }} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
-            <PlusIcon className="h-4 w-4" /> New Structure
-          </button>
+          {canCreate && (
+            <button onClick={() => { if (showStructureForm) resetStructureForm(); else { setShowStructureForm(true); scrollToStructureForm(); } }} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
+              <PlusIcon className="h-4 w-4" /> New Structure
+            </button>
+          )}
         </div>
 
         {showStructureForm && (
@@ -266,12 +280,14 @@ export default function SalaryStructuresPage() {
                   <p className="text-xs text-slate-400">{s.components.length} component{s.components.length === 1 ? '' : 's'} · {s._count?.assignments ?? 0} employee{(s._count?.assignments ?? 0) === 1 ? '' : 's'} assigned</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span onClick={(e) => { e.stopPropagation(); toggleStructureActive.mutate({ id: s.id, isActive: !s.isActive }); }} className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                  <span onClick={canEdit ? (e) => { e.stopPropagation(); toggleStructureActive.mutate({ id: s.id, isActive: !s.isActive }); } : undefined} className={`px-2 py-0.5 rounded text-xs font-medium ${canEdit ? 'cursor-pointer' : ''} ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                     {s.isActive ? 'Active' : 'Inactive'}
                   </span>
-                  <button onClick={(e) => { e.stopPropagation(); openEditStructure(s); }} className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                    <PencilIcon className="h-4 w-4" />
-                  </button>
+                  {canEdit && (
+                    <button onClick={(e) => { e.stopPropagation(); openEditStructure(s); }} className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                      <PencilIcon className="h-4 w-4" />
+                    </button>
+                  )}
                   {expandedId === s.id ? <ChevronUpIcon className="h-4 w-4 text-slate-400" /> : <ChevronDownIcon className="h-4 w-4 text-slate-400" />}
                 </div>
               </button>

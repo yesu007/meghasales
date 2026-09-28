@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission } from '@/lib/rbac';
 import { dayRateFromAnnualCtc } from '@/lib/quotationResourceCosting';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 // realistic billing rate for a colleague without being able to see anyone's
 // actual salary.
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('manage_quotations');
+  const denied = await requireAnyPermission(['create_quotations', 'edit_quotations']);
   if (denied) return denied;
 
   try {

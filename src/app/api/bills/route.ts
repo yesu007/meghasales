@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 // Vendor bills (Finance → Bills). Same view/manage_expenses permissions as
 // the Expenses module, since a posted bill becomes an expense.
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_expenses');
+  const denied = await requirePermission('view_bills');
   if (denied) return denied;
 
   try {
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 // Creates a bill as DRAFT, or posts it straight away when body.post is true
 // (which also creates the linked expense).
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('create_bills');
   if (denied) return denied;
 
   try {

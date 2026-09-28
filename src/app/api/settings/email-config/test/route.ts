@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 // resolution the reminder dispatcher uses) so there's nothing to type for
 // the common case.
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_email_settings');
+  const denied = await requirePermission('edit_email_settings');
   if (denied) return denied;
 
   try {

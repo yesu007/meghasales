@@ -24,6 +24,7 @@ import { useProjectsForLead } from '@/hooks/useProjectsForLead';
 import { useProductsForLead } from '@/hooks/useProductsForLead';
 import { invalidateDemoData } from '@/lib/queryInvalidation';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const DEMO_TYPES = [
   { value: 'ONLINE', label: 'Online' },
@@ -136,7 +137,7 @@ async function fetchLeadsBySourceType(sourceType: 'LEAD' | 'CUSTOMER'): Promise<
 }
 
 async function fetchUsers(): Promise<UserOption[]> {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
@@ -144,6 +145,10 @@ async function fetchUsers(): Promise<UserOption[]> {
 
 export default function DemosPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_demos');
+  const canEdit = has('edit_demos');
+  const canDelete = has('delete_demos');
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Search, filter, sort, pagination
@@ -407,9 +412,11 @@ export default function DemosPage() {
           <h1 className="text-2xl font-bold text-slate-800">Demos</h1>
           <p className="text-slate-500 mt-1">Schedule and manage product demonstrations</p>
         </div>
-        <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-          <PlusIcon className="h-4 w-4" /> Schedule Demo
-        </button>
+        {canCreate && (
+          <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+            <PlusIcon className="h-4 w-4" /> Schedule Demo
+          </button>
+        )}
       </div>
 
       {/* Search & Filters */}
@@ -548,7 +555,7 @@ export default function DemosPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        {isReschedulable(demo.status) ? (
+                        {canEdit && isReschedulable(demo.status) ? (
                           <input
                             type="datetime-local"
                             value={demo.scheduledDate ? dayjs(demo.scheduledDate).format('YYYY-MM-DDTHH:mm') : ''}
@@ -568,6 +575,7 @@ export default function DemosPage() {
                         <select
                           value={demo.status}
                           onChange={(e) => updateStatus(demo.id, e.target.value)}
+                          disabled={!canEdit}
                           className={`px-2 py-1 rounded text-xs font-medium border-0 ${DEMO_STATUSES.find(s => s.value === demo.status)?.color || 'bg-slate-100 text-slate-700'}`}
                         >
                           {DEMO_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -577,6 +585,7 @@ export default function DemosPage() {
                         <select
                           value={demo.assignedToId || ''}
                           onChange={(e) => assignTo(demo.id, e.target.value)}
+                          disabled={!canEdit}
                           className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
                         >
                           <option value="">Unassigned</option>
@@ -587,6 +596,7 @@ export default function DemosPage() {
                         <select
                           value={demo.customerInterestLevel || ''}
                           onChange={(e) => updateInterest(demo.id, e.target.value)}
+                          disabled={!canEdit}
                           className={`px-2 py-1 rounded text-xs font-medium border-0 ${
                             demo.customerInterestLevel === 'HIGH' ? 'bg-green-100 text-green-700' :
                             demo.customerInterestLevel === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
@@ -602,6 +612,7 @@ export default function DemosPage() {
                         <select
                           value={demo.nextAction || ''}
                           onChange={(e) => updateNextAction(demo.id, e.target.value)}
+                          disabled={!canEdit}
                           className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
                         >
                           <option value="">Select</option>
@@ -615,6 +626,7 @@ export default function DemosPage() {
                             type="date"
                             value={demo.nextFollowUpDate ? dayjs(demo.nextFollowUpDate).format('YYYY-MM-DD') : ''}
                             onChange={(e) => updateNextFollowUp(demo.id, e.target.value)}
+                            disabled={!canEdit}
                             className={`w-[9.5rem] pl-7 pr-2 py-1.5 text-xs bg-transparent border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${demo.isOverdue ? 'text-red-700 font-semibold' : demo.nextFollowUpDate ? 'text-slate-700' : 'text-slate-400'}`}
                           />
                         </div>
@@ -622,12 +634,16 @@ export default function DemosPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => openEdit(demo)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => deleteDemo(demo.id, demo.companyName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
+                          {canEdit && (
+                            <button onClick={() => openEdit(demo)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button onClick={() => deleteDemo(demo.id, demo.companyName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

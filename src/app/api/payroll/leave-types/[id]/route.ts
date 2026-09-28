@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 // stable handle once set.
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_salary_structures');
+  const denied = await requirePermission('edit_timesheet');
   if (denied) return denied;
 
   try {
@@ -45,7 +45,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 // history should be kept.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_salary_structures');
+  const denied = await requirePermission('delete_timesheet');
   if (denied) return denied;
 
   try {

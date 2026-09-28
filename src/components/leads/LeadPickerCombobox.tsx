@@ -17,12 +17,16 @@ interface LeadPickerComboboxProps {
   value: LeadOption | null;
   onChange: (lead: LeadOption) => void;
   placeholder?: string;
+  // Search endpoint returning { content: LeadOption[] } — defaults to the
+  // Leads module's own list API; the Dashboard passes its view_dashboard-
+  // gated /api/dashboard/leads instead.
+  searchUrl?: string;
 }
 
 // Server-side search (leads can number in the thousands, unlike the small
 // fixed country list CountrySelect filters client-side) — debounced the same
 // 300-400ms as every other search box in this app (leads/demos/admin-ticket).
-export default function LeadPickerCombobox({ value, onChange, placeholder }: LeadPickerComboboxProps) {
+export default function LeadPickerCombobox({ value, onChange, placeholder, searchUrl = '/api/leads' }: LeadPickerComboboxProps) {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const { label: leadStatusLabel, color: leadStatusColor } = useLeadStatusOptions();
@@ -33,11 +37,11 @@ export default function LeadPickerCombobox({ value, onChange, placeholder }: Lea
   }, [query]);
 
   const { data: results = [], isFetching } = useQuery<LeadOption[]>({
-    queryKey: ['lead-picker-search', debouncedQuery],
+    queryKey: ['lead-picker-search', searchUrl, debouncedQuery],
     queryFn: async () => {
       const params = new URLSearchParams({ size: '8', sortBy: 'companyName', sortDir: 'asc' });
       if (debouncedQuery) params.set('search', debouncedQuery);
-      const res = await fetch(`/api/leads?${params.toString()}`);
+      const res = await fetch(`${searchUrl}?${params.toString()}`);
       if (!res.ok) throw new Error('Failed to search leads');
       const data = await res.json();
       return data.content.map((l: any) => ({ id: l.id, companyName: l.companyName, contactPerson: l.contactPerson, status: l.status }));

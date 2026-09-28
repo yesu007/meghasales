@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_expenses');
+  const denied = await requireAnyPermission(['view_bills', 'view_expenses']);
   if (denied) return denied;
   try {
     const expense = await prisma.expense.findUnique({
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // accumulation to reconcile, so a dedicated action route would just be
 // another way to set the same two columns.
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('edit_expenses');
   if (denied) return denied;
   try {
     const body = await request.json();
@@ -142,7 +142,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('delete_expenses');
   if (denied) return denied;
   try {
     const id = parseInt(params.id);

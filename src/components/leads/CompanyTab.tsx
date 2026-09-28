@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import CompanyLegalEntityManager from '@/components/companies/CompanyLegalEntityManager';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface CompanyOption { id: number; name: string }
 
@@ -23,6 +24,10 @@ async function searchCompanies(search: string): Promise<CompanyOption[]> {
 // entities (address, tax registration, documents) are managed inline too.
 export default function CompanyTab({ leadId, company }: { leadId: number; company: { id: number; name: string } | null }) {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  // Linking/unlinking is a PUT on the lead; "Create & Link" also POSTs a new company.
+  const canLink = has('edit_leads');
+  const canCreateCompany = canLink && has('create_companies');
   const [search, setSearch] = useState('');
   const [showLinkForm, setShowLinkForm] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -73,7 +78,7 @@ export default function CompanyTab({ leadId, company }: { leadId: number; compan
           <div className="text-center py-8">
             <p className="text-slate-600 font-medium mb-1">No company linked yet</p>
             <p className="text-sm text-slate-400 mb-4">Link this customer to a Company to manage its per-country legal entities, addresses, tax registration, and documents.</p>
-            <button onClick={() => setShowLinkForm(true)} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700">Link a Company</button>
+            {canLink && <button onClick={() => setShowLinkForm(true)} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700">Link a Company</button>}
           </div>
         ) : (
           <div className="space-y-4">
@@ -94,19 +99,21 @@ export default function CompanyTab({ leadId, company }: { leadId: number; compan
                 </div>
               )}
             </div>
-            <div className="pt-3 border-t border-slate-100">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Or create a new company</label>
-              <div className="flex gap-2">
-                <input value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)} placeholder="Company name" className={inputCls} />
-                <button
-                  onClick={() => { if (!newCompanyName.trim()) { toast.error('Company name is required'); return; } createAndLink.mutate(); }}
-                  disabled={createAndLink.isPending}
-                  className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap"
-                >
-                  {createAndLink.isPending ? 'Creating...' : 'Create & Link'}
-                </button>
+            {canCreateCompany && (
+              <div className="pt-3 border-t border-slate-100">
+                <label className="block text-sm font-medium text-slate-700 mb-1">Or create a new company</label>
+                <div className="flex gap-2">
+                  <input value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)} placeholder="Company name" className={inputCls} />
+                  <button
+                    onClick={() => { if (!newCompanyName.trim()) { toast.error('Company name is required'); return; } createAndLink.mutate(); }}
+                    disabled={createAndLink.isPending}
+                    className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {createAndLink.isPending ? 'Creating...' : 'Create & Link'}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
             <div className="flex justify-end">
               <button onClick={() => setShowLinkForm(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
             </div>
@@ -123,9 +130,11 @@ export default function CompanyTab({ leadId, company }: { leadId: number; compan
           <p className="text-xs font-medium text-slate-500 uppercase">Linked Company</p>
           <p className="text-lg font-semibold text-slate-800">{company.name}</p>
         </div>
-        <button onClick={() => { if (window.confirm(`Unlink "${company.name}" from this customer?`)) unlinkCompany.mutate(); }} className="text-xs font-medium text-slate-500 hover:text-red-600">
-          Unlink
-        </button>
+        {canLink && (
+          <button onClick={() => { if (window.confirm(`Unlink "${company.name}" from this customer?`)) unlinkCompany.mutate(); }} className="text-xs font-medium text-slate-500 hover:text-red-600">
+            Unlink
+          </button>
+        )}
       </div>
       <CompanyLegalEntityManager companyId={company.id} />
     </div>

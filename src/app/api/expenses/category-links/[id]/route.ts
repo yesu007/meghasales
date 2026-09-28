@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 // Category/Sub Category the row points to, since a link is just a pairing
 // the user chose to track, not an ownership relationship.
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('edit_expenses');
   if (denied) return denied;
 
   try {
@@ -57,7 +57,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('delete_expenses');
   if (denied) return denied;
 
   try {

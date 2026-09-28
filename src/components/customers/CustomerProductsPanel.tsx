@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { TagIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { useStages } from '@/hooks/useStages';
+import { usePermissions } from '@/hooks/usePermissions';
 import { IMPLEMENTATION_STATUSES } from '@/lib/implementationStatus';
 import { invalidateImplementationData, invalidateProductData } from '@/lib/queryInvalidation';
 
@@ -35,6 +36,9 @@ async function fetchCustomerProducts(customerId: number): Promise<CustomerProduc
 export default function CustomerProductsPanel({ customerId, enabled = true }: { customerId: number; enabled?: boolean }) {
   const queryClient = useQueryClient();
   const stages = useStages();
+  const { has } = usePermissions();
+  // Status/Stage changes PUT the Implementation, first POSTing one if the row has none yet.
+  const canChangeImplementation = (hasImplementation: boolean) => has('edit_implementations') && (hasImplementation || has('create_implementations'));
   const queryKey = ['customer-products', customerId];
   const { data: products = [], isLoading } = useQuery({
     queryKey,
@@ -129,6 +133,7 @@ export default function CustomerProductsPanel({ customerId, enabled = true }: { 
                       <select
                         value={status}
                         onChange={(e) => updateStatus(product, e.target.value)}
+                        disabled={!canChangeImplementation(!!product.implementation?.id)}
                         className={`w-full px-2 py-1 rounded text-xs font-medium border-0 ${IMPLEMENTATION_STATUSES.find(s => s.value === status)?.color || 'bg-slate-100 text-slate-700'}`}
                       >
                         {IMPLEMENTATION_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -138,6 +143,7 @@ export default function CustomerProductsPanel({ customerId, enabled = true }: { 
                       <select
                         value={product.implementation?.currentStage || ''}
                         onChange={(e) => updateStage(product, e.target.value)}
+                        disabled={!canChangeImplementation(!!product.implementation?.id)}
                         className="w-full px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
                       >
                         <option value="">Select stage</option>

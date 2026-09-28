@@ -8,6 +8,7 @@ import { formatCurrency } from '@/lib/currency';
 import BudgetVsActualChart, { ActualExpenseBreakdownEntry } from '@/components/verticals/BudgetVsActualChart';
 import AddableSelect from '@/components/AddableSelect';
 import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface UserOption { id: number; firstName: string; lastName: string }
 interface CurrencyOption { currencyCode: string }
@@ -44,7 +45,7 @@ async function fetchVerticals(): Promise<VerticalRow[]> {
   return res.json();
 }
 async function fetchUsers(): Promise<UserOption[]> {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content;
@@ -62,6 +63,10 @@ const blankForm = { name: '', headId: '', budget: '', budgetCurrencyCode: 'INR',
 
 export default function VerticalsPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_verticals');
+  const canEdit = has('edit_verticals');
+  const canDelete = has('delete_verticals');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(blankForm);
@@ -161,12 +166,14 @@ export default function VerticalsPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Verticals</h1>
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">The business verticals every budget, project and future report groups by</p>
         </div>
-        <button
-          onClick={() => { if (showForm) closeForm(); else { setShowForm(true); scrollToForm(); } }}
-          className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-        >
-          <PlusIcon className="h-4 w-4" /> New Vertical
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => { if (showForm) closeForm(); else { setShowForm(true); scrollToForm(); } }}
+            className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+          >
+            <PlusIcon className="h-4 w-4" /> New Vertical
+          </button>
+        )}
       </div>
 
       {/* Search — same bordered-card placement above the table as Leads. */}
@@ -384,19 +391,20 @@ export default function VerticalsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => openEdit(v)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
-                          {v.isActive ? (
+                          {canEdit && <button onClick={() => openEdit(v)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>}
+                          {/* Delete → DELETE (delete_verticals); Reactivate → PATCH (edit_verticals). */}
+                          {v.isActive ? (canDelete && (
                             <button
                               onClick={() => { if (window.confirm(`Delete vertical "${v.name}"?`)) toggleActive.mutate({ id: v.id, isActive: false }); }}
                               className="text-xs font-medium text-slate-500 hover:text-red-600"
                             >
                               Delete
                             </button>
-                          ) : (
+                          )) : (canEdit && (
                             <button onClick={() => toggleActive.mutate({ id: v.id, isActive: true })} className="text-xs font-medium text-green-700 hover:text-green-800">
                               Reactivate
                             </button>
-                          )}
+                          ))}
                         </div>
                       </td>
                     </tr>

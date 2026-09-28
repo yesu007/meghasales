@@ -7,6 +7,7 @@ import { PlusIcon, InboxIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface RunRow {
   id: number;
@@ -35,6 +36,8 @@ async function fetchRuns(): Promise<RunRow[]> {
 
 export default function PayrollRunsPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canRun = has('run_payroll');
   const now = dayjs();
   const [year, setYear] = useState(now.year());
   const [month, setMonth] = useState(now.month() + 1);
@@ -72,6 +75,7 @@ export default function PayrollRunsPage() {
         <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Generate, review, and approve a month&apos;s payroll</p>
       </div>
 
+      {canRun && (
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
         <p className="text-sm font-medium text-slate-700 mb-3">Generate a new run</p>
         <form onSubmit={(e) => { e.preventDefault(); createRun.mutate(); }} className="flex flex-wrap items-end gap-3">
@@ -93,6 +97,7 @@ export default function PayrollRunsPage() {
           </button>
         </form>
       </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         {isLoading ? (
@@ -131,6 +136,7 @@ export default function PayrollRunsPage() {
                         <Link href={`/dashboard/payroll/runs/${r.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-block" title="Edit">
                           <PencilIcon className="h-4 w-4" />
                         </Link>
+                        {canRun && (
                         <button
                           onClick={() => deletable && deleteRun(r)}
                           disabled={!deletable}
@@ -139,6 +145,7 @@ export default function PayrollRunsPage() {
                         >
                           <TrashIcon className="h-4 w-4" />
                         </button>
+                        )}
                       </div>
                     </td>
                   </tr>

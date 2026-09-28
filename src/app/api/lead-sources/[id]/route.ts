@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_lead_sources');
+  const denied = await requirePermission('edit_lead_sources');
   if (denied) return denied;
   try {
     const body = await request.json();
@@ -73,7 +73,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 // keeps the option visible/reversible from the admin screen instead of
 // silently vanishing from history).
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_lead_sources');
+  const denied = await requirePermission('delete_lead_sources');
   if (denied) return denied;
   try {
     const id = parseInt(params.id);

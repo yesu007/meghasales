@@ -42,7 +42,8 @@ export default function AdminResetPasswordPage() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const { has } = usePermissions();
-  const canManage = has('manage_users');
+  // Both GET and POST /api/users/[id]/reset-password require edit_users.
+  const canEdit = has('edit_users');
   const [form, setForm] = useState(blankForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [succeeded, setSucceeded] = useState(false);
@@ -55,7 +56,7 @@ export default function AdminResetPasswordPage() {
       if (!res.ok) throw new Error(body.message || 'Failed to load user');
       return body;
     },
-    enabled: canManage,
+    enabled: canEdit,
   });
 
   const resetMutation = useMutation({
@@ -95,7 +96,7 @@ export default function AdminResetPasswordPage() {
     </div>
   );
 
-  if (!canManage) {
+  if (!canEdit) {
     return (
       <div className="space-y-6">
         {header}

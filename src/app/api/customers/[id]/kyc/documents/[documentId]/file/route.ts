@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // view_leads gate as GET /api/customers/[id]/kyc; the document must belong
 // to this customer's KYC record.
 export async function GET(request: NextRequest, { params }: { params: { id: string; documentId: string } }) {
-  const denied = await requirePermission('view_leads');
+  const denied = await requirePermission('view_customers');
   if (denied) return denied;
 
   const leadId = parseInt(params.id, 10);

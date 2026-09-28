@@ -7,14 +7,14 @@ import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
 import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
 import { isFollowUpOverdue } from '@/lib/leadFollowUp';
-import { requirePermission, getOwnershipFilter } from '@/lib/rbac';
+import { checkPermission, getOwnershipFilter, requireAuth, requirePermission } from '@/lib/rbac';
 import { dispatchDeadlineReminders } from '@/lib/deadlineReminders';
 import { isValidEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_leads');
+  const denied = await requireAuth();
   if (denied) return denied;
 
   // On-demand dispatch, same pattern as the admin-ticket tickets list —
@@ -229,7 +229,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requirePermission('create_leads');
   if (denied) return denied;
 
   try {
@@ -256,10 +256,10 @@ export async function POST(request: NextRequest) {
     }
 
     const session = await getServerSession(authOptions);
-    const isAdmin = (session?.user?.roles || []).includes('ADMIN');
+    const canOverrideCurrency = checkPermission(session, 'override_currency');
     let countryFields;
     try {
-      countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { isAdmin, overrideCurrencyCode: body.currencyCode });
+      countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { canOverrideCurrency, overrideCurrencyCode: body.currencyCode });
     } catch (e: any) {
       return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
     }

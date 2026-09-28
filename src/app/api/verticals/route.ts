@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission, checkPermission } from '@/lib/rbac';
+import { checkPermission, requireAnyPermission, requirePermission } from '@/lib/rbac';
 import { thisFinancialYearStart } from '@/lib/financialYear';
 
 export const dynamic = 'force-dynamic';
@@ -27,7 +27,7 @@ export const dynamic = 'force-dynamic';
 // rather than re-deriving it, so this is guaranteed to match that page's
 // figures for every vertical, not a second calculation.
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_verticals');
+  const denied = await requireAnyPermission(['view_verticals', 'view_customers', 'view_employees', 'view_expense_budgets', 'view_implementations', 'view_leads', 'view_products', 'view_projects', 'view_quotations', 'view_reports']);
   if (denied) return denied;
 
   try {
@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_verticals');
+  const denied = await requirePermission('create_verticals');
   if (denied) return denied;
 
   try {

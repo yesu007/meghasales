@@ -39,7 +39,7 @@ function parseId(raw: string): number | null {
 }
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_users');
+  const denied = await requirePermission('edit_users');
   if (denied) return denied;
 
   const id = parseId(params.id);
@@ -66,7 +66,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 }
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_users');
+  const denied = await requirePermission('edit_users');
   if (denied) return denied;
 
   const id = parseId(params.id);

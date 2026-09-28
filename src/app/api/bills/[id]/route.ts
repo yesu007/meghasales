@@ -15,7 +15,7 @@ async function currentUserId() {
 }
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_expenses');
+  const denied = await requirePermission('view_bills');
   if (denied) return denied;
 
   try {
@@ -41,7 +41,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 // it. Posted bills are locked — only their payment status changes, via
 // ./payment/route.ts.
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('edit_bills');
   if (denied) return denied;
 
   try {
@@ -88,7 +88,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 // Soft delete; a posted bill's linked expense is soft-deleted with it.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('delete_bills');
   if (denied) return denied;
 
   try {

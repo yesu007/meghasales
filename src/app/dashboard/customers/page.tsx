@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef, Fragment } from 'react';
-import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -29,6 +28,7 @@ import CustomerFormDrawer, { blankCustomerForm, fetchCustomerForEdit, type Custo
 import CustomerProjectsPanel from '@/components/customers/CustomerProjectsPanel';
 import CustomerProductsPanel from '@/components/customers/CustomerProductsPanel';
 import { invalidateLeadCustomerData, invalidateProjectData, invalidateProductData } from '@/lib/queryInvalidation';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // Customers are Leads with status = CONFIRMED (labeled "Converted" — see
 // the LeadStatusOption master, GET /api/lead-status-options). There is no separate Customer
@@ -91,15 +91,18 @@ async function fetchCustomers(params: Record<string, string>) {
 }
 
 async function fetchUsers(): Promise<UserOption[]> {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
 }
 
 export default function CustomersPage() {
-  const { data: session } = useSession();
-  const isAdmin = (session?.user?.roles || []).includes('ADMIN');
+  const { has } = usePermissions();
+  const canOverrideCurrency = has('override_currency');
+  const canCreate = has('create_customers');
+  const canEdit = has('edit_customers');
+  const canDelete = has('delete_customers');
   const SOURCES = useLeadSources();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
@@ -166,7 +169,7 @@ export default function CustomersPage() {
       if (!res.ok) throw new Error('Failed to fetch currencies');
       return res.json();
     },
-    enabled: isAdmin,
+    enabled: canOverrideCurrency,
   });
 
   useEffect(() => {
@@ -488,9 +491,11 @@ export default function CustomersPage() {
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Customers</h1>
-          <button onClick={() => setCreateDrawerOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-            <PlusIcon className="h-4 w-4" /> Create Customer
-          </button>
+          {canCreate && (
+            <button onClick={() => setCreateDrawerOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+              <PlusIcon className="h-4 w-4" /> Create Customer
+            </button>
+          )}
         </div>
         <p className="text-slate-500 text-sm sm:text-base">Leads that have converted to customers</p>
       </div>
@@ -602,6 +607,7 @@ export default function CustomersPage() {
                         <select
                           value={customer.customerStatus}
                           onChange={(e) => updateCustomerStatus(customer.id, e.target.value)}
+                          disabled={!canEdit}
                           className={`px-2 py-1 rounded text-xs font-medium border-0 ${customerStatusColor(customer.customerStatus)}`}
                         >
                           {CUSTOMER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -611,6 +617,7 @@ export default function CustomersPage() {
                         <select
                           value={customer.assignedBaId || ''}
                           onChange={(e) => assignBa(customer.id, e.target.value)}
+                          disabled={!canEdit}
                           className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
                         >
                           <option value="">Unassigned</option>
@@ -629,12 +636,16 @@ export default function CustomersPage() {
                               Edit form (LeadFormDrawer) as before — see
                               isDirectCustomer's own comment for the signal
                               this reuses. */}
-                          <button onClick={() => (customer.isDirectCustomer ? openCustomerEdit(customer.id) : openEdit(customer.id))} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => deleteCustomer(customer.id, customer.companyName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
+                          {canEdit && (
+                            <button onClick={() => (customer.isDirectCustomer ? openCustomerEdit(customer.id) : openEdit(customer.id))} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button onClick={() => deleteCustomer(customer.id, customer.companyName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -722,7 +733,7 @@ export default function CustomersPage() {
         setFormErrors={setFormErrors}
         onSave={(data) => saveMutation.mutate(data)}
         isSaving={saveMutation.isPending}
-        isAdmin={isAdmin}
+        isAdmin={canOverrideCurrency}
         currencies={currencies}
         customerStatus={editCustomerStatus}
         onCustomerStatusChange={setEditCustomerStatus}
@@ -738,7 +749,7 @@ export default function CustomersPage() {
         setFormErrors={setCreateFormErrors}
         onSave={(data) => createMutation.mutate(data)}
         isSaving={createMutation.isPending}
-        isAdmin={isAdmin}
+        isAdmin={canOverrideCurrency}
         currencies={currencies}
         editingId={editingCustomerId}
         // Disabled only when this Create drawer was opened via a Project/

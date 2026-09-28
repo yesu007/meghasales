@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // under its parent Company; listing happens via GET /api/companies/[id]
 // (which already includes legalEntities), so this route is create-only.
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_companies');
+  const denied = await requirePermission('edit_companies');
   if (denied) return denied;
 
   try {

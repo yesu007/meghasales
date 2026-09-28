@@ -6,6 +6,7 @@ import { PencilIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // Mirrors src/components/projects/ProjectBudgetPanel.tsx exactly (same
 // fetch/display/delete pattern for quotations, same Budget vs Actual
@@ -68,6 +69,10 @@ function sumByCurrency(amounts: { amount: number; currencyCode: string }[]): Rec
 
 export default function ProductBudgetPanel({ productId, newEstimationHref }: { productId: number; newEstimationHref?: string }) {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  // ?edit=<id> opens the Quotation form straight in edit mode (PUT /api/quotations/[id]).
+  const canEditQuotations = has('edit_quotations');
+  const canDeleteQuotations = has('delete_quotations');
   const { data: quotations = [], isLoading: loadingQuotations } = useQuery({
     queryKey: ['product-budget-quotations', productId],
     queryFn: () => fetchProductQuotations(productId),
@@ -119,16 +124,20 @@ export default function ProductBudgetPanel({ productId, newEstimationHref }: { p
                 </div>
                 <div className="flex items-center gap-3.5">
                   <span className="text-sm font-medium text-slate-800">{formatCurrency(q.totalAmount, q.currencyCode)}</span>
-                  <Link href={`/dashboard/quotations?edit=${q.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-flex" title="View / Edit">
-                    <PencilIcon className="h-3.5 w-3.5" />
-                  </Link>
-                  <button
-                    onClick={() => deleteQuotation(q.id, q.quotationNumber)}
-                    className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex"
-                    title="Delete"
-                  >
-                    <TrashIcon className="h-3.5 w-3.5" />
-                  </button>
+                  {canEditQuotations && (
+                    <Link href={`/dashboard/quotations?edit=${q.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-flex" title="View / Edit">
+                      <PencilIcon className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
+                  {canDeleteQuotations && (
+                    <button
+                      onClick={() => deleteQuotation(q.id, q.quotationNumber)}
+                      className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex"
+                      title="Delete"
+                    >
+                      <TrashIcon className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

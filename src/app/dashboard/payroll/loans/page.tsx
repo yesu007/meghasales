@@ -6,6 +6,7 @@ import { PlusIcon, ChevronDownIcon, ChevronUpIcon, ChevronLeftIcon, ChevronRight
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface EmployeeOption { id: number; employeeCode: string; userName: string }
 interface Repayment { id: number; runId: number | null; periodYear: number; periodMonth: number; amount: string; status: string; createdAt: string }
@@ -64,6 +65,10 @@ async function fetchLoanDetail(id: number): Promise<LoanRow & { repayments: Repa
 
 export default function LoansPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_loans');
+  // Send to Payroll → POST /api/payroll/loans/[id]/apply-to-run.
+  const canSendToPayroll = has('run_payroll');
   const now = dayjs();
   const [year, setYear] = useState(now.year());
   const [month, setMonth] = useState(now.month() + 1);
@@ -98,12 +103,16 @@ export default function LoansPage() {
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Track employee loans and send installments to Payroll</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setSendModalOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] border border-amber-600 text-amber-700 rounded-lg text-sm font-medium hover:bg-amber-50">
-            <PaperAirplaneIcon className="h-4 w-4" /> Send to Payroll
-          </button>
-          <button onClick={() => setShowForm((v) => !v)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-            <PlusIcon className="h-4 w-4" /> New Loan
-          </button>
+          {canSendToPayroll && (
+            <button onClick={() => setSendModalOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] border border-amber-600 text-amber-700 rounded-lg text-sm font-medium hover:bg-amber-50">
+              <PaperAirplaneIcon className="h-4 w-4" /> Send to Payroll
+            </button>
+          )}
+          {canCreate && (
+            <button onClick={() => setShowForm((v) => !v)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+              <PlusIcon className="h-4 w-4" /> New Loan
+            </button>
+          )}
         </div>
       </div>
 

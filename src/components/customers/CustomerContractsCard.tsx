@@ -76,13 +76,13 @@ async function fetchImplementations(leadId: number): Promise<ImplementationOptio
 
 interface CustomerContractsCardProps {
   leadId: number;
-  canManage: boolean;
+  canEdit: boolean;
 }
 
-export default function CustomerContractsCard({ leadId, canManage }: CustomerContractsCardProps) {
+export default function CustomerContractsCard({ leadId, canEdit }: CustomerContractsCardProps) {
   const queryClient = useQueryClient();
   // Delete / Remove of an NDA / Contract document needs its own permission
-  // (the API enforces it too); editing/uploading still follows canManage.
+  // (the API enforces it too); editing/uploading still follows canEdit.
   const canDeleteNda = usePermissions().has(DELETE_NDA_DOCUMENTS_PERMISSION);
   // The form is always visible when it can be used (same as KYC) — the
   // data model supports many contracts per customer, so "+ New Contract"
@@ -211,14 +211,14 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
           <DocumentTextIcon className="h-5 w-5 text-amber-600" />
           <h2 className="text-lg font-semibold text-slate-800">NDA / Contract</h2>
         </div>
-        {canManage && editingId && (
+        {canEdit && editingId && (
           <button onClick={resetForm} className="flex items-center gap-1.5 px-3 py-2 min-h-[40px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
             <PlusIcon className="h-4 w-4" /> New Contract
           </button>
         )}
       </div>
 
-      {canManage && (
+      {canEdit && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -330,9 +330,9 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
                     {c.expiryDate && <> · Expires: {dayjs(c.expiryDate).format('DD MMM YYYY')}</>}
                   </p>
                 </div>
-                {(canManage || canDeleteNda) && (
+                {(canEdit || canDeleteNda) && (
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    {canManage && <button onClick={() => openEdit(c)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>}
+                    {canEdit && <button onClick={() => openEdit(c)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>}
                     {canDeleteNda && <button onClick={() => { if (window.confirm('Delete this contract?')) deleteMutation.mutate(c.id); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>}
                   </div>
                 )}
@@ -352,7 +352,7 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
                       <a href={`/api/customers/${leadId}/contracts/${c.id}/file`} target="_blank" rel="noreferrer" className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View"><EyeIcon className="h-4 w-4" /></a>
                     )}
                     <a href={`/api/customers/${leadId}/contracts/${c.id}/file?download=1`} target="_blank" rel="noreferrer" download className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></a>
-                    {canManage && (
+                    {canEdit && (
                       <>
                         <label className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 cursor-pointer" title="Replace">
                           <ArrowUpTrayIcon className="h-4 w-4" />
@@ -371,7 +371,7 @@ export default function CustomerContractsCard({ leadId, canManage }: CustomerCon
                   </div>
                 </div>
               ) : (
-                canManage && <p className="text-xs text-slate-400">No document attached</p>
+                canEdit && <p className="text-xs text-slate-400">No document attached</p>
               )}
             </div>
           ))}

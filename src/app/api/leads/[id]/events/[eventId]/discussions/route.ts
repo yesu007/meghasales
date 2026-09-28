@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission, requireAnyPermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 import { validateDiscussionInput } from '@/lib/eventValidation';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest, { params }: { params: { eventId:
 }
 
 export async function POST(request: NextRequest, { params }: { params: { id: string; eventId: string } }) {
-  const denied = await requireAnyPermission(['manage_lead_events', 'add_lead_discussion']);
+  const denied = await requireAnyPermission(['edit_lead_events', 'add_lead_discussion']);
   if (denied) return denied;
 
   try {

@@ -18,6 +18,9 @@ interface Activity {
 
 interface ActivityTimelineProps {
   leadId: number;
+  // Defaults to the Leads module's /api/leads/[id]/activities; the
+  // Dashboard passes its view_dashboard-gated equivalent.
+  activitiesUrl?: string;
 }
 
 const ACTIVITY_ICONS: Record<string, typeof ClockIcon> = {
@@ -38,16 +41,17 @@ const ACTIVITY_ICONS: Record<string, typeof ClockIcon> = {
   DISCUSSION_ADDED: ChatBubbleLeftRightIcon,
 };
 
-async function fetchActivities(leadId: number): Promise<Activity[]> {
-  const res = await fetch(`/api/leads/${leadId}/activities`);
+async function fetchActivities(url: string): Promise<Activity[]> {
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to load activity timeline');
   return res.json();
 }
 
-export default function ActivityTimeline({ leadId }: ActivityTimelineProps) {
+export default function ActivityTimeline({ leadId, activitiesUrl }: ActivityTimelineProps) {
+  const url = activitiesUrl ?? `/api/leads/${leadId}/activities`;
   const { data: activities = [], isLoading } = useQuery({
-    queryKey: ['lead-activities', leadId],
-    queryFn: () => fetchActivities(leadId),
+    queryKey: ['lead-activities', leadId, url],
+    queryFn: () => fetchActivities(url),
   });
 
   if (isLoading) {

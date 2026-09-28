@@ -6,6 +6,7 @@ import { PencilIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface QuotationRow {
   id: number;
@@ -57,6 +58,8 @@ function sumByCurrency(amounts: { amount: number; currencyCode: string }[]): Rec
 
 export default function ProjectBudgetPanel({ projectId, newEstimationHref }: { projectId: number; newEstimationHref?: string }) {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canDeleteQuotations = has('delete_quotations');
   const { data: quotations = [], isLoading: loadingQuotations } = useQuery({
     queryKey: ['project-budget-quotations', projectId],
     queryFn: () => fetchProjectQuotations(projectId),
@@ -111,13 +114,15 @@ export default function ProjectBudgetPanel({ projectId, newEstimationHref }: { p
                   <Link href={`/dashboard/quotations/calculator/${q.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-flex" title="View / Edit">
                     <PencilIcon className="h-3.5 w-3.5" />
                   </Link>
-                  <button
-                    onClick={() => deleteQuotation(q.id, q.quotationNumber)}
-                    className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex"
-                    title="Delete"
-                  >
-                    <TrashIcon className="h-3.5 w-3.5" />
-                  </button>
+                  {canDeleteQuotations && (
+                    <button
+                      onClick={() => deleteQuotation(q.id, q.quotationNumber)}
+                      className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex"
+                      title="Delete"
+                    >
+                      <TrashIcon className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
