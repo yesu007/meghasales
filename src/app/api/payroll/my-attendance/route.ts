@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { ensureEmployeeForUser } from '@/lib/payroll/selfEmployee';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { periodRange } from '@/lib/payroll/timesheetEngine';
 import { buildTimesheetRow } from '@/lib/payroll/timesheetRow';
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
     const { year, month } = parsePeriod(new URL(request.url).searchParams);
     if (month < 1 || month > 12) return NextResponse.json({ message: 'Invalid month' }, { status: 400 });
 
-    const employee = await prisma.employee.findUnique({ where: { userId } });
+    const employee = await ensureEmployeeForUser(userId);
     if (!employee) return NextResponse.json({ employee: null, period: { year, month }, row: null, leaves: [] });
 
     const { start, end } = periodRange(year, month);

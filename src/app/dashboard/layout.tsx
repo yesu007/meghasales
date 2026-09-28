@@ -39,6 +39,7 @@ import {
   ChevronDownIcon,
   Bars3Icon,
   XMarkIcon,
+  KeyIcon,
 } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
 import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
@@ -46,6 +47,7 @@ import { isMeetingsModuleEnabled } from '@/lib/meetings/featureFlag';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { hasAnyPermission } from '@/lib/permissions';
 import { REPORTS } from '@/lib/reports/registry';
+import { getNotificationHref } from '@/lib/notificationLinks';
 
 dayjs.extend(relativeTime);
 
@@ -53,6 +55,9 @@ interface HeaderNotification {
   id: number;
   title: string;
   message: string | null;
+  type: string;
+  entityType: string | null;
+  entityId: number | null;
   isRead: boolean;
   createdAt: string;
 }
@@ -530,7 +535,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     recentNotifications.map((n) => (
                       <button
                         key={n.id}
-                        onClick={() => { if (!n.isRead) markNotifRead.mutate(n.id); setNotifOpen(false); router.push('/dashboard/notifications'); }}
+                        onClick={() => { if (!n.isRead) markNotifRead.mutate(n.id); setNotifOpen(false); router.push(getNotificationHref(n) ?? '/dashboard/notifications'); }}
                         className={`w-full text-left px-4 py-2.5 hover:bg-slate-50 transition-colors ${n.isRead ? '' : 'bg-amber-50/60'}`}
                       >
                         <p className={`text-sm ${n.isRead ? 'text-slate-600' : 'text-slate-800 font-medium'}`}>{n.title}</p>
@@ -577,6 +582,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 >
                   <Cog6ToothIcon className="h-4 w-4" />
                   Settings
+                </Link>
+                <Link
+                  href="/dashboard/change-password"
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  <KeyIcon className="h-4 w-4" />
+                  Change Password
                 </Link>
                 <button
                   onClick={() => signOut({ callbackUrl: '/login' })}
