@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BellIcon,
@@ -15,6 +16,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import AddableSelect from '@/components/AddableSelect';
+import { getNotificationHref } from '@/lib/notificationLinks';
 
 dayjs.extend(relativeTime);
 
@@ -27,6 +29,7 @@ const NOTIFICATION_TYPES = [
   { value: 'EVENT_REMINDER', label: 'Event Reminder' },
   { value: 'FOLLOW_UP_REMINDER', label: 'Follow-up Reminder' },
   { value: 'DEADLINE_REMINDER', label: 'Deadline Reminder' },
+  { value: 'PASSWORD_RESET_REQUEST', label: 'Password Reset' },
   { value: 'SYSTEM', label: 'System' },
 ];
 
@@ -38,6 +41,7 @@ const TYPE_COLORS: Record<string, string> = {
   EVENT_REMINDER: 'bg-cyan-100 text-cyan-700',
   FOLLOW_UP_REMINDER: 'bg-orange-100 text-orange-700',
   DEADLINE_REMINDER: 'bg-red-100 text-red-700',
+  PASSWORD_RESET_REQUEST: 'bg-rose-100 text-rose-700',
   SYSTEM: 'bg-slate-100 text-slate-700',
 };
 
@@ -65,6 +69,7 @@ async function fetchNotifications(params: Record<string, string>) {
 
 export default function NotificationsPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [typeFilter, setTypeFilter] = useState('');
   const [readFilter, setReadFilter] = useState('');
   const [page, setPage] = useState(0);
@@ -190,12 +195,15 @@ export default function NotificationsPage() {
         ) : (
           <>
             <div className="divide-y divide-slate-100">
-              {notifications.map((notification) => (
+              {notifications.map((notification) => {
+                const href = getNotificationHref(notification);
+                return (
                 <div
                   key={notification.id}
+                  onClick={href ? () => { if (!notification.isRead) markReadMutation.mutate(notification.id); router.push(href); } : undefined}
                   className={`flex items-start gap-4 p-4 transition-colors ${
                     notification.isRead ? 'bg-white' : 'bg-amber-50/50'
-                  } hover:bg-slate-50`}
+                  } hover:bg-slate-50 ${href ? 'cursor-pointer' : ''}`}
                 >
                   <div className={`mt-0.5 p-2 rounded-full ${notification.isRead ? 'bg-slate-100' : 'bg-amber-100'}`}>
                     <BellIcon className={`h-4 w-4 ${notification.isRead ? 'text-slate-500' : 'text-amber-600'}`} />
@@ -219,7 +227,7 @@ export default function NotificationsPage() {
                   </div>
                   {!notification.isRead && (
                     <button
-                      onClick={() => markReadMutation.mutate(notification.id)}
+                      onClick={(e) => { e.stopPropagation(); markReadMutation.mutate(notification.id); }}
                       className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
                       title="Mark as read"
                     >
@@ -232,7 +240,8 @@ export default function NotificationsPage() {
                     </span>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
             <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
               <p className="text-sm text-slate-500">

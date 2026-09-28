@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { ensureEmployeeForUser } from '@/lib/payroll/selfEmployee';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { serveStoredDocument } from '@/lib/documentDownload';
 
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest, { params }: { params: { document
   const documentId = parseInt(params.documentId, 10);
   if (!documentId) return NextResponse.json({ message: 'Invalid document' }, { status: 400 });
 
-  const employee = await prisma.employee.findUnique({ where: { userId } });
+  const employee = await ensureEmployeeForUser(userId);
   if (!employee) return NextResponse.json({ message: 'Document not found' }, { status: 404 });
 
   const doc = await prisma.employeeLegalDocument.findFirst({ where: { id: documentId, employeeId: employee.id } });

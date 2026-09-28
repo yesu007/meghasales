@@ -10,13 +10,23 @@ export const dynamic = 'force-dynamic';
 //
 // No token or reset code is ever generated or emailed to the requester —
 // this only raises the alarm to whoever holds the ADMIN role, who then
-// resets the password directly via the existing Edit User screen (see
-// PUT /api/users/[id], which auto-resolves the PasswordResetRequest this
-// creates once a new password is actually set).
+// resets the password from the notification's reset screen
+// (/dashboard/users/[id]/reset-password → POST /api/users/[id]/reset-password),
+// or via the existing Edit User screen (PUT /api/users/[id]); either one
+// auto-resolves the PasswordResetRequest this creates.
 //
 // Always responds with the same generic message regardless of whether the
 // email matched a real, active user — telling the caller "no such account"
 // would let anyone enumerate which emails are registered.
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
+function appUrl(path: string): string {
+  const base = (process.env.NEXTAUTH_URL || '').replace(/\/$/, '');
+  return base ? `${base}${path}` : path;
+}
+
 const GENERIC_MESSAGE = 'If an account exists for that email, an administrator has been notified.';
 
 export async function POST(request: NextRequest) {
@@ -42,6 +52,8 @@ export async function POST(request: NextRequest) {
       });
 
       const mailConfigured = await isMailConfigured();
+      const requester = `${user.firstName} ${user.lastName}`.trim() || email;
+      const resetPath = `/dashboard/users/${user.id}/reset-password`;
 
       for (const admin of admins) {
         try {
@@ -49,7 +61,7 @@ export async function POST(request: NextRequest) {
             data: {
               userId: admin.id,
               title: 'Password reset requested',
-              message: `${email} requested a password reset`,
+              message: `${requester} (${email}) requested a password reset`,
               type: 'PASSWORD_RESET_REQUEST',
               channel: 'IN_APP',
               entityType: 'USER',
@@ -65,7 +77,7 @@ export async function POST(request: NextRequest) {
             await sendMail({
               to: admin.email,
               subject: 'Password reset requested',
-              html: `<p><strong>${email}</strong> requested a password reset on MeghaSales CRM.</p><p>Reset it from Dashboard &gt; Users &gt; that user &gt; set a new password, then share it with them directly.</p>`,
+              html: `<p><strong>${escapeHtml(requester)}</strong> (${escapeHtml(email)}) requested a password reset on MeghaSales CRM.</p><p>Open the notification in the CRM (or go to ${escapeHtml(appUrl(resetPath))}) to set a new password, then share it with them directly.</p>`,
             });
           } catch (error) {
             // Best-effort — the in-app notification above already covers
