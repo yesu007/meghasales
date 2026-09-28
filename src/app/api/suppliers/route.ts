@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 // Vendor master for Bills. List (optionally searched by name/GSTIN) + create.
 // Created inline from the bill form when the vendor is new.
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_expenses');
+  const denied = await requirePermission('view_bills');
   if (denied) return denied;
 
   try {
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('create_bills');
   if (denied) return denied;
 
   try {

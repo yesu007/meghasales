@@ -14,7 +14,7 @@ const CONTRACT_TYPES = ['NDA', 'MSA', 'SOW', 'COMMERCIAL_AGREEMENT', 'OTHER'];
 const CONTRACT_STATUSES = ['DRAFT', 'SENT', 'SIGNED', 'EXPIRED', 'TERMINATED'];
 
 export async function GET(request: NextRequest, { params }: { params: { id: string; contractId: string } }) {
-  const denied = await requirePermission('view_leads');
+  const denied = await requirePermission('view_customers');
   if (denied) return denied;
 
   try {
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // record (the two separate actions the requirement calls "replace" and
 // "remove" for the attached document).
 export async function PUT(request: NextRequest, { params }: { params: { id: string; contractId: string } }) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requirePermission('edit_customers');
   if (denied) return denied;
 
   try {

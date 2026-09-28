@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // string literal in code, so renaming one would silently break whatever it
 // gates. Only the description (documentation only) can change.
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_roles');
+  const denied = await requirePermission('edit_roles');
   if (denied) return denied;
 
   try {
@@ -33,7 +33,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_roles');
+  const denied = await requirePermission('delete_roles');
   if (denied) return denied;
 
   try {

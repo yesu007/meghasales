@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
@@ -26,6 +25,7 @@ import { useLeadSources } from '@/hooks/useLeadSources';
 import AddableSelect from '@/components/AddableSelect';
 import LeadFormDrawer, { blankLeadForm, fetchLeadForEdit, type LeadFormState, type CurrencyOption } from '@/components/leads/LeadFormDrawer';
 import { invalidateLeadCustomerData } from '@/lib/queryInvalidation';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const VIEW_TABS = [
   { value: '', label: 'All Leads' },
@@ -74,17 +74,20 @@ async function fetchLeads(params: Record<string, string>) {
 }
 
 async function fetchUsers(): Promise<UserOption[]> {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
 }
 
 export default function LeadsPage() {
-  const { data: session } = useSession();
   const { options: STATUSES, color: leadStatusColor } = useLeadStatusOptions();
   const SOURCES = useLeadSources();
-  const isAdmin = (session?.user?.roles || []).includes('ADMIN');
+  const { has } = usePermissions();
+  const canOverrideCurrency = has('override_currency');
+  const canCreate = has('create_leads');
+  const canEdit = has('edit_leads');
+  const canDelete = has('delete_leads');
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Summary widgets ("dashboard") visibility, persisted per-browser so the
@@ -173,8 +176,8 @@ export default function LeadsPage() {
   const [form, setForm] = useState<LeadFormState>(blankLeadForm);
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  // Only Administrators can override the currency a country implies —
-  // this list is only fetched/rendered for ADMIN sessions.
+  // Only roles with override_currency can override the currency a country
+  // implies — this list is only fetched/rendered for them.
   const { data: currencies = [], isError: isCurrenciesError } = useQuery<CurrencyOption[]>({
     queryKey: ['currencies'],
     queryFn: async () => {
@@ -182,7 +185,7 @@ export default function LeadsPage() {
       if (!res.ok) throw new Error('Failed to fetch currencies');
       return res.json();
     },
-    enabled: isAdmin,
+    enabled: canOverrideCurrency,
   });
 
   useEffect(() => {
@@ -321,9 +324,11 @@ export default function LeadsPage() {
             {showDashboard ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
             {showDashboard ? 'Hide Dashboard' : 'Show Dashboard'}
           </button>
-          <button onClick={() => { setEditingId(null); setForm(blankLeadForm); setDrawerOpen(true); }} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-            <PlusIcon className="h-4 w-4" /> New Lead
-          </button>
+          {canCreate && (
+            <button onClick={() => { setEditingId(null); setForm(blankLeadForm); setDrawerOpen(true); }} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+              <PlusIcon className="h-4 w-4" /> New Lead
+            </button>
+          )}
         </div>
         <p className="text-slate-500 text-sm sm:text-base">Manage and track your leads pipeline</p>
       </div>
@@ -439,7 +444,7 @@ export default function LeadsPage() {
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{lead.whatsapp || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell capitalize">{(lead.leadSource || '').replace(/_/g, ' ').toLowerCase()}</td>
                       <td className="px-4 py-3">
-                        <select value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${leadStatusColor(lead.status)}`}>
+                        <select value={lead.status} disabled={!canEdit} onChange={(e) => updateStatus(lead.id, e.target.value)} className={`px-2 py-1 rounded text-xs font-medium border-0 ${leadStatusColor(lead.status)}`}>
                           {STATUSES.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
                         </select>
                       </td>
@@ -447,6 +452,7 @@ export default function LeadsPage() {
                         <select
                           value={lead.assignedBaId || ''}
                           onChange={(e) => assignBa(lead.id, e.target.value)}
+                          disabled={!canEdit}
                           className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
                         >
                           <option value="">Unassigned</option>
@@ -462,6 +468,7 @@ export default function LeadsPage() {
                             type="date"
                             value={lead.nextFollowUpDate ? dayjs(lead.nextFollowUpDate).format('YYYY-MM-DD') : ''}
                             onChange={(e) => updateNextFollowUp(lead.id, e.target.value)}
+                            disabled={!canEdit}
                             className={`w-[9.5rem] pl-7 pr-2 py-1.5 text-xs bg-transparent border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${lead.isOverdue ? 'text-red-700 font-semibold' : lead.nextFollowUpDate ? 'text-slate-700' : 'text-slate-400'}`}
                           />
                         </div>
@@ -472,12 +479,16 @@ export default function LeadsPage() {
                           <Link href={`/dashboard/leads/${lead.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 inline-block" title="View">
                             <EyeIcon className="h-4 w-4" />
                           </Link>
-                          <button onClick={() => openEdit(lead.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => deleteLead(lead.id, lead.companyName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
+                          {canEdit && (
+                            <button onClick={() => openEdit(lead.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button onClick={() => deleteLead(lead.id, lead.companyName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -545,7 +556,7 @@ export default function LeadsPage() {
         setFormErrors={setFormErrors}
         onSave={(data) => saveMutation.mutate(data)}
         isSaving={saveMutation.isPending}
-        isAdmin={isAdmin}
+        isAdmin={canOverrideCurrency}
         currencies={currencies}
       />
     </div>

@@ -42,7 +42,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string; eventId: string } }) {
-  const denied = await requirePermission('manage_lead_events');
+  const denied = await requirePermission('edit_lead_events');
   if (denied) return denied;
 
   try {
@@ -105,7 +105,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string; eventId: string } }) {
-  const denied = await requirePermission('manage_lead_events');
+  const denied = await requirePermission('delete_lead_events');
   if (denied) return denied;
 
   try {

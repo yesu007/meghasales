@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!isMeetingsModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_meetings');
+  const denied = await requirePermission('create_meetings');
   if (denied) return denied;
 
   try {

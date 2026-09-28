@@ -54,6 +54,10 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
   const queryClient = useQueryClient();
   const { has } = usePermissions();
   const canAuthorizeOverride = has('authorize_quotation_override');
+  // Same form serves create (POST) and edit (PUT) — gate Save by whichever applies.
+  const canCreate = has('create_quotations');
+  const canEdit = has('edit_quotations');
+  const canSave = quotationId ? canEdit : canCreate;
 
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
   const [selectedLeadId, setSelectedLeadId] = useState('');
@@ -790,7 +794,7 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
                         key={`${m.id}-${m.scheduledDate}`}
                         type="date"
                         defaultValue={dayjs(m.scheduledDate).format('YYYY-MM-DD')}
-                        disabled={m.invoice?.status === 'PAID'}
+                        disabled={m.invoice?.status === 'PAID' || !canEdit}
                         onBlur={(e) => {
                           if (e.target.value && e.target.value !== dayjs(m.scheduledDate).format('YYYY-MM-DD')) handleRescheduleMilestone(m, e.target.value);
                         }}
@@ -989,9 +993,11 @@ export default function QuotationCalculatorForm({ quotationId }: { quotationId?:
               </p>
             </div>
 
-            <button onClick={handleSave} disabled={saveMutation.isPending} className="w-full px-4 py-2.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-              {saveMutation.isPending ? 'Saving...' : quotationId ? 'Save Changes' : 'Save Quotation'}
-            </button>
+            {canSave && (
+              <button onClick={handleSave} disabled={saveMutation.isPending} className="w-full px-4 py-2.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                {saveMutation.isPending ? 'Saving...' : quotationId ? 'Save Changes' : 'Save Quotation'}
+              </button>
+            )}
 
             <p className="text-xs text-slate-400 mt-3">
               Valid for <span className="font-medium text-slate-600">{validityDays}</span> days from issue.

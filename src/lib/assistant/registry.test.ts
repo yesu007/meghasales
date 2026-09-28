@@ -61,7 +61,7 @@ describe('createAssistantTool', () => {
     expect(handler).toHaveBeenCalledWith({ value: 'x' }, { userId: 42, roles: ['SALES'] });
   });
 
-  it('calls the handler for ADMIN even without the specific permission (implicit bypass)', async () => {
+  it('denies ADMIN too when its role lacks the permission (no role-name bypass)', async () => {
     getServerSession.mockResolvedValue({
       user: { id: '1', roles: ['ADMIN'], permissions: [] },
     });
@@ -69,8 +69,8 @@ describe('createAssistantTool', () => {
 
     const result = await tool.execute!({ value: 'x' }, fakeCallOptions);
 
-    expect(result).toEqual({ echoed: 'x' });
-    expect(handler).toHaveBeenCalledWith({ value: 'x' }, { userId: 1, roles: ['ADMIN'] });
+    expect(result).toEqual({ error: 'permission_denied', permission: 'manage_test_thing' });
+    expect(handler).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put, isStorageConfigured } from '@/lib/storage';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 // rather than a confusing generic failure, since attachments are optional
 // and the rest of Payment Entry should stay usable either way.
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_payments');
+  const denied = await requireAnyPermission(['create_payments', 'edit_payments']);
   if (denied) return denied;
   if (!isStorageConfigured()) {
     return NextResponse.json(

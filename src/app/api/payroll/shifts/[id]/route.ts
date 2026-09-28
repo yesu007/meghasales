@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_shifts');
   if (denied) return denied;
 
   try {
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_shifts');
   if (denied) return denied;
 
   try {
@@ -70,7 +70,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 // real delete is safe once no assignment references it.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('delete_shifts');
   if (denied) return denied;
 
   try {

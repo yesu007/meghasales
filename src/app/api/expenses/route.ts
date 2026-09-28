@@ -178,7 +178,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('create_expenses');
   if (denied) return denied;
 
   try {

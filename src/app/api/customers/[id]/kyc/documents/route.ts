@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 // saved (auto-creates a minimal parent CustomerKyc row on first upload),
 // so document upload and the "Save KYC" form action are independent.
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requirePermission('edit_customers');
   if (denied) return denied;
   if (!isStorageConfigured()) {
     return NextResponse.json(

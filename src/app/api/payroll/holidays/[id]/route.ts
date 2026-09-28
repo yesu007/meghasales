@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 // isActive for instead of removing the row outright.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_salary_structures');
+  const denied = await requirePermission('delete_timesheet');
   if (denied) return denied;
 
   try {

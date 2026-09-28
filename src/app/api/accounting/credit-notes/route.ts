@@ -7,7 +7,7 @@ import { requirePermission } from '@/lib/rbac';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_accounting');
+  const denied = await requirePermission('view_invoices');
   if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_invoices');
+  const denied = await requirePermission('create_invoices');
   if (denied) return denied;
   try {
     const body = await request.json();

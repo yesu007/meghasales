@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_countries');
+  const denied = await requirePermission('create_countries');
   if (denied) return denied;
 
   try {

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // Upload a document straight to the lead, no Event required — for
 // paperwork that isn't tied to any specific meeting/call/visit.
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_lead_events');
+  const denied = await requirePermission('create_lead_events');
   if (denied) return denied;
   if (!isStorageConfigured()) {
     return NextResponse.json(

@@ -13,7 +13,7 @@ const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'UPI', 'OTHE
 // Updates a posted bill's payment status (Paid / Partially Paid / Unpaid)
 // and mirrors it onto the linked expense.
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('edit_bills');
   if (denied) return denied;
 
   try {

@@ -9,7 +9,7 @@ const VALID_TYPES: PayrollReportType[] = ['salary-register', 'department-cost', 
 
 export async function GET(request: NextRequest) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_payroll_reports');
   if (denied) return denied;
 
   try {

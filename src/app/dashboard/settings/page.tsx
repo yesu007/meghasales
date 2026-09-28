@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import CountrySelect, { type Country } from '@/components/CountrySelect';
@@ -25,6 +24,10 @@ interface CountryRow extends Country {}
 
 function CountryMasterManager() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreateCountries = has('create_countries');
+  // Edit and Activate/Deactivate both go through PUT /api/countries/[id].
+  const canEditCountries = has('edit_countries');
   const { data: countries = [], isLoading, isError: isCountriesError } = useQuery<CountryRow[]>({
     queryKey: ['countries', 'all'],
     queryFn: async () => {
@@ -109,20 +112,22 @@ function CountryMasterManager() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-700">Manage Countries</h3>
-        <button
-          type="button"
-          onClick={() => {
-            setCountryForm(blankCountryForm); setEditingCountryId(null); setCountryFormErrors({});
-            setShowForm((s) => {
-              const next = !s;
-              if (next) scrollToCountryForm();
-              return next;
-            });
-          }}
-          className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700"
-        >
-          {showForm ? 'Cancel' : '+ Add Country'}
-        </button>
+        {canCreateCountries && (
+          <button
+            type="button"
+            onClick={() => {
+              setCountryForm(blankCountryForm); setEditingCountryId(null); setCountryFormErrors({});
+              setShowForm((s) => {
+                const next = !s;
+                if (next) scrollToCountryForm();
+                return next;
+              });
+            }}
+            className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+          >
+            {showForm ? 'Cancel' : '+ Add Country'}
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -212,8 +217,12 @@ function CountryMasterManager() {
                   <span className={`px-2 py-0.5 rounded-full text-xs ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{c.isActive ? 'Active' : 'Inactive'}</span>
                 </td>
                 <td className="px-3 py-2 text-right space-x-2">
-                  <button type="button" onClick={() => openEditCountry(c)} className="text-amber-600 hover:text-amber-700 text-xs font-medium">Edit</button>
-                  <button type="button" onClick={() => toggleActiveMutation.mutate({ id: c.id, isActive: !c.isActive })} className="text-slate-500 hover:text-slate-700 text-xs font-medium">{c.isActive ? 'Deactivate' : 'Activate'}</button>
+                  {canEditCountries && (
+                    <>
+                      <button type="button" onClick={() => openEditCountry(c)} className="text-amber-600 hover:text-amber-700 text-xs font-medium">Edit</button>
+                      <button type="button" onClick={() => toggleActiveMutation.mutate({ id: c.id, isActive: !c.isActive })} className="text-slate-500 hover:text-slate-700 text-xs font-medium">{c.isActive ? 'Deactivate' : 'Activate'}</button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}
@@ -243,6 +252,9 @@ const blankEmailForm = { smtpHost: 'smtp.zoho.com', smtpPort: 465, smtpSecure: t
 // bottom of the page.
 function EmailSettingsManager() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  // Save (PUT /api/settings/email-config) and Send Test (POST .../test) both need edit_email_settings.
+  const canEditEmailSettings = has('edit_email_settings');
   const [form, setForm] = useState(blankEmailForm);
   const [testTo, setTestTo] = useState('');
 
@@ -361,37 +373,41 @@ function EmailSettingsManager() {
         </div>
       </div>
 
-      <div className="flex justify-end pt-2">
-        <button
-          type="button"
-          onClick={() => saveMutation.mutate(form)}
-          disabled={saveMutation.isPending}
-          className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
-        >
-          {saveMutation.isPending ? 'Saving...' : 'Save Email Settings'}
-        </button>
-      </div>
+      {canEditEmailSettings && (
+        <>
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => saveMutation.mutate(form)}
+              disabled={saveMutation.isPending}
+              className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
+            >
+              {saveMutation.isPending ? 'Saving...' : 'Save Email Settings'}
+            </button>
+          </div>
 
-      <div className="pt-4 border-t border-slate-100">
-        <p className="text-xs font-medium text-slate-500 uppercase mb-2">Test</p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input
-            type="email"
-            value={testTo}
-            onChange={(e) => setTestTo(e.target.value)}
-            placeholder="Send to (defaults to your own email)"
-            className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
-          />
-          <button
-            type="button"
-            onClick={() => testMutation.mutate()}
-            disabled={testMutation.isPending}
-            className="px-4 py-2 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 disabled:opacity-50"
-          >
-            {testMutation.isPending ? 'Sending...' : 'Send Test Email'}
-          </button>
-        </div>
-      </div>
+          <div className="pt-4 border-t border-slate-100">
+            <p className="text-xs font-medium text-slate-500 uppercase mb-2">Test</p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="email"
+                value={testTo}
+                onChange={(e) => setTestTo(e.target.value)}
+                placeholder="Send to (defaults to your own email)"
+                className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-amber-500"
+              />
+              <button
+                type="button"
+                onClick={() => testMutation.mutate()}
+                disabled={testMutation.isPending}
+                className="px-4 py-2 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 disabled:opacity-50"
+              >
+                {testMutation.isPending ? 'Sending...' : 'Send Test Email'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -419,6 +435,8 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
 // (no create/delete), so admins only ever edit subject/body/active here.
 function NotificationTemplatesManager() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canEditTemplates = has('edit_notification_templates');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState({ subject: '', body: '', isActive: true });
 
@@ -477,7 +495,7 @@ function NotificationTemplatesManager() {
                   {t.channel} {!t.isActive && <span className="text-red-500">· inactive</span>}
                 </p>
               </div>
-              {editingId !== t.id && (
+              {canEditTemplates && editingId !== t.id && (
                 <button
                   onClick={() => { setEditingId(t.id); setDraft({ subject: t.subject || '', body: t.body, isActive: t.isActive }); }}
                   className="px-2 py-1 text-xs font-medium text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded"
@@ -533,10 +551,13 @@ function NotificationTemplatesManager() {
 }
 
 export default function SettingsPage() {
-  const { data: session } = useSession();
-  const isAdmin = (session?.user?.roles || []).includes('ADMIN');
-  const { has: hasPermission } = usePermissions();
-  const canManageNotificationTemplates = hasPermission('manage_notification_templates');
+  const { has: hasPermission, hasAny: hasAnyPermission } = usePermissions();
+  // Company profile save → PUT /api/settings/profile.
+  const canEditSettings = hasPermission('edit_settings');
+  // Regional tab = Default Country (part of the profile PUT) + Country master CRUD.
+  const canViewRegional = hasAnyPermission(['edit_settings', 'create_countries', 'edit_countries']);
+  const canViewEmailSettings = hasPermission('view_email_settings');
+  const canViewNotificationTemplates = hasPermission('view_notification_templates');
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('company');
 
@@ -634,8 +655,9 @@ export default function SettingsPage() {
     { id: 'finance', label: 'Finance' },
     { id: 'branding', label: 'Branding' },
     { id: 'terms', label: 'Terms & Policies' },
-    ...(isAdmin ? [{ id: 'regional', label: 'Regional' }, { id: 'email', label: 'Email (Zoho)' }] : []),
-    ...(canManageNotificationTemplates ? [{ id: 'notifications', label: 'Notification Templates' }] : []),
+    ...(canViewRegional ? [{ id: 'regional', label: 'Regional' }] : []),
+    ...(canViewEmailSettings ? [{ id: 'email', label: 'Email (Zoho)' }] : []),
+    ...(canViewNotificationTemplates ? [{ id: 'notifications', label: 'Notification Templates' }] : []),
   ];
 
   if (isLoading) {
@@ -675,7 +697,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Form */}
-      <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(form); }}>
+      <form onSubmit={(e) => { e.preventDefault(); if (canEditSettings) saveMutation.mutate(form); }}>
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           {activeTab === 'company' && (
             <div className="space-y-4">
@@ -958,7 +980,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {activeTab === 'regional' && isAdmin && (
+          {activeTab === 'regional' && canViewRegional && (
             <div className="space-y-6">
               <div>
                 <h2 className="text-lg font-semibold text-slate-800 mb-4">Regional</h2>
@@ -977,21 +999,23 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {activeTab === 'email' && isAdmin && <EmailSettingsManager />}
+          {activeTab === 'email' && canViewEmailSettings && <EmailSettingsManager />}
 
-          {activeTab === 'notifications' && canManageNotificationTemplates && <NotificationTemplatesManager />}
+          {activeTab === 'notifications' && canViewNotificationTemplates && <NotificationTemplatesManager />}
         </div>
 
         {/* Save Button */}
-        <div className="flex justify-end mt-6">
-          <button
-            type="submit"
-            disabled={saveMutation.isPending}
-            className="px-6 py-2.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
-          >
-            {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
+        {canEditSettings && (
+          <div className="flex justify-end mt-6">
+            <button
+              type="submit"
+              disabled={saveMutation.isPending}
+              className="px-6 py-2.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
+            >
+              {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        )}
       </form>
     </div>
   );

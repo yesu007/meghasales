@@ -27,7 +27,9 @@ interface EventRecord {
 
 interface EventsTabProps {
   leadId: number;
-  canManage: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   canAddDiscussion: boolean;
 }
 
@@ -37,7 +39,7 @@ async function fetchEvents(leadId: number): Promise<EventRecord[]> {
   return res.json();
 }
 
-export default function EventsTab({ leadId, canManage, canAddDiscussion }: EventsTabProps) {
+export default function EventsTab({ leadId, canCreate, canEdit, canDelete, canAddDiscussion }: EventsTabProps) {
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventRecord | null>(null);
@@ -64,7 +66,7 @@ export default function EventsTab({ leadId, canManage, canAddDiscussion }: Event
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h2 className="text-lg font-semibold text-slate-800">Events</h2>
-        {canManage && (
+        {canCreate && (
           <button onClick={() => { setEditingEvent(null); setDrawerOpen(true); }} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 self-start sm:self-auto">
             <PlusIcon className="h-4 w-4" /> New Event
           </button>
@@ -77,7 +79,7 @@ export default function EventsTab({ leadId, canManage, canAddDiscussion }: Event
         <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
           <CalendarDaysIcon className="h-12 w-12 mx-auto text-slate-300" />
           <p className="mt-4 text-slate-600 font-medium">No events yet</p>
-          <p className="text-sm text-slate-400 mt-1">{canManage ? 'Create one to get started' : 'Events will appear here once scheduled'}</p>
+          <p className="text-sm text-slate-400 mt-1">{canCreate ? 'Create one to get started' : 'Events will appear here once scheduled'}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -86,7 +88,9 @@ export default function EventsTab({ leadId, canManage, canAddDiscussion }: Event
               key={event.id}
               leadId={leadId}
               event={event}
-              canManage={canManage}
+              canCreate={canCreate}
+              canEdit={canEdit}
+              canDelete={canDelete}
               canAddDiscussion={canAddDiscussion}
               onEdit={() => { setEditingEvent(event); setDrawerOpen(true); }}
               onDelete={() => { if (window.confirm(`Delete event "${event.title}"?`)) deleteMutation.mutate(event.id); }}

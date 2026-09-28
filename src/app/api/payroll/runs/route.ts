@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { generateRunPayslips } from '@/lib/payroll/runService';
 
@@ -16,7 +16,7 @@ function currentUserId(session: any): number | null {
 
 export async function GET() {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requireAnyPermission(['view_payroll', 'view_payroll_reports']);
   if (denied) return denied;
 
   try {

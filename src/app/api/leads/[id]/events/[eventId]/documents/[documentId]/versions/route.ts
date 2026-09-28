@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 // "Replace with a newer version" — appends a new EventDocumentVersion row
 // rather than overwriting anything, so the full history stays fetchable.
 export async function POST(request: NextRequest, { params }: { params: { documentId: string } }) {
-  const denied = await requirePermission('manage_lead_events');
+  const denied = await requirePermission('edit_lead_events');
   if (denied) return denied;
   if (!isStorageConfigured()) {
     return NextResponse.json(

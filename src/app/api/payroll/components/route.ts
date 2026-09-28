@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_salary_structures');
   if (denied) return denied;
 
   try {
@@ -22,7 +22,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_salary_structures');
+  const denied = await requirePermission('create_salary_structures');
   if (denied) return denied;
 
   try {

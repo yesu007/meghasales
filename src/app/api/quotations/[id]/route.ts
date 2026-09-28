@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma';
 import { authOptions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { invoiceFieldsFromQuotation, nextInvoiceNumber } from '@/lib/invoiceFromQuotation';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
 import { materializeQuotationMilestones } from '@/lib/quotationMilestoneInvoicing';
 
@@ -59,7 +59,7 @@ async function generateInvoiceForQuotation(tx: Prisma.TransactionClient, quotati
 }
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_quotations');
+  const denied = await requireAnyPermission(['view_quotations', 'view_products', 'view_projects']);
   if (denied) return denied;
 
   try {
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_quotations');
+  const denied = await requirePermission('edit_quotations');
   if (denied) return denied;
 
   try {
@@ -248,7 +248,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_quotations');
+  const denied = await requirePermission('delete_quotations');
   if (denied) return denied;
 
   try {

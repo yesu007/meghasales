@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAuth, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +21,7 @@ export const dynamic = 'force-dynamic';
 // leadId), matched with OR since either counts as "belongs to this
 // Lead/Customer".
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_products');
+  const denied = await requireAuth();
   if (denied) return denied;
 
   try {
@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_products');
+  const denied = await requirePermission('create_products');
   if (denied) return denied;
 
   try {

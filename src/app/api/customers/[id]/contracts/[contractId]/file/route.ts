@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // server-side. Same view_leads gate as GET /api/customers/[id]/contracts;
 // the contract must belong to this customer.
 export async function GET(request: NextRequest, { params }: { params: { id: string; contractId: string } }) {
-  const denied = await requirePermission('view_leads');
+  const denied = await requirePermission('view_customers');
   if (denied) return denied;
 
   const leadId = parseInt(params.id, 10);

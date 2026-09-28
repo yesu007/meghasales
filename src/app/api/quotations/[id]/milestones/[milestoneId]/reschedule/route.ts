@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 // invoice can still move, but only with a reason on record, since money has
 // already moved against it.
 export async function POST(request: NextRequest, { params }: { params: { id: string; milestoneId: string } }) {
-  const denied = await requirePermission('manage_quotations');
+  const denied = await requirePermission('edit_quotations');
   if (denied) return denied;
 
   try {

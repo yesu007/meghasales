@@ -130,8 +130,15 @@ const n = (v: string) => (v === '' || v == null ? 0 : Number(v) || 0);
 
 export default function BillsPage() {
   const queryClient = useQueryClient();
-  const { has } = usePermissions();
-  const canManage = has('manage_expenses');
+  const { has, hasAny } = usePermissions();
+  const canCreate = has('create_bills');
+  const canEdit = has('edit_bills');
+  const canDelete = has('delete_bills');
+  // GST / TDS settings edit expense sub-categories, so they follow the
+  // Expenses permissions (PUT → edit_expenses, POST → create_expenses).
+  const canEditTax = has('edit_expenses');
+  const canCreateTax = has('create_expenses');
+  const canOpenTaxSettings = hasAny(['create_expenses', 'edit_expenses']);
 
   // ---- list state ----
   const [statusFilter, setStatusFilter] = useState('');
@@ -458,17 +465,21 @@ export default function BillsPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Bills</h1>
         </div>
-        {canManage && (
+        {(canOpenTaxSettings || canCreate) && (
           <div className="flex flex-wrap gap-2">
-            <button onClick={openTaxSettings} className="flex items-center gap-2 px-4 py-2 min-h-[44px] border border-slate-300 bg-white text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50">
-              <Cog6ToothIcon className="h-4 w-4" /> GST / TDS Settings
-            </button>
-            <button
-              onClick={() => { if (showForm) closeForm(); else { setForm(blankForm()); setShowForm(true); scrollToForm(); } }}
-              className="flex items-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-            >
-              <PlusIcon className="h-4 w-4" /> New Bill
-            </button>
+            {canOpenTaxSettings && (
+              <button onClick={openTaxSettings} className="flex items-center gap-2 px-4 py-2 min-h-[44px] border border-slate-300 bg-white text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50">
+                <Cog6ToothIcon className="h-4 w-4" /> GST / TDS Settings
+              </button>
+            )}
+            {canCreate && (
+              <button
+                onClick={() => { if (showForm) closeForm(); else { setForm(blankForm()); setShowForm(true); scrollToForm(); } }}
+                className="flex items-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+              >
+                <PlusIcon className="h-4 w-4" /> New Bill
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -506,7 +517,7 @@ export default function BillsPage() {
                 onChange={(v) => { setForm((f) => ({ ...f, supplierId: v })); clearError('supplierId'); }}
                 options={suppliers.map((s) => ({ value: String(s.id), label: s.gstin ? `${s.name} (${s.gstin})` : s.name }))}
                 placeholder="Select vendor"
-                onAdd={() => { setVendorForm(blankVendor); setShowVendorForm(true); }}
+                onAdd={canCreate ? () => { setVendorForm(blankVendor); setShowVendorForm(true); } : undefined}
                 addLabel="Add Vendor"
                 error={!!errors.supplierId}
               />
@@ -783,13 +794,13 @@ export default function BillsPage() {
                     <td className="px-4 py-3">
                       <div className="flex justify-end items-center gap-1">
                         <button onClick={() => setViewingId(b.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View"><EyeIcon className="h-4 w-4" /></button>
-                        {canManage && b.status === 'DRAFT' && (
+                        {canEdit && b.status === 'DRAFT' && (
                           <button onClick={() => openEdit(b.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>
                         )}
-                        {canManage && b.status === 'POSTED' && (
+                        {canEdit && b.status === 'POSTED' && (
                           <button onClick={() => openPayment(b)} className="p-1.5 rounded text-slate-400 hover:text-green-700 hover:bg-green-50" title="Update payment status"><BanknotesIcon className="h-4 w-4" /></button>
                         )}
-                        {canManage && (
+                        {canDelete && (
                           <button
                             onClick={() => { if (window.confirm(`Delete bill ${b.billNumber}?${b.status === 'POSTED' ? ' Its linked expense entry will also be removed.' : ''}`)) remove.mutate(b.id); }}
                             className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
@@ -1084,12 +1095,14 @@ export default function BillsPage() {
                           <input type="number" min="0" max="100" step="0.01" disabled={!d.tdsApplicable} value={d.tdsPercent} onChange={(e) => setD({ tdsPercent: e.target.value })} className={`${inputCls} w-24 disabled:bg-slate-50`} />
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <button type="button" disabled={!dirty || saveTax.isPending} onClick={() => saveTax.mutate(s)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-lg hover:bg-amber-700 disabled:opacity-40">Save</button>
+                          {canEditTax && (
+                            <button type="button" disabled={!dirty || saveTax.isPending} onClick={() => saveTax.mutate(s)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-lg hover:bg-amber-700 disabled:opacity-40">Save</button>
+                          )}
                         </td>
                       </tr>
                     );
                   })}
-                  {taxCategory && (
+                  {taxCategory && canCreateTax && (
                     <tr className="border-t border-slate-200 bg-amber-50/40">
                       <td className="px-3 py-2"><input value={newSub.name} onChange={(e) => setNewSub((f) => ({ ...f, name: e.target.value }))} placeholder="New sub-category" className={inputCls} /></td>
                       <td className="px-3 py-2">

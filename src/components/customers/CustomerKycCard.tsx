@@ -69,7 +69,7 @@ async function fetchKyc(leadId: number): Promise<CustomerKyc | null> {
 }
 
 async function fetchUsers(): Promise<UserOption[]> {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
@@ -77,10 +77,10 @@ async function fetchUsers(): Promise<UserOption[]> {
 
 interface CustomerKycCardProps {
   leadId: number;
-  canManage: boolean;
+  canEdit: boolean;
 }
 
-export default function CustomerKycCard({ leadId, canManage }: CustomerKycCardProps) {
+export default function CustomerKycCard({ leadId, canEdit }: CustomerKycCardProps) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<KycFormState>(blankForm);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -214,25 +214,25 @@ export default function CustomerKycCard({ leadId, canManage }: CustomerKycCardPr
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">Legal Company Name *</label>
-              <input disabled={!canManage} value={form.legalCompanyName} onChange={(e) => { setForm((f) => ({ ...f, legalCompanyName: e.target.value })); clearFieldError('legalCompanyName'); }} className={inputClass('legalCompanyName')} />
+              <input disabled={!canEdit} value={form.legalCompanyName} onChange={(e) => { setForm((f) => ({ ...f, legalCompanyName: e.target.value })); clearFieldError('legalCompanyName'); }} className={inputClass('legalCompanyName')} />
               {formErrors.legalCompanyName && <p className="text-xs text-red-600 mt-1">{formErrors.legalCompanyName}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Registration / Tax ID</label>
-              <input disabled={!canManage} value={form.registrationTaxId} onChange={(e) => setForm((f) => ({ ...f, registrationTaxId: e.target.value }))} className={inputClass('registrationTaxId')} placeholder="GST / VAT / TIN" />
+              <input disabled={!canEdit} value={form.registrationTaxId} onChange={(e) => setForm((f) => ({ ...f, registrationTaxId: e.target.value }))} className={inputClass('registrationTaxId')} placeholder="GST / VAT / TIN" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Authorized Contact</label>
-              <input disabled={!canManage} value={form.authorizedContact} onChange={(e) => setForm((f) => ({ ...f, authorizedContact: e.target.value }))} className={inputClass('authorizedContact')} />
+              <input disabled={!canEdit} value={form.authorizedContact} onChange={(e) => setForm((f) => ({ ...f, authorizedContact: e.target.value }))} className={inputClass('authorizedContact')} />
             </div>
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">Billing Address</label>
-              <textarea disabled={!canManage} rows={2} value={form.billingAddress} onChange={(e) => setForm((f) => ({ ...f, billingAddress: e.target.value }))} className={inputClass('billingAddress')} />
+              <textarea disabled={!canEdit} rows={2} value={form.billingAddress} onChange={(e) => setForm((f) => ({ ...f, billingAddress: e.target.value }))} className={inputClass('billingAddress')} />
             </div>
 
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">KYC Documents</label>
-              {canManage && (
+              {canEdit && (
                 <CustomerDocumentUploadBox onFileSelected={(file) => uploadMutation.mutate(file)} disabled={uploadMutation.isPending} label="Upload Document" />
               )}
               {kyc && kyc.documents.length > 0 ? (
@@ -251,7 +251,7 @@ export default function CustomerKycCard({ leadId, canManage }: CustomerKycCardPr
                           <a href={`/api/customers/${leadId}/kyc/documents/${doc.id}/file`} target="_blank" rel="noreferrer" className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View"><EyeIcon className="h-4 w-4" /></a>
                         )}
                         <a href={`/api/customers/${leadId}/kyc/documents/${doc.id}/file?download=1`} target="_blank" rel="noreferrer" download className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></a>
-                        {canManage && (
+                        {canEdit && (
                           <>
                             <label className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 cursor-pointer" title="Replace">
                               <ArrowUpTrayIcon className="h-4 w-4" />
@@ -281,7 +281,7 @@ export default function CustomerKycCard({ leadId, canManage }: CustomerKycCardPr
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Verification Status</label>
               <AddableSelect
-                disabled={!canManage}
+                disabled={!canEdit}
                 value={form.verificationStatus}
                 onChange={(v) => setForm((f) => ({ ...f, verificationStatus: v }))}
                 options={KYC_VERIFICATION_STATUSES.map((s) => ({ value: s.value, label: s.label }))}
@@ -291,7 +291,7 @@ export default function CustomerKycCard({ leadId, canManage }: CustomerKycCardPr
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Verification By</label>
               <AddableSelect
-                disabled={!canManage}
+                disabled={!canEdit}
                 value={form.verifiedById}
                 onChange={(v) => setForm((f) => ({ ...f, verifiedById: v }))}
                 options={[{ value: '', label: 'Unassigned' }, ...users.map((u) => ({ value: String(u.id), label: u.fullName }))]}
@@ -301,11 +301,11 @@ export default function CustomerKycCard({ leadId, canManage }: CustomerKycCardPr
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Verification Date</label>
-              <input disabled={!canManage} type="date" value={form.verifiedAt} onChange={(e) => setForm((f) => ({ ...f, verifiedAt: e.target.value }))} className={inputClass('verifiedAt')} />
+              <input disabled={!canEdit} type="date" value={form.verifiedAt} onChange={(e) => setForm((f) => ({ ...f, verifiedAt: e.target.value }))} className={inputClass('verifiedAt')} />
             </div>
           </div>
 
-          {canManage && (
+          {canEdit && (
             <div className="flex justify-end pt-2 border-t border-slate-100">
               <button type="submit" disabled={saveMutation.isPending} className="px-4 py-2 min-h-[44px] bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
                 {saveMutation.isPending ? 'Saving...' : 'Save KYC'}

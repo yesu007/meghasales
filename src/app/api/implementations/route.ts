@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 import { GO_LIVE_STAGES, POST_GO_LIVE_STAGES } from '@/lib/implementationStages';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_implementations');
+  const denied = await requireAnyPermission(['view_implementations', 'view_customers', 'view_meeting_reports']);
   if (denied) return denied;
 
   try {
@@ -130,7 +130,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_implementations');
+  const denied = await requirePermission('create_implementations');
   if (denied) return denied;
 
   try {

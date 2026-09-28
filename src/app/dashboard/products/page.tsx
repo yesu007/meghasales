@@ -67,6 +67,9 @@ function RowActionsMenu({ items }: { items: RowActionItem[] }) {
     setOpen((o) => !o);
   };
 
+  // Nothing this user is permitted to do on the row — no empty menu.
+  if (items.length === 0) return null;
+
   return (
     <>
       <button ref={btnRef} onClick={toggle} className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Row actions">
@@ -123,7 +126,13 @@ export default function ProductsPage() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { has } = usePermissions();
-  const canManageQuotations = has('manage_quotations');
+  const canCreate = has('create_products');
+  const canEdit = has('edit_products');
+  const canDelete = has('delete_products');
+  // "Budget Estimation" / "+ New Estimation" → POST /api/quotations.
+  const canCreateQuotations = has('create_quotations');
+  // "+ Add Customer" → the Customers module's own create flow (POST /api/customers).
+  const canCreateCustomers = has('create_customers');
   const searchParams = useSearchParams();
   // Landed here from the Quotation form after saving a new Budget
   // Estimation (?expand=<productId>, set by that page's own post-save
@@ -274,12 +283,14 @@ export default function ProductsPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Products</h1>
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Customer engagements grouped by vertical, with a responsible head and budget</p>
         </div>
-        <button
-          onClick={() => { setEditingId(null); setForm(blankProductForm); setDrawerOpen(true); }}
-          className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-        >
-          <PlusIcon className="h-4 w-4" /> Add Product
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => { setEditingId(null); setForm(blankProductForm); setDrawerOpen(true); }}
+            className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+          >
+            <PlusIcon className="h-4 w-4" /> Add Product
+          </button>
+        )}
       </div>
 
       {/* Search — same bordered-card placement above the table as the other
@@ -371,19 +382,22 @@ export default function ProductsPage() {
                               // existing estimations. Omitted entirely (not just disabled)
                               // when the user can't create quotations or the product is
                               // deleted, same gating as the panel's own "+ New Estimation".
-                              ...(canManageQuotations && p.isActive
+                              ...(canCreateQuotations && p.isActive
                                 ? [{ key: 'analytics', label: 'Budget Estimation', icon: ChartBarIcon, onClick: () => router.push(`/dashboard/quotations?productId=${p.id}&leadId=${p.customerId ?? p.leadId}`) }]
                                 : []),
-                              { key: 'edit', label: 'Edit Product', icon: PencilIcon, onClick: () => openEdit(p) },
-                              p.isActive
-                                ? {
-                                    key: 'delete',
-                                    label: 'Delete Product',
-                                    icon: TrashIcon,
-                                    danger: true,
-                                    onClick: () => { if (window.confirm(`Delete product "${p.productName}"?`)) toggleActive.mutate({ id: p.id, isActive: false }); },
-                                  }
-                                : { key: 'reactivate', label: 'Reactivate Product', icon: ArrowPathIcon, onClick: () => toggleActive.mutate({ id: p.id, isActive: true }) },
+                              ...(canEdit ? [{ key: 'edit', label: 'Edit Product', icon: PencilIcon, onClick: () => openEdit(p) }] : []),
+                              // Delete → DELETE (delete_products); Reactivate → PATCH (edit_products).
+                              ...(p.isActive
+                                ? (canDelete
+                                    ? [{
+                                        key: 'delete',
+                                        label: 'Delete Product',
+                                        icon: TrashIcon,
+                                        danger: true,
+                                        onClick: () => { if (window.confirm(`Delete product "${p.productName}"?`)) toggleActive.mutate({ id: p.id, isActive: false }); },
+                                      }]
+                                    : [])
+                                : (canEdit ? [{ key: 'reactivate', label: 'Reactivate Product', icon: ArrowPathIcon, onClick: () => toggleActive.mutate({ id: p.id, isActive: true }) }] : [])),
                             ]}
                           />
                         </td>
@@ -394,7 +408,7 @@ export default function ProductsPage() {
                             <ProductBudgetPanel
                               productId={p.id}
                               newEstimationHref={
-                                canManageQuotations && p.isActive
+                                canCreateQuotations && p.isActive
                                   ? `/dashboard/quotations?productId=${p.id}&leadId=${p.customerId ?? p.leadId}`
                                   : undefined
                               }
@@ -421,7 +435,7 @@ export default function ProductsPage() {
         setFormErrors={setFormErrors}
         onSave={(data) => save.mutate(data)}
         isSaving={save.isPending}
-        onAddCustomer={handleAddCustomer}
+        onAddCustomer={canCreateCustomers ? handleAddCustomer : undefined}
       />
     </div>
   );

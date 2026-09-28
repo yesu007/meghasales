@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_implementations');
+  const denied = await requireAnyPermission(['view_implementations', 'view_customers']);
   if (denied) return denied;
 
   try {
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_implementations');
+  const denied = await requirePermission('edit_implementations');
   if (denied) return denied;
 
   try {
@@ -102,7 +102,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_implementations');
+  const denied = await requirePermission('delete_implementations');
   if (denied) return denied;
 
   try {

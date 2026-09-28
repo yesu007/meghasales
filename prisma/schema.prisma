@@ -24,11 +24,18 @@ model Role {
   @@map("roles")
 }
 
+// Module → Page → Action hierarchy (see src/lib/permissionCatalog.ts, the
+// source of truth the Roles screen renders from). page/action are null for
+// custom permissions added from the Roles screen without one; action is
+// view | create | edit | delete | other.
 model Permission {
   id          Int              @id @default(autoincrement())
   name        String           @unique
   description String?
   module      String
+  page        String?
+  action      String?
+  sortOrder   Int              @default(0) @map("sort_order")
   createdAt   DateTime         @default(now()) @map("created_at")
   roles       RolePermission[]
 

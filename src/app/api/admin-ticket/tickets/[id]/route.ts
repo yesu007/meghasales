@@ -64,7 +64,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isAdminTicketModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_admin_tickets');
+  const denied = await requirePermission('edit_admin_tickets');
   if (denied) return denied;
 
   try {

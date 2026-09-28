@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface LeadSourceRow {
   id: number;
@@ -26,6 +27,10 @@ const blankForm = { name: '' };
 
 export default function LeadSourcesPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_lead_sources');
+  const canEdit = has('edit_lead_sources');
+  const canDelete = has('delete_lead_sources');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(blankForm);
@@ -110,12 +115,14 @@ export default function LeadSourcesPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Lead Sources</h1>
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Where a Lead or Customer says they came from</p>
         </div>
-        <button
-          onClick={() => { if (showForm) closeForm(); else { setShowForm(true); scrollToForm(); } }}
-          className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-        >
-          <PlusIcon className="h-4 w-4" /> New Source
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => { if (showForm) closeForm(); else { setShowForm(true); scrollToForm(); } }}
+            className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+          >
+            <PlusIcon className="h-4 w-4" /> New Source
+          </button>
+        )}
       </div>
 
       {/* Search — same bordered-card placement above the table as Leads. */}
@@ -207,19 +214,19 @@ export default function LeadSourcesPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => openEdit(s)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>
-                        {s.isActive ? (
+                        {canEdit && <button onClick={() => openEdit(s)} className="text-xs font-medium text-slate-500 hover:text-slate-800">Edit</button>}
+                        {s.isActive ? (canDelete && (
                           <button
                             onClick={() => { if (window.confirm(`Delete source "${s.name}"?`)) toggleActive.mutate({ id: s.id, isActive: false }); }}
                             className="text-xs font-medium text-slate-500 hover:text-red-600"
                           >
                             Delete
                           </button>
-                        ) : (
+                        )) : (canEdit && (
                           <button onClick={() => toggleActive.mutate({ id: s.id, isActive: true })} className="text-xs font-medium text-green-700 hover:text-green-800">
                             Reactivate
                           </button>
-                        )}
+                        ))}
                       </div>
                     </td>
                   </tr>

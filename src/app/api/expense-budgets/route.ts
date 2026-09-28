@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_expense_budgets');
+  const denied = await requirePermission('create_expense_budgets');
   if (denied) return denied;
 
   try {

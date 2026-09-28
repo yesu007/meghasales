@@ -15,7 +15,7 @@ function currentUserId(session: any): number | null {
 
 export async function GET(request: NextRequest) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_loans');
   if (denied) return denied;
 
   try {
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('create_loans');
   if (denied) return denied;
 
   try {

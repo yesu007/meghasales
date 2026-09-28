@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from 'react';
 import { useParams, useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useSession } from 'next-auth/react';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tab } from '@headlessui/react';
 import { ArrowLeftIcon, UserGroupIcon, CalendarDaysIcon, ClockIcon, FolderOpenIcon, DocumentTextIcon, BanknotesIcon, PhoneIcon, Squares2X2Icon, RectangleStackIcon, TagIcon } from '@heroicons/react/24/outline';
@@ -94,18 +94,19 @@ type TabKey = (typeof TAB_KEYS)[number];
 export default function CustomerDetailPage() {
   const params = useParams();
   const id = params.id as string;
-  const { data: session } = useSession();
   const queryClient = useQueryClient();
   const { options: leadStatusOptions } = useLeadStatusOptions();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const roles = session?.user?.roles || [];
-  const permissions = session?.user?.permissions || [];
-  const canManage = roles.includes('ADMIN') || permissions.includes('manage_lead_events');
-  const canView = roles.includes('ADMIN') || permissions.includes('view_lead_events');
-  const canAddDiscussion = canManage || permissions.includes('add_lead_discussion');
+  const { has, hasAny } = usePermissions();
+  const canEditCustomer = has('edit_customers');
+  const canView = has('view_lead_events');
+  const canCreateEvents = has('create_lead_events');
+  const canEditEvents = has('edit_lead_events');
+  const canDeleteEvents = has('delete_lead_events');
+  const canAddDiscussion = hasAny(['edit_lead_events', 'add_lead_discussion']);
 
   const tabParam = searchParams.get('tab') as TabKey | null;
   const selectedIndex = Math.max(0, TAB_KEYS.indexOf(tabParam ?? 'overview'));
@@ -184,7 +185,7 @@ export default function CustomerDetailPage() {
         <div className="self-start sm:self-auto sm:w-56">
           <AddableSelect
             value={customer.status}
-            disabled={statusMutation.isPending}
+            disabled={!canEditCustomer || statusMutation.isPending}
             onChange={(v) => statusMutation.mutate(v)}
             options={leadStatusOptions.map((s) => ({ value: s.code, label: s.label }))}
             placeholder="Select Status"
@@ -294,7 +295,7 @@ export default function CustomerDetailPage() {
             </Tab.Panel>
             <Tab.Panel>
               {isConfirmed && canView ? (
-                <EventsTab leadId={customer.id} canManage={canManage} canAddDiscussion={canAddDiscussion} />
+                <EventsTab leadId={customer.id} canCreate={canCreateEvents} canEdit={canEditEvents} canDelete={canDeleteEvents} canAddDiscussion={canAddDiscussion} />
               ) : (
                 <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
                   <CalendarDaysIcon className="h-12 w-12 mx-auto text-slate-300" />
@@ -330,10 +331,10 @@ export default function CustomerDetailPage() {
                     </Tab.List>
                     <Tab.Panels className="mt-4">
                       <Tab.Panel>
-                        <CustomerKycCard leadId={customer.id} canManage={canManage} />
+                        <CustomerKycCard leadId={customer.id} canEdit={canEditCustomer} />
                       </Tab.Panel>
                       <Tab.Panel>
-                        <CustomerContractsCard leadId={customer.id} canManage={canManage} />
+                        <CustomerContractsCard leadId={customer.id} canEdit={canEditCustomer} />
                       </Tab.Panel>
                     </Tab.Panels>
                   </Tab.Group>
@@ -346,7 +347,7 @@ export default function CustomerDetailPage() {
               )}
             </Tab.Panel>
             <Tab.Panel>
-              <FollowUpsTab leadId={customer.id} />
+              <FollowUpsTab leadId={customer.id} canAdd={canEditCustomer} />
             </Tab.Panel>
             <Tab.Panel>
               <ActivityTimeline leadId={customer.id} />

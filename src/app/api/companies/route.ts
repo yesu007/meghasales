@@ -3,12 +3,12 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_companies');
+  const denied = await requireAnyPermission(['view_companies', 'view_leads', 'view_quotations']);
   if (denied) return denied;
 
   try {
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_companies');
+  const denied = await requirePermission('create_companies');
   if (denied) return denied;
 
   try {

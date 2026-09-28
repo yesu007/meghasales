@@ -13,6 +13,7 @@ import { PlusIcon, PencilIcon, TrashIcon, EyeIcon, ChevronDownIcon, ChevronUpIco
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface Shift {
   id: number;
@@ -69,6 +70,12 @@ const blankShiftForm = {
 
 export default function ShiftMasterPanel() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreateShift = has('create_shifts');
+  const canEditShift = has('edit_shifts');
+  const canDeleteShift = has('delete_shifts');
+  // Shift assignments (create/edit/delete) are all gated by edit_shifts.
+  const canEditAssignments = has('edit_shifts');
   const { data: shifts = [] } = useQuery({ queryKey: ['shifts'], queryFn: fetchShifts });
   const { data: employees = [] } = useQuery({ queryKey: ['payroll-employees-all'], queryFn: fetchEmployees });
 
@@ -230,9 +237,11 @@ export default function ShiftMasterPanel() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-800">Shift Master</h2>
-          <button onClick={() => (showShiftForm ? resetShiftForm() : openNewShiftForm())} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
-            <PlusIcon className="h-4 w-4" /> New Shift
-          </button>
+          {canCreateShift && (
+            <button onClick={() => (showShiftForm ? resetShiftForm() : openNewShiftForm())} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
+              <PlusIcon className="h-4 w-4" /> New Shift
+            </button>
+          )}
         </div>
 
         {showShiftForm && (
@@ -322,14 +331,14 @@ export default function ShiftMasterPanel() {
                       <td className="px-4 py-3 text-slate-600">{ATTENDANCE_TYPE_LABELS[s.attendanceRequirement]}</td>
                       <td className="px-4 py-3 text-slate-600">{s._count?.assignments ?? 0}</td>
                       <td className="px-4 py-3">
-                        <span onClick={(e) => { e.stopPropagation(); toggleShiftActive.mutate({ id: s.id, isActive: !s.isActive }); }} className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                        <span onClick={canEditShift ? (e) => { e.stopPropagation(); toggleShiftActive.mutate({ id: s.id, isActive: !s.isActive }); } : undefined} className={`px-2 py-0.5 rounded text-xs font-medium ${canEditShift ? 'cursor-pointer' : ''} ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                           {s.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => openEditShift(s)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>
-                          <button onClick={() => handleDeleteShift(s)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>
+                          {canEditShift && <button onClick={() => openEditShift(s)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>}
+                          {canDeleteShift && <button onClick={() => handleDeleteShift(s)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>}
                           <button onClick={() => setExpandedShiftId((e) => (e === s.id ? null : s.id))} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="More details">
                             {expandedShiftId === s.id ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
                           </button>
@@ -365,9 +374,11 @@ export default function ShiftMasterPanel() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-800">Employee Shift Assignment</h2>
-          <button onClick={() => setShowAssignForm(true)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
-            <PlusIcon className="h-4 w-4" /> Assign Shift
-          </button>
+          {canEditAssignments && (
+            <button onClick={() => setShowAssignForm(true)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
+              <PlusIcon className="h-4 w-4" /> Assign Shift
+            </button>
+          )}
         </div>
 
         {assignments.length === 0 ? (
@@ -408,8 +419,12 @@ export default function ShiftMasterPanel() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => setViewTarget(a)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="View"><EyeIcon className="h-4 w-4" /></button>
-                        <button onClick={() => openEditAssignment(a)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>
-                        <button onClick={() => handleDeleteAssignment(a)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>
+                        {canEditAssignments && (
+                          <>
+                            <button onClick={() => openEditAssignment(a)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>
+                            <button onClick={() => handleDeleteAssignment(a)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

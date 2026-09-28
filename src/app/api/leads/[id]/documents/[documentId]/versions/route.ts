@@ -22,7 +22,7 @@ async function resolveDocumentLeadId(doc: { leadId: number | null; eventId: numb
 // documents alike (that route is left untouched for the per-event
 // DocumentList view; this one backs the aggregated LeadDocumentsTab).
 export async function POST(request: NextRequest, { params }: { params: { id: string; documentId: string } }) {
-  const denied = await requirePermission('manage_lead_events');
+  const denied = await requirePermission('edit_lead_events');
   if (denied) return denied;
   if (!isStorageConfigured()) {
     return NextResponse.json(

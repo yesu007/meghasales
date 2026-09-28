@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // in lockstep with every mutation across three other tables, which is a
 // real double-entry-bookkeeping engine and out of scope here.
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_accounting');
+  const denied = await requirePermission('view_customer_ledger');
   if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);

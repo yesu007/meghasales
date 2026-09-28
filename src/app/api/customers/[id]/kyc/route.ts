@@ -13,7 +13,7 @@ const VERIFICATION_STATUSES = ['PENDING', 'VERIFIED', 'REJECTED', 'EXPIRED'];
 // status=CONFIRMED, i.e. a "Customer"). Fully independent of Lead's own
 // API/pages; reuses only the Lead row itself as the parent record.
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_leads');
+  const denied = await requirePermission('view_customers');
   if (denied) return denied;
 
   try {
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 // Upsert — a customer has at most one KYC record, created on first save.
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requirePermission('edit_customers');
   if (denied) return denied;
 
   try {

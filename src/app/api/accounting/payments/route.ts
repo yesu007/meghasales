@@ -19,7 +19,7 @@ function round(n: number): number {
 const PAYMENT_RATE_TYPE = 'MANUAL';
 
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_accounting');
+  const denied = await requirePermission('view_invoices');
   if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);
@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_payments');
+  const denied = await requirePermission('create_payments');
   if (denied) return denied;
   try {
     const body = await request.json();

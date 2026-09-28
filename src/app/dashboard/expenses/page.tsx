@@ -13,6 +13,7 @@ import { invalidateExpenseData } from '@/lib/queryInvalidation';
 import AddableSelect from '@/components/AddableSelect';
 import AttachmentUploadField from '@/components/AttachmentUploadField';
 import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface ExpenseSubCategory { id: number; categoryId: number; name: string; isActive: boolean; gstType: string; tdsApplicable: boolean; tdsPercent: string }
 interface ExpenseCategory { id: number; name: string; description: string | null; isActive: boolean; subCategories: ExpenseSubCategory[] }
@@ -202,6 +203,10 @@ const blankForm = {
 export default function ExpensesPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_expenses');
+  const canEdit = has('edit_expenses');
+  const canDelete = has('delete_expenses');
   const [statusFilter, setStatusFilter] = useState('');
   // Top-level Overall Expenses / Project Expenses / Product Expenses tabs —
   // independent of the status filter below (payment status vs. whether the
@@ -492,24 +497,26 @@ export default function ExpensesPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              // The form's Expense Type follows the active main tab; a project /
-              // product already picked in the side list is pre-filled.
-              onClick={() => {
-                if (showForm) { closeForm(); return; }
-                setForm({
-                  ...blankForm,
-                  expenseType: expenseTypeFilter,
-                  projectId: expenseTypeFilter === 'PROJECT' ? projectFilter : '',
-                  productId: expenseTypeFilter === 'PRODUCT' ? productFilter : '',
-                });
-                setShowForm(true);
-                scrollToForm();
-              }}
-              className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-            >
-              <PlusIcon className="h-4 w-4" /> New Expense
-            </button>
+            {canCreate && (
+              <button
+                // The form's Expense Type follows the active main tab; a project /
+                // product already picked in the side list is pre-filled.
+                onClick={() => {
+                  if (showForm) { closeForm(); return; }
+                  setForm({
+                    ...blankForm,
+                    expenseType: expenseTypeFilter,
+                    projectId: expenseTypeFilter === 'PROJECT' ? projectFilter : '',
+                    productId: expenseTypeFilter === 'PRODUCT' ? productFilter : '',
+                  });
+                  setShowForm(true);
+                  scrollToForm();
+                }}
+                className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+              >
+                <PlusIcon className="h-4 w-4" /> New Expense
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowFilters((v) => !v)}
@@ -620,7 +627,7 @@ export default function ExpensesPage() {
                 onChange={(v) => { setForm((f) => ({ ...f, categoryId: v, subCategoryId: '' })); clearFieldError('categoryId'); }}
                 options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
                 placeholder="Select category"
-                onAdd={openAddCategory}
+                onAdd={canCreate ? openAddCategory : undefined}
                 addLabel="Add Category"
                 error={!!formErrors.categoryId}
               />
@@ -633,7 +640,7 @@ export default function ExpensesPage() {
                 onChange={(v) => { setForm((f) => ({ ...f, subCategoryId: v })); clearFieldError('subCategoryId'); }}
                 options={subCategoryOptions.map((s) => ({ value: String(s.id), label: s.name }))}
                 placeholder={!form.categoryId ? 'Select a category first' : subCategoryOptions.length === 0 ? 'No sub-categories' : 'Select sub-category'}
-                onAdd={openAddSubCategory}
+                onAdd={canCreate ? openAddSubCategory : undefined}
                 addLabel="Add Sub Category"
                 // Enabled as soon as a category is picked (not only when it
                 // already has sub-categories), so the first one can be added.
@@ -1047,19 +1054,23 @@ export default function ExpensesPage() {
                         </div>
                       ) : (
                       <div className="flex justify-end gap-2">
-                        {e.status === 'PENDING' && (
+                        {canEdit && e.status === 'PENDING' && (
                           <button onClick={() => openPayModal(e)} className="text-xs font-medium text-green-700 hover:text-green-800">Mark Paid</button>
                         )}
-                        <button onClick={() => openEdit(e)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                          <PencilIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => { if (window.confirm(`Delete expense ${e.expenseNumber}?`)) remove.mutate(e.id); }}
-                          className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
-                          title="Delete"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
+                        {canEdit && (
+                          <button onClick={() => openEdit(e)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                            <PencilIcon className="h-4 w-4" />
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            onClick={() => { if (window.confirm(`Delete expense ${e.expenseNumber}?`)) remove.mutate(e.id); }}
+                            className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                            title="Delete"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                       )}
                     </td>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { isProbationEmploymentType } from '@/lib/payroll/probationEngine';
 
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requireAnyPermission(['view_employees', 'view_timesheet']);
   if (denied) return denied;
 
   try {
@@ -43,7 +43,7 @@ const DATE_FIELDS = ['dateOfJoining', 'dateOfLeaving', 'probationEndDate'] as co
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_employees');
   if (denied) return denied;
 
   try {
@@ -164,7 +164,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 // undoing a wrong onboarding, not offboarding a real employee.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('delete_employees');
   if (denied) return denied;
 
   try {

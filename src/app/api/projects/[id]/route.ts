@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_projects');
+  const denied = await requirePermission('edit_projects');
   if (denied) return denied;
   try {
     const body = await request.json();
@@ -126,7 +126,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 // Soft-delete (isActive = false), same convention as Vertical — fully
 // reversible from the same screen (Edit -> Reactivate).
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_projects');
+  const denied = await requirePermission('delete_projects');
   if (denied) return denied;
   try {
     const id = parseInt(params.id);

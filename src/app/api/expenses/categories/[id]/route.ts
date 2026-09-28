@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 // The collection route (../route.ts) stays create/list-only, unchanged.
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('edit_expenses');
   if (denied) return denied;
 
   try {
@@ -39,7 +39,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('delete_expenses');
   if (denied) return denied;
 
   try {

@@ -24,7 +24,7 @@ function parsePeriod(searchParams: URLSearchParams): { year: number; month: numb
 // instead of a separate balance table.
 export async function GET(request: NextRequest) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_timesheet');
   if (denied) return denied;
 
   try {
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
 // being editable while their run is DRAFT.
 export async function PATCH(request: NextRequest) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_timesheet');
   if (denied) return denied;
 
   try {

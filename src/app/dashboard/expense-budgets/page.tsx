@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/currency';
 import { defaultMonthlySpread } from '@/lib/expenseBudgetVariance';
 import AddableSelect from '@/components/AddableSelect';
 import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface Vertical { id: number; name: string; headName?: string | null }
 interface ExpenseCategory { id: number; name: string }
@@ -97,6 +98,10 @@ function sumByCurrency(rows: BudgetRow[]): { currencyCode: string; total: number
 
 export default function ExpenseBudgetsPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_expense_budgets');
+  const canEdit = has('edit_expense_budgets');
+  const canDelete = has('delete_expense_budgets');
   const [fyStart, setFyStart] = useState<Dayjs>(() => thisFinancialYearStart());
   const fyEnd = useMemo(() => fyStart.add(1, 'year').subtract(1, 'day'), [fyStart]);
 
@@ -348,11 +353,12 @@ export default function ExpenseBudgetsPage() {
     const existing = budgetsByCell.get(key);
 
     if (!existing) {
-      if (newValue > 0) createCellMutation.mutate({ categoryId: cat.id, verticalId, amount: newValue });
+      if (newValue > 0 && canCreate) createCellMutation.mutate({ categoryId: cat.id, verticalId, amount: newValue });
       return;
     }
     if (newValue === Number(existing.totalAmount)) return;
     if (newValue <= 0) {
+      if (!canDelete) return;
       if (existing.status === 'APPROVED') {
         toast.error("Approved budgets can't be cleared this way — open it to revise the amount instead");
         return;
@@ -370,6 +376,7 @@ export default function ExpenseBudgetsPage() {
       toast.error('This budget is approved — only revise (with a reason) is allowed. Open it to revise.');
       return;
     }
+    if (!canEdit) return;
     reviseCellMutation.mutate({ id: existing.id, newAmount: newValue });
   };
 
@@ -380,12 +387,14 @@ export default function ExpenseBudgetsPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Expense Budgets</h1>
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Plan annual, vertical-wise budgets and track them against actual spend</p>
         </div>
-        <button
-          onClick={() => (showForm ? closeForm() : openNewForm())}
-          className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-        >
-          <PlusIcon className="h-4 w-4" /> New Budget
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => (showForm ? closeForm() : openNewForm())}
+            className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+          >
+            <PlusIcon className="h-4 w-4" /> New Budget
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -624,6 +633,8 @@ export default function ExpenseBudgetsPage() {
                           const key = cellKey(categoryId, verticalId);
                           const budget = budgetsByCell.get(key);
                           const isEditing = editingCell?.key === key;
+                          // Empty cell → POST (create); filled cell → revise (edit) or clear (delete).
+                          const canEditCell = budget ? canEdit || canDelete : canCreate;
                           const displayValue = isEditing ? editingCell!.value : fmt((budget ? Number(budget.totalAmount) : 0) * valueScale);
                           return (
                             <td key={col.key} className="py-1.5 px-3 text-right">
@@ -635,15 +646,17 @@ export default function ExpenseBudgetsPage() {
                                     Their presence/visibility can only change how far left the
                                     row starts, never the number's right edge. */}
                                 <div className={`flex items-center gap-1 shrink-0 transition-opacity ${budget ? 'opacity-0 group-hover:opacity-100' : 'invisible'}`}>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); if (budget) openEdit(budget); }}
-                                    className="text-slate-400 hover:text-amber-600"
-                                    title="Edit currency / notes"
-                                    tabIndex={budget ? 0 : -1}
-                                  >
-                                    <PencilIcon className="h-3.5 w-3.5" />
-                                  </button>
+                                  {canEdit && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); if (budget) openEdit(budget); }}
+                                      className="text-slate-400 hover:text-amber-600"
+                                      title="Edit currency / notes"
+                                      tabIndex={budget ? 0 : -1}
+                                    >
+                                      <PencilIcon className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
                                   <Link
                                     href={budget ? `/dashboard/expense-budgets/${budget.id}` : '#'}
                                     onClick={(e) => { if (!budget) e.preventDefault(); e.stopPropagation(); }}
@@ -664,7 +677,9 @@ export default function ExpenseBudgetsPage() {
                                 <input
                                   value={displayValue}
                                   onClick={(e) => e.stopPropagation()}
+                                  readOnly={!canEditCell}
                                   onFocus={(e) => {
+                                    if (!canEditCell) return;
                                     // An approved budget is a signed-off commitment — its amount
                                     // is never edited in place, only revised (with a reason) from
                                     // the budget's detail page. Refusing to even enter edit mode

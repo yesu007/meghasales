@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // pickers expect); the admin screen passes includeInactive=true to also see
 // (and be able to reactivate) deactivated ones.
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_lead_sources');
+  const denied = await requireAnyPermission(['view_lead_sources', 'view_customers', 'view_leads']);
   if (denied) return denied;
 
   try {
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_lead_sources');
+  const denied = await requirePermission('create_lead_sources');
   if (denied) return denied;
 
   try {

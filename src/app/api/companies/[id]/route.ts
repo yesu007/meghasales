@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_companies');
+  const denied = await requireAnyPermission(['view_companies', 'view_leads', 'view_quotations']);
   if (denied) return denied;
 
   try {
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_companies');
+  const denied = await requirePermission('edit_companies');
   if (denied) return denied;
 
   try {
@@ -68,7 +68,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 // not silently disappear; deactivating (isActive: false via PATCH) is the
 // path for "we don't work with them anymore" instead.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_companies');
+  const denied = await requirePermission('delete_companies');
   if (denied) return denied;
 
   try {

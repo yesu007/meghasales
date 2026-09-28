@@ -9,6 +9,7 @@ import { PlusIcon, XMarkIcon, InboxIcon, PencilIcon, TrashIcon, ChevronLeftIcon,
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface EmployeeRow {
   id: number;
@@ -91,6 +92,10 @@ const blankForm = {
 export default function PayrollEmployeesPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_employees');
+  const canEdit = has('edit_employees');
+  const canDelete = has('delete_employees');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -196,9 +201,11 @@ export default function PayrollEmployeesPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Payroll — Employees</h1>
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Onboard employees and manage their HR &amp; bank details</p>
         </div>
-        <button onClick={() => setDrawerOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 self-start sm:self-auto">
-          <PlusIcon className="h-4 w-4" /> Onboard Employee
-        </button>
+        {canCreate && (
+          <button onClick={() => setDrawerOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 self-start sm:self-auto">
+            <PlusIcon className="h-4 w-4" /> Onboard Employee
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
@@ -256,12 +263,16 @@ export default function PayrollEmployeesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => router.push(`/dashboard/payroll/${e.id}`)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                          <PencilIcon className="h-4 w-4" />
-                        </button>
-                        <button onClick={() => handleDelete(e)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
+                        {canEdit && (
+                          <button onClick={() => router.push(`/dashboard/payroll/${e.id}`)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                            <PencilIcon className="h-4 w-4" />
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button onClick={() => handleDelete(e)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

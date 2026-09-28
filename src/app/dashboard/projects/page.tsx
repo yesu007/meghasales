@@ -109,7 +109,13 @@ const PENDING_PROJECT_FORM_KEY = 'pendingProjectForm';
 export default function ProjectsPage() {
   const queryClient = useQueryClient();
   const { has } = usePermissions();
-  const canManageQuotations = has('manage_quotations');
+  const canCreate = has('create_projects');
+  const canEdit = has('edit_projects');
+  const canDelete = has('delete_projects');
+  // "+ New Estimation" → POST /api/quotations (via the calculator).
+  const canCreateQuotations = has('create_quotations');
+  // "+ Add Customer" → the Customers module's own create flow (POST /api/customers).
+  const canCreateCustomers = has('create_customers');
   const searchParams = useSearchParams();
   const router = useRouter();
   // Landed here from the calculator after saving a new Budget Estimation
@@ -241,12 +247,14 @@ export default function ProjectsPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Projects</h1>
           <p className="text-slate-500 mt-0.5 text-sm sm:text-base">Customer engagements grouped by vertical, with a responsible head and budget</p>
         </div>
-        <button
-          onClick={() => { setEditingId(null); setForm(blankProjectForm); setDrawerOpen(true); }}
-          className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
-        >
-          <PlusIcon className="h-4 w-4" /> Add Project
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => { setEditingId(null); setForm(blankProjectForm); setDrawerOpen(true); }}
+            className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
+          >
+            <PlusIcon className="h-4 w-4" /> Add Project
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -304,16 +312,19 @@ export default function ProjectsPage() {
                           <RowActionsMenu
                             items={[
                               { key: 'analytics', label: 'Budget Estimation', icon: ChartBarIcon, onClick: () => setExpandedId(isExpanded ? null : p.id) },
-                              { key: 'edit', label: 'Edit Project', icon: PencilIcon, onClick: () => openEdit(p) },
-                              p.isActive
-                                ? {
-                                    key: 'delete',
-                                    label: 'Delete Project',
-                                    icon: TrashIcon,
-                                    danger: true,
-                                    onClick: () => { if (window.confirm(`Delete project "${p.projectName}"?`)) toggleActive.mutate({ id: p.id, isActive: false }); },
-                                  }
-                                : { key: 'reactivate', label: 'Reactivate Project', icon: ArrowPathIcon, onClick: () => toggleActive.mutate({ id: p.id, isActive: true }) },
+                              ...(canEdit ? [{ key: 'edit', label: 'Edit Project', icon: PencilIcon, onClick: () => openEdit(p) }] : []),
+                              // Delete → DELETE (delete_projects); Reactivate → PATCH (edit_projects).
+                              ...(p.isActive
+                                ? (canDelete
+                                    ? [{
+                                        key: 'delete',
+                                        label: 'Delete Project',
+                                        icon: TrashIcon,
+                                        danger: true,
+                                        onClick: () => { if (window.confirm(`Delete project "${p.projectName}"?`)) toggleActive.mutate({ id: p.id, isActive: false }); },
+                                      }]
+                                    : [])
+                                : (canEdit ? [{ key: 'reactivate', label: 'Reactivate Project', icon: ArrowPathIcon, onClick: () => toggleActive.mutate({ id: p.id, isActive: true }) }] : [])),
                             ]}
                           />
                         </td>
@@ -324,7 +335,7 @@ export default function ProjectsPage() {
                             <ProjectBudgetPanel
                               projectId={p.id}
                               newEstimationHref={
-                                canManageQuotations && p.isActive
+                                canCreateQuotations && p.isActive
                                   ? `/dashboard/quotations/calculator?projectId=${p.id}&leadId=${p.customerId ?? p.leadId}`
                                   : undefined
                               }
@@ -351,7 +362,7 @@ export default function ProjectsPage() {
         setFormErrors={setFormErrors}
         onSave={(data) => save.mutate(data)}
         isSaving={save.isPending}
-        onAddCustomer={handleAddCustomer}
+        onAddCustomer={canCreateCustomers ? handleAddCustomer : undefined}
       />
     </div>
   );

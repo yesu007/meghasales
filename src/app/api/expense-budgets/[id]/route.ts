@@ -36,7 +36,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // tracked before/after (see ExpenseBudgetRevision) that a plain field edit
 // here deliberately does not produce.
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expense_budgets');
+  const denied = await requirePermission('edit_expense_budgets');
   if (denied) return denied;
   try {
     const body = await request.json();
@@ -70,7 +70,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expense_budgets');
+  const denied = await requirePermission('delete_expense_budgets');
   if (denied) return denied;
   try {
     const id = parseInt(params.id);

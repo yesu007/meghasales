@@ -6,12 +6,15 @@ import { requirePermission } from '@/lib/rbac';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const denied = await requirePermission('manage_roles');
+  const denied = await requirePermission('view_roles');
   if (denied) return denied;
 
   try {
     const permissions = await prisma.permission.findMany({
-      orderBy: [{ module: 'asc' }, { name: 'asc' }],
+      // Catalog order (Module → Page → View/Create/Edit/Delete, see
+      // src/lib/permissionCatalog.ts); custom permissions (sortOrder 0, no
+      // page) come first and are grouped separately by the Roles screen.
+      orderBy: [{ sortOrder: 'asc' }, { module: 'asc' }, { name: 'asc' }],
     });
     return NextResponse.json(permissions);
   } catch (error) {
@@ -25,7 +28,7 @@ export async function GET() {
 // effect until a route in code actually calls requirePermission() with this
 // exact name.
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_roles');
+  const denied = await requirePermission('create_roles');
   if (denied) return denied;
 
   try {
@@ -41,7 +44,13 @@ export async function POST(request: NextRequest) {
     }
 
     const permission = await prisma.permission.create({
-      data: { name: body.name, module: body.module, description: body.description || null },
+      data: {
+        name: body.name,
+        module: body.module,
+        description: body.description || null,
+        page: typeof body.page === 'string' && body.page.trim() ? body.page.trim() : null,
+        action: ['view', 'create', 'edit', 'delete', 'other'].includes(body.action) ? body.action : null,
+      },
     });
 
     await logAudit({ action: 'CREATE', entityType: 'PERMISSION', entityId: permission.id, newValue: permission, description: `Permission created: ${permission.name}`, request });

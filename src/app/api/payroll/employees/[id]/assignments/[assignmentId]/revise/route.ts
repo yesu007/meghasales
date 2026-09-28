@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 // there.
 export async function POST(request: NextRequest, { params }: { params: { id: string; assignmentId: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_salary_structures');
+  const denied = await requirePermission('edit_salary_structures');
   if (denied) return denied;
 
   try {

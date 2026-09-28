@@ -6,13 +6,13 @@ import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
 import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
 import { CUSTOMER_STATUSES, customerStatusLabel } from '@/lib/customerStatus';
-import { requirePermission } from '@/lib/rbac';
+import { checkPermission, requireAnyPermission } from '@/lib/rbac';
 import { isValidEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_leads');
+  const denied = await requireAnyPermission(['view_customers', 'view_leads', 'view_demos']);
   if (denied) return denied;
 
   try {
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requireAnyPermission(['edit_leads', 'edit_customers']);
   if (denied) return denied;
 
   try {
@@ -84,9 +84,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     let countryFields: Awaited<ReturnType<typeof resolveLeadCountryFields>> | null = null;
     if (body.countryId !== undefined) {
-      const isAdmin = (session?.user?.roles || []).includes('ADMIN');
+      const canOverrideCurrency = checkPermission(session, 'override_currency');
       try {
-        countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { isAdmin, overrideCurrencyCode: body.currencyCode });
+        countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { canOverrideCurrency, overrideCurrencyCode: body.currencyCode });
       } catch (e: any) {
         return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
       }
@@ -279,7 +279,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requireAnyPermission(['delete_leads', 'delete_customers']);
   if (denied) return denied;
 
   try {

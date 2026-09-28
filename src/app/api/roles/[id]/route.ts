@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
+import { assertRoleManagementRemains } from '@/lib/roleLockout';
 import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requireAnyPermission(['view_roles', 'manage_roles', 'view_users', 'manage_users']);
+  const denied = await requireAnyPermission(['view_roles', 'create_roles', 'edit_roles', 'delete_roles', 'view_users', 'create_users', 'edit_users', 'delete_users']);
   if (denied) return denied;
 
   try {
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_roles');
+  const denied = await requirePermission('edit_roles');
   if (denied) return denied;
 
   try {
@@ -62,6 +63,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         if (permissionIds.length > 0) {
           await tx.rolePermission.createMany({ data: permissionIds.map((permissionId) => ({ roleId: id, permissionId })) });
         }
+        await assertRoleManagementRemains(tx);
       }
 
       return tx.role.findUniqueOrThrow({ where: { id }, include: { permissions: { include: { permission: true } } } });
@@ -80,7 +82,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_roles');
+  const denied = await requirePermission('delete_roles');
   if (denied) return denied;
 
   try {

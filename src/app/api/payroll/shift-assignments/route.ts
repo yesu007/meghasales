@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 // above their own history.
 export async function GET() {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_shifts');
   if (denied) return denied;
 
   try {

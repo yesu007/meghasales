@@ -24,6 +24,8 @@ interface FollowUpRecord {
 
 interface FollowUpsTabProps {
   leadId: number;
+  // Follow-up POST accepts edit_leads or edit_customers — the page passes its own module's permission.
+  canAdd: boolean;
 }
 
 async function fetchFollowUps(leadId: number): Promise<FollowUpRecord[]> {
@@ -32,7 +34,7 @@ async function fetchFollowUps(leadId: number): Promise<FollowUpRecord[]> {
   return res.json();
 }
 
-export default function FollowUpsTab({ leadId }: FollowUpsTabProps) {
+export default function FollowUpsTab({ leadId, canAdd }: FollowUpsTabProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const { data: followUps = [], isLoading } = useQuery({
@@ -44,9 +46,11 @@ export default function FollowUpsTab({ leadId }: FollowUpsTabProps) {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h2 className="text-lg font-semibold text-slate-800">Follow-up History</h2>
-        <button onClick={() => setDrawerOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 self-start sm:self-auto">
-          <PlusIcon className="h-4 w-4" /> Add Follow-up
-        </button>
+        {canAdd && (
+          <button onClick={() => setDrawerOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 self-start sm:self-auto">
+            <PlusIcon className="h-4 w-4" /> Add Follow-up
+          </button>
+        )}
       </div>
 
       {isLoading ? (

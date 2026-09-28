@@ -8,6 +8,7 @@ import { ArrowLeftIcon, DocumentTextIcon, BanknotesIcon } from '@heroicons/react
 import dayjs from 'dayjs';
 import PaymentEntryDrawer from '@/components/accounting/PaymentEntryDrawer';
 import { formatCurrency } from '@/lib/currency';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-green-100 text-green-700',
@@ -52,6 +53,8 @@ export async function fetchInvoice(id: string) {
 // each module's route stays exactly its own.
 export default function InvoiceDetail({ invoiceId, backHref }: { invoiceId: string; backHref: string }) {
   const [paymentDrawerOpen, setPaymentDrawerOpen] = useState(false);
+  const { has } = usePermissions();
+  const canRecordPayment = has('create_payments');
 
   const { data: invoice, isLoading, isError } = useQuery({
     queryKey: ['accounting-invoice', invoiceId],
@@ -101,7 +104,7 @@ export default function InvoiceDetail({ invoiceId, backHref }: { invoiceId: stri
           <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[displayStatus] || 'bg-slate-100 text-slate-700'}`}>
             {displayStatus.replace(/_/g, ' ')}
           </span>
-          {invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && (
+          {canRecordPayment && invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && (
             <button onClick={() => setPaymentDrawerOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
               <BanknotesIcon className="h-4 w-4" /> Record Payment
             </button>

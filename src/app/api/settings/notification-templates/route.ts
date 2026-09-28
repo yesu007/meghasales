@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // lists them for editing; there's no POST, since admins edit content on an
 // existing slot rather than creating arbitrary new ones.
 export async function GET() {
-  const denied = await requirePermission('manage_notification_templates');
+  const denied = await requirePermission('view_notification_templates');
   if (denied) return denied;
   try {
     const templates = await prisma.notificationTemplate.findMany({ orderBy: [{ eventType: 'asc' }, { channel: 'asc' }] });

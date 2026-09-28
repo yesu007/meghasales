@@ -35,7 +35,9 @@ interface DiscussionTimelineProps {
   leadId: number;
   eventId: number;
   canAdd: boolean;
-  canManage: boolean;
+  // Attachments go through the event-documents POST (create_lead_events).
+  canAttach: boolean;
+  canDelete: boolean;
 }
 
 async function fetchDiscussions(leadId: number, eventId: number): Promise<Discussion[]> {
@@ -44,7 +46,7 @@ async function fetchDiscussions(leadId: number, eventId: number): Promise<Discus
   return res.json();
 }
 
-export default function DiscussionTimeline({ leadId, eventId, canAdd, canManage }: DiscussionTimelineProps) {
+export default function DiscussionTimeline({ leadId, eventId, canAdd, canAttach, canDelete }: DiscussionTimelineProps) {
   const queryClient = useQueryClient();
 
   const { data: discussions = [], isLoading } = useQuery({
@@ -67,7 +69,7 @@ export default function DiscussionTimeline({ leadId, eventId, canAdd, canManage 
   return (
     <div className="space-y-3">
       <p className="text-xs font-medium text-slate-500 uppercase">Discussion Updates</p>
-      {canAdd && <AddDiscussionForm leadId={leadId} eventId={eventId} />}
+      {canAdd && <AddDiscussionForm leadId={leadId} eventId={eventId} canAttach={canAttach} />}
       {isLoading ? (
         <p className="text-sm text-slate-400">Loading discussions...</p>
       ) : discussions.length === 0 ? (
@@ -87,7 +89,7 @@ export default function DiscussionTimeline({ leadId, eventId, canAdd, canManage 
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${COMPLETION_STYLES[d.completionStatus] || 'bg-slate-100 text-slate-700'}`}>
                     {d.completionStatus.replace('_', ' ')}
                   </span>
-                  {canManage && (
+                  {canDelete && (
                     <button onClick={() => { if (window.confirm('Delete this discussion?')) deleteMutation.mutate(d.id); }} className="p-1 text-slate-400 hover:text-red-600" title="Delete">
                       <TrashIcon className="h-3.5 w-3.5" />
                     </button>
