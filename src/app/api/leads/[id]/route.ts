@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit';
 import { resolveLeadCountryFields } from '@/lib/leadCountry';
 import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
 import { CUSTOMER_STATUSES, customerStatusLabel } from '@/lib/customerStatus';
-import { checkPermission, requireAnyPermission } from '@/lib/rbac';
+import { requireAnyPermission } from '@/lib/rbac';
 import { isValidEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
@@ -84,9 +84,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     let countryFields: Awaited<ReturnType<typeof resolveLeadCountryFields>> | null = null;
     if (body.countryId !== undefined) {
-      const canOverrideCurrency = checkPermission(session, 'override_currency');
+      const isAdmin = (session?.user?.roles || []).includes('ADMIN');
       try {
-        countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { canOverrideCurrency, overrideCurrencyCode: body.currencyCode });
+        countryFields = await resolveLeadCountryFields(parseInt(body.countryId), { isAdmin, overrideCurrencyCode: body.currencyCode });
       } catch (e: any) {
         return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
       }

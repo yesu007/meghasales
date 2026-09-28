@@ -99,10 +99,7 @@ export const PERMISSION_CATALOG: CatalogModule[] = [
     pages: [
       crud('leads', 'Leads', {
         paths: ['/dashboard/leads'],
-        extra: [
-          existing('delete_nda_documents', 'Delete NDA documents on a lead'),
-          { name: 'override_currency', description: "Override a country's default currency on leads and customers", from: [] },
-        ],
+        extra: [existing('delete_nda_documents', 'Delete NDA documents on a lead')],
       }),
       crud('lead_events', 'Lead Events & Documents', {
         extra: [existing('add_lead_discussion', 'Add discussions to lead events')],

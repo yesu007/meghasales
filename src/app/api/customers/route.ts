@@ -5,7 +5,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { resolveCustomerCountryFields } from '@/lib/customerCountry';
 import { resolveBusinessVerticals } from '@/lib/businessVerticalValidation';
-import { checkPermission, requirePermission } from '@/lib/rbac';
+import { requirePermission } from '@/lib/rbac';
 import { isValidEmail } from '@/lib/email';
 import { CUSTOMER_STATUSES } from '@/lib/customerStatus';
 
@@ -59,10 +59,10 @@ export async function POST(request: NextRequest) {
     }
 
     const session = await getServerSession(authOptions);
-    const canOverrideCurrency = checkPermission(session, 'override_currency');
+    const isAdmin = (session?.user?.roles || []).includes('ADMIN');
     let countryFields;
     try {
-      countryFields = await resolveCustomerCountryFields(parseInt(body.countryId), { canOverrideCurrency, overrideCurrencyCode: body.currencyCode });
+      countryFields = await resolveCustomerCountryFields(parseInt(body.countryId), { isAdmin, overrideCurrencyCode: body.currencyCode });
     } catch (e: any) {
       return NextResponse.json({ message: e.message || 'Invalid country selected' }, { status: 400 });
     }

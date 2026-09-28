@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, Fragment } from 'react';
+import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -98,8 +99,9 @@ async function fetchUsers(): Promise<UserOption[]> {
 }
 
 export default function CustomersPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user?.roles || []).includes('ADMIN');
   const { has } = usePermissions();
-  const canOverrideCurrency = has('override_currency');
   const canCreate = has('create_customers');
   const canEdit = has('edit_customers');
   const canDelete = has('delete_customers');
@@ -169,7 +171,7 @@ export default function CustomersPage() {
       if (!res.ok) throw new Error('Failed to fetch currencies');
       return res.json();
     },
-    enabled: canOverrideCurrency,
+    enabled: isAdmin,
   });
 
   useEffect(() => {
@@ -733,7 +735,7 @@ export default function CustomersPage() {
         setFormErrors={setFormErrors}
         onSave={(data) => saveMutation.mutate(data)}
         isSaving={saveMutation.isPending}
-        isAdmin={canOverrideCurrency}
+        isAdmin={isAdmin}
         currencies={currencies}
         customerStatus={editCustomerStatus}
         onCustomerStatusChange={setEditCustomerStatus}
@@ -749,7 +751,7 @@ export default function CustomersPage() {
         setFormErrors={setCreateFormErrors}
         onSave={(data) => createMutation.mutate(data)}
         isSaving={createMutation.isPending}
-        isAdmin={canOverrideCurrency}
+        isAdmin={isAdmin}
         currencies={currencies}
         editingId={editingCustomerId}
         // Disabled only when this Create drawer was opened via a Project/

@@ -7,15 +7,12 @@ type Client = PrismaClient | Prisma.TransactionClient;
 // catalog permission with its module/page/action, grants each new permission
 // to every role holding one of its `from` permissions (so a split
 // manage_x → create/edit/delete_x keeps each role's existing access), gives
-// ADMIN every permission that didn't exist before this run (never
-// re-granting one an administrator deliberately unticked — there is no
-// ADMIN bypass), then removes the retired catch-all permissions.
+// ADMIN everything, then removes the retired catch-all permissions.
 // Idempotent. Used by prisma/seed.ts after its own (older) permission
 // blocks; the split_manage_into_create_edit_delete migration does the same
 // in SQL for existing databases.
 export async function syncPermissionCatalog(client: Client): Promise<void> {
   const catalog = catalogPermissions();
-  const existed = new Set((await client.permission.findMany({ select: { name: true } })).map((p) => p.name));
 
   for (const p of catalog) {
     await client.permission.upsert({
@@ -37,9 +34,8 @@ export async function syncPermissionCatalog(client: Client): Promise<void> {
   }
 
   const admin = await client.role.findUnique({ where: { name: 'ADMIN' } });
-  const created = catalog.filter((p) => !existed.has(p.name));
-  if (admin && created.length) {
-    await client.rolePermission.createMany({ data: created.map((p) => ({ roleId: admin.id, permissionId: byName.get(p.name)! })), skipDuplicates: true });
+  if (admin) {
+    await client.rolePermission.createMany({ data: catalog.map((p) => ({ roleId: admin.id, permissionId: byName.get(p.name)! })), skipDuplicates: true });
   }
 
   const retiredIds = RETIRED_PERMISSIONS.map((n) => byName.get(n)).filter((id): id is number => id !== undefined);
