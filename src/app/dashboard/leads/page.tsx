@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
@@ -81,10 +82,11 @@ async function fetchUsers(): Promise<UserOption[]> {
 }
 
 export default function LeadsPage() {
+  const { data: session } = useSession();
   const { options: STATUSES, color: leadStatusColor } = useLeadStatusOptions();
   const SOURCES = useLeadSources();
+  const isAdmin = (session?.user?.roles || []).includes('ADMIN');
   const { has } = usePermissions();
-  const canOverrideCurrency = has('override_currency');
   const canCreate = has('create_leads');
   const canEdit = has('edit_leads');
   const canDelete = has('delete_leads');
@@ -176,8 +178,8 @@ export default function LeadsPage() {
   const [form, setForm] = useState<LeadFormState>(blankLeadForm);
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  // Only roles with override_currency can override the currency a country
-  // implies — this list is only fetched/rendered for them.
+  // Only Administrators can override the currency a country implies —
+  // this list is only fetched/rendered for ADMIN sessions.
   const { data: currencies = [], isError: isCurrenciesError } = useQuery<CurrencyOption[]>({
     queryKey: ['currencies'],
     queryFn: async () => {
@@ -185,7 +187,7 @@ export default function LeadsPage() {
       if (!res.ok) throw new Error('Failed to fetch currencies');
       return res.json();
     },
-    enabled: canOverrideCurrency,
+    enabled: isAdmin,
   });
 
   useEffect(() => {
@@ -556,7 +558,7 @@ export default function LeadsPage() {
         setFormErrors={setFormErrors}
         onSave={(data) => saveMutation.mutate(data)}
         isSaving={saveMutation.isPending}
-        isAdmin={canOverrideCurrency}
+        isAdmin={isAdmin}
         currencies={currencies}
       />
     </div>

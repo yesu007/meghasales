@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { assertRoleManagementRemains } from '@/lib/roleLockout';
 import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
@@ -63,7 +62,6 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         if (permissionIds.length > 0) {
           await tx.rolePermission.createMany({ data: permissionIds.map((permissionId) => ({ roleId: id, permissionId })) });
         }
-        await assertRoleManagementRemains(tx);
       }
 
       return tx.role.findUniqueOrThrow({ where: { id }, include: { permissions: { include: { permission: true } } } });

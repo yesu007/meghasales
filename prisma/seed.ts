@@ -295,9 +295,9 @@ async function main() {
   }
   console.log('  ✓ Accounting permissions granted to ADMIN, MANAGEMENT, FINANCE roles');
 
-  // Country Master / settings permission — granted to ADMIN explicitly here
-  // (ADMIN has no RBAC bypass), matching how accounting permissions above
-  // are handled.
+  // Country Master / settings permission — ADMIN gets it explicitly here as
+  // a belt-and-suspenders grant alongside requirePermission()'s implicit
+  // ADMIN bypass, matching how accounting permissions above are handled.
   const manageCountriesPermission = await prisma.permission.upsert({
     where: { name: 'manage_countries' },
     update: {},
@@ -344,7 +344,7 @@ async function main() {
 
   // Lead Events permissions — Event Management feature (Events/Documents/
   // Discussions on a CONFIRMED lead). ADMIN gets all three explicitly
-  // (ADMIN is authorized only by its granted permissions);
+  // (belt-and-suspenders alongside requirePermission()'s ADMIN bypass);
   // BUSINESS_ANALYST gets full manage access; SALES (new role) gets
   // view + add-discussion only; MANAGEMENT gets read-only view.
   const eventPermissions = [
@@ -423,7 +423,7 @@ async function main() {
 
   // Admin Ticket module permissions — feature-flagged (FEATURE_ADMIN_TICKET),
   // fully additive office-admin task tracker. ADMIN gets both explicitly
-  // (ADMIN is authorized only by its granted permissions);
+  // (belt-and-suspenders alongside requirePermission()'s ADMIN bypass);
   // DEVOPS (closest existing role to "office admin"/facilities duties) gets
   // full manage access; MANAGEMENT gets read-only view for oversight.
   const adminTicketPermissions = [

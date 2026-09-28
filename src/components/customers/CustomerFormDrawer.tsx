@@ -623,7 +623,7 @@ export default function CustomerFormDrawer({
                         )}
                         {isAdmin && form.countryId && (
                           <div className="mt-2">
-                            <label className="block text-xs font-medium text-slate-500 mb-1">Override currency</label>
+                            <label className="block text-xs font-medium text-slate-500 mb-1">Override currency (Administrator only)</label>
                             <AddableSelect
                               value={form.currencyCode}
                               onChange={(v) => {

@@ -4,7 +4,6 @@ import prisma from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { authOptions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { assertRoleManagementRemains } from '@/lib/roleLockout';
 import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
@@ -83,8 +82,6 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         });
       }
 
-      if (roleIds !== undefined || data.isActive === false) await assertRoleManagementRemains(tx);
-
       return tx.user.findUniqueOrThrow({
         where: { id },
         select: {
@@ -122,12 +119,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     if (!existing) return NextResponse.json({ message: 'User not found' }, { status: 404 });
 
     // UserRole rows cascade-delete with the user (onDelete: Cascade in schema).
-    try {
-      await assertRoleManagementRemains(prisma, id);
-    } catch (error: any) {
-      return NextResponse.json({ message: error.message }, { status: 409 });
-    }
-
     await prisma.user.delete({ where: { id } });
     await logAudit({ action: 'DELETE', entityType: 'USER', entityId: id, oldValue: existing, description: `User deleted: ${existing.email}`, request });
 
