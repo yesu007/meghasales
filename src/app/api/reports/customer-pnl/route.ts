@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 const VALID_TYPES: CustomerLedgerReportType[] = ['summary', 'monthly', 'by-project'];
 
 export async function GET(request: NextRequest) {
-  const denied = await requireAnyPermission(['view_accounting', 'view_projects']);
+  const denied = await requireAnyPermission(['view_accounting', 'view_invoices', 'view_payment_reminders', 'view_customer_ledger', 'view_accounting_reports', 'view_projects']);
   if (denied) return denied;
 
   try {

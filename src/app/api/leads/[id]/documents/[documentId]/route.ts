@@ -44,7 +44,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // existing precedent of never calling Blob's del(); orphaned blobs are an
 // acceptable, low-cost tradeoff already implicit elsewhere in the codebase.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string; documentId: string } }) {
-  const denied = await requirePermission('manage_lead_events');
+  const denied = await requirePermission('delete_lead_events');
   if (denied) return denied;
 
   try {

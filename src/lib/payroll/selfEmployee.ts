@@ -1,29 +1,57 @@
+import { Employee, Prisma, PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma';
+import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
+import { nextEmployeeCode } from '@/lib/payroll/employeeCode';
 
-// Resolves the Employee behind a logged-in user for the self-service
-// pages (My Leave, My Payslips, My Documents, My Expense Claims).
-//
-// Employee.userId is normally set at onboarding, but only when a User with
-// the same email already exists at that moment — an employee created before
-// their login (or whose email was corrected later) stays unlinked and the
-// self-service pages show "No payroll profile yet". So when no linked row is
-// found, fall back to an unlinked Employee with the user's email and link it
-// on the spot, making the fix permanent for every later request.
-export async function findEmployeeForUser(userId: number) {
-  const linked = await prisma.employee.findUnique({ where: { userId } });
-  if (linked) return linked;
+type Client = Prisma.TransactionClient | PrismaClient;
 
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
-  const email = user?.email?.trim();
-  if (!email) return null;
+interface UserIdentity {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+}
 
-  const candidates = await prisma.employee.findMany({
-    where: { userId: null, email: { equals: email, mode: 'insensitive' } },
-    take: 2,
+// Every system user is also staff: link the user to the unlinked Employee
+// row with the same email (payroll may have onboarded them first), or
+// create a minimal one. Returns the Employee now linked to the user, or
+// null if the matching-email Employee already belongs to a different user
+// (never steals it). Shared by POST /api/users and ensureEmployeeForUser.
+export async function linkOrCreateEmployee(client: Client, user: UserIdentity): Promise<Employee | null> {
+  const existing = await client.employee.findFirst({ where: { email: { equals: user.email, mode: 'insensitive' } } });
+  if (existing) {
+    if (existing.userId === user.id) return existing;
+    if (existing.userId) return null;
+    return client.employee.update({ where: { id: existing.id }, data: { userId: user.id } });
+  }
+
+  const employeeCode = await nextEmployeeCode(client);
+  return client.employee.create({
+    data: { userId: user.id, employeeCode, firstName: user.firstName, lastName: user.lastName, email: user.email },
   });
-  // Ambiguous (two unlinked employees share the email) — leave it for HR
-  // rather than guessing which record is this person's.
-  if (candidates.length !== 1) return null;
+}
 
-  return prisma.employee.update({ where: { id: candidates[0].id }, data: { userId } });
+// My Space (payslips, leave, attendance, documents, reimbursements) resolves
+// the caller's Employee through here rather than a bare findUnique, so a
+// user who never got one at creation time — seeded accounts
+// (prisma/seed.ts), users created while the payroll flag was off, restored
+// databases — is linked/onboarded on first visit instead of being stuck on
+// "No payroll profile yet" forever.
+export async function ensureEmployeeForUser(userId: number): Promise<Employee | null> {
+  const linked = await prisma.employee.findUnique({ where: { userId } });
+  if (linked || !isPayrollModuleEnabled()) return linked;
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, firstName: true, lastName: true, isActive: true } });
+  if (!user || !user.isActive) return null;
+
+  try {
+    return await linkOrCreateEmployee(prisma, user);
+  } catch (error) {
+    // Two My Space requests racing to onboard the same user — the loser
+    // hits the userId unique constraint; the winner's row is the answer.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return prisma.employee.findUnique({ where: { userId } });
+    }
+    throw error;
+  }
 }

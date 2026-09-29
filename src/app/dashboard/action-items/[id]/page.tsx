@@ -93,7 +93,7 @@ async function fetchActionItem(id: string) {
 }
 
 async function fetchUsers() {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) return [];
   const data = await res.json();
   return data.content || [];

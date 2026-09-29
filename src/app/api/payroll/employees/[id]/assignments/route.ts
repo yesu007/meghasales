@@ -15,7 +15,7 @@ function currentUserId(session: any): number | null {
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_employees');
   if (denied) return denied;
 
   try {
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // "what was this employee's CTC in March" against later.
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_salary_structures');
+  const denied = await requirePermission('edit_salary_structures');
   if (denied) return denied;
 
   try {

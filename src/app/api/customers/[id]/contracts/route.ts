@@ -16,7 +16,7 @@ const CONTRACT_STATUSES = ['DRAFT', 'SENT', 'SIGNED', 'EXPIRED', 'TERMINATED'];
 // status=CONFIRMED, i.e. a "Customer"). Fully independent of Lead's own
 // API/pages.
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_leads');
+  const denied = await requirePermission('view_customers');
   if (denied) return denied;
 
   try {
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // file (optional) can be submitted in the same request as the fields —
 // matches the wireframe's single "Save Contract" action.
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requirePermission('edit_customers');
   if (denied) return denied;
 
   try {

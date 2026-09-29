@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 // ExpenseSubCategory.categoryId. Update/delete for a single link live in
 // ./[id]/route.ts.
 export async function GET() {
-  const denied = await requirePermission('view_expenses');
+  const denied = await requireAnyPermission(['view_expenses', 'view_bills']);
   if (denied) return denied;
 
   try {
@@ -27,7 +27,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('create_expenses');
   if (denied) return denied;
 
   try {

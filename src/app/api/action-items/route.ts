@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 import { isMeetingsModuleEnabled } from '@/lib/meetings/featureFlag';
 import { createActionItem } from '@/lib/meetings/actionItemService';
 import { dispatchActionItemReminders } from '@/lib/meetings/actionItemReminderDispatcher';
@@ -18,7 +18,7 @@ function currentUserId(session: any): number | null {
 
 export async function GET(request: NextRequest) {
   if (!isMeetingsModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_meetings');
+  const denied = await requireAnyPermission(['view_action_items', 'view_meetings']);
   if (denied) return denied;
 
   // On-demand dispatch, same pattern as /api/leads and

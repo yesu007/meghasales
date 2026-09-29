@@ -15,7 +15,46 @@ interface Permission {
   id: number;
   name: string;
   module: string;
+  page: string | null;
+  action: string | null;
   description: string | null;
+}
+
+const ACTION_COLUMNS = [
+  { key: 'view', label: 'View' },
+  { key: 'create', label: 'Create' },
+  { key: 'edit', label: 'Edit' },
+  { key: 'delete', label: 'Delete' },
+] as const;
+
+interface PageRow {
+  page: string;
+  cells: Partial<Record<string, Permission>>;
+  extra: Permission[];
+}
+
+// Module → Page → View/Create/Edit/Delete, in catalog order (the API sorts
+// by sortOrder; see src/lib/permissionCatalog.ts). Permissions without a
+// page — custom ones added below — are listed per module under "Other".
+function buildMatrix(permissions: Permission[]) {
+  const modules: { module: string; pages: PageRow[] }[] = [];
+  const other: Record<string, Permission[]> = {};
+  for (const p of permissions) {
+    if (!p.page) { (other[p.module] ||= []).push(p); continue; }
+    let mod = modules.find((m) => m.module === p.module);
+    if (!mod) { mod = { module: p.module, pages: [] }; modules.push(mod); }
+    let row = mod.pages.find((r) => r.page === p.page);
+    if (!row) { row = { page: p.page, cells: {}, extra: [] }; mod.pages.push(row); }
+    if (p.action && p.action !== 'other') row.cells[p.action] = p;
+    else row.extra.push(p);
+  }
+  return { modules, other };
+}
+
+// "manage_own_action_items" → "Manage own action items"
+function permissionLabel(p: Permission): string {
+  const text = p.name.replace(/_/g, ' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 interface RoleRow {
@@ -41,18 +80,15 @@ async function fetchPermissions(): Promise<Permission[]> {
 export default function RolesPage() {
   const queryClient = useQueryClient();
   const { has } = usePermissions();
-  const canManageRoles = has('manage_roles');
+  const canCreateRoles = has('create_roles');
+  const canEditRoles = has('edit_roles');
+  const canDeleteRoles = has('delete_roles');
 
   const { data: roles = [], isLoading, isError } = useQuery({ queryKey: ['roles'], queryFn: fetchRoles });
-  // Only fetched for users who can actually edit the permission matrix —
-  // /api/permissions itself requires manage_roles, so a view-only visitor
-  // never needs (or is allowed) to call it.
-  const { data: permissions = [] } = useQuery({ queryKey: ['permissions'], queryFn: fetchPermissions, enabled: canManageRoles });
-
-  const permissionsByModule = permissions.reduce<Record<string, Permission[]>>((acc, p) => {
-    (acc[p.module] ||= []).push(p);
-    return acc;
-  }, {});
+  // Only fetched for users who can actually open the permission matrix
+  // (create or edit a role).
+  const { data: permissions = [] } = useQuery({ queryKey: ['permissions'], queryFn: fetchPermissions, enabled: canCreateRoles || canEditRoles });
+  const matrix = buildMatrix(permissions);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -73,6 +109,13 @@ export default function RolesPage() {
     // in depth.
     setFormErrors({});
     setDrawerOpen(true);
+  };
+
+  const setPermissions = (ids: number[], on: boolean) => {
+    setForm((f) => ({
+      ...f,
+      permissionIds: on ? Array.from(new Set([...f.permissionIds, ...ids])) : f.permissionIds.filter((pid) => !ids.includes(pid)),
+    }));
   };
 
   const togglePermission = (id: number) => {
@@ -138,7 +181,7 @@ export default function RolesPage() {
           <h1 className="text-2xl font-bold text-slate-800">Roles &amp; Permissions</h1>
           <p className="text-slate-500 mt-1">Define what each role can see and do</p>
         </div>
-        {canManageRoles && (
+        {canCreateRoles && (
           <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
             <PlusIcon className="h-4 w-4" /> Add Role
           </button>
@@ -178,14 +221,18 @@ export default function RolesPage() {
                     <td className="px-4 py-3 text-slate-600">{role.permissions.length}</td>
                     <td className="px-4 py-3 text-slate-600">{role.userCount}</td>
                     <td className="px-4 py-3">
-                      {canManageRoles ? (
+                      {canEditRoles || canDeleteRoles ? (
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => openEdit(role)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => deleteRole(role.id, role.name)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
+                          {canEditRoles && (
+                            <button onClick={() => openEdit(role)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canDeleteRoles && (
+                            <button onClick={() => deleteRole(role.id, role.name)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <span className="text-slate-300">—</span>
@@ -208,7 +255,7 @@ export default function RolesPage() {
           <div className="fixed inset-0 overflow-hidden">
             <div className="fixed inset-y-0 right-0 flex max-w-full pl-10">
               <Transition.Child as={Fragment} enter="transform transition ease-in-out duration-300" enterFrom="translate-x-full" enterTo="translate-x-0" leave="transform transition ease-in-out duration-200" leaveFrom="translate-x-0" leaveTo="translate-x-full">
-                <Dialog.Panel className="w-screen max-w-xl">
+                <Dialog.Panel className="w-screen max-w-3xl">
                   <div className="flex h-full flex-col bg-white shadow-xl overflow-y-auto">
                     <div className="flex items-center justify-between px-6 py-4 border-b">
                       <Dialog.Title className="text-lg font-semibold text-slate-800">{editingId ? 'Edit Role' : 'Add New Role'}</Dialog.Title>
@@ -248,33 +295,115 @@ export default function RolesPage() {
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-2">Permissions</label>
-                        <div className="space-y-3 max-h-96 overflow-y-auto border border-slate-200 rounded-lg p-3">
-                          {Object.keys(permissionsByModule).sort().map((module) => (
-                            <div key={module}>
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">{module}</p>
-                              <div className="grid grid-cols-2 gap-1.5">
-                                {permissionsByModule[module].map((p) => (
-                                  <label key={p.id} className="flex items-start gap-2 text-sm text-slate-700" title={p.description || ''}>
-                                    <input
-                                      type="checkbox"
-                                      checked={form.permissionIds.includes(p.id)}
-                                      onChange={() => togglePermission(p.id)}
-                                      className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                                    />
-                                    <span>{p.name}</span>
-                                  </label>
+                        <div className="max-h-[28rem] overflow-y-auto border border-slate-200 rounded-lg">
+                          <table className="w-full text-sm">
+                            <thead className="sticky top-0 z-10 bg-slate-50">
+                              <tr className="border-b border-slate-200">
+                                <th className="px-3 py-2 text-left font-semibold text-slate-600">Module / Page</th>
+                                {ACTION_COLUMNS.map((c) => (
+                                  <th key={c.key} className="px-2 py-2 text-center font-semibold text-slate-600 w-16">{c.label}</th>
                                 ))}
-                              </div>
-                            </div>
-                          ))}
-                          {permissions.length === 0 && <p className="text-sm text-slate-400">No permissions yet — add one below.</p>}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {matrix.modules.map(({ module, pages }) => (
+                                <Fragment key={module}>
+                                  <tr className="bg-slate-100/70">
+                                    <td colSpan={ACTION_COLUMNS.length + 1} className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{module}</td>
+                                  </tr>
+                                  {pages.map((row) => {
+                                    const rowIds = [...Object.values(row.cells), ...row.extra].map((p) => p!.id);
+                                    const allOn = rowIds.every((id) => form.permissionIds.includes(id));
+                                    return (
+                                      <tr key={row.page} className="border-b border-slate-100 align-top">
+                                        <td className="px-3 py-2">
+                                          <label className="flex items-center gap-2 font-medium text-slate-700">
+                                            <input
+                                              type="checkbox"
+                                              checked={allOn}
+                                              onChange={() => setPermissions(rowIds, !allOn)}
+                                              title="Select all for this page"
+                                              className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                            />
+                                            {row.page}
+                                          </label>
+                                          {row.extra.length > 0 && (
+                                            <div className="mt-1.5 ml-6 flex flex-wrap gap-x-4 gap-y-1">
+                                              {row.extra.map((p) => (
+                                                <label key={p.id} className="flex items-center gap-1.5 text-xs text-slate-600" title={p.description || p.name}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={form.permissionIds.includes(p.id)}
+                                                    onChange={() => togglePermission(p.id)}
+                                                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                  />
+                                                  {permissionLabel(p)}
+                                                </label>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </td>
+                                        {ACTION_COLUMNS.map((c) => {
+                                          const p = row.cells[c.key];
+                                          return (
+                                            <td key={c.key} className="px-2 py-2 text-center">
+                                              {p ? (
+                                                <input
+                                                  type="checkbox"
+                                                  checked={form.permissionIds.includes(p.id)}
+                                                  onChange={() => togglePermission(p.id)}
+                                                  title={p.description || p.name}
+                                                  aria-label={`${row.page} ${c.label}`}
+                                                  className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                />
+                                              ) : (
+                                                <span className="text-slate-300">—</span>
+                                              )}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    );
+                                  })}
+                                </Fragment>
+                              ))}
+                              {Object.keys(matrix.other).length > 0 && (
+                                <tr className="bg-slate-100/70">
+                                  <td colSpan={ACTION_COLUMNS.length + 1} className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Other permissions</td>
+                                </tr>
+                              )}
+                              {Object.keys(matrix.other).sort().map((module) => (
+                                <tr key={`other-${module}`} className="border-b border-slate-100">
+                                  <td colSpan={ACTION_COLUMNS.length + 1} className="px-3 py-2">
+                                    <p className="text-xs font-medium text-slate-500 mb-1">{module}</p>
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                      {matrix.other[module].map((p) => (
+                                        <label key={p.id} className="flex items-center gap-1.5 text-xs text-slate-600" title={p.description || ''}>
+                                          <input
+                                            type="checkbox"
+                                            checked={form.permissionIds.includes(p.id)}
+                                            onChange={() => togglePermission(p.id)}
+                                            className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                          />
+                                          {p.name}
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {permissions.length === 0 && <p className="text-sm text-slate-400 p-3">No permissions yet — add one below.</p>}
                         </div>
+                        <p className="text-xs text-slate-400 mt-1.5">Without View, a page is hidden from the sidebar and can&apos;t be opened, even if Create or Edit is ticked.</p>
                       </div>
 
                       {/* Define a brand-new permission string and drop it straight into
                           the matrix above. It only takes effect once a route in code
                           calls requirePermission() with this exact name — this just
                           makes it assignable. */}
+                      {canCreateRoles && (
                       <div className="border border-dashed border-slate-300 rounded-lg p-3 space-y-2">
                         <p className="text-sm font-medium text-slate-700">+ New permission</p>
                         <div className="grid grid-cols-2 gap-2">
@@ -306,6 +435,7 @@ export default function RolesPage() {
                           {createPermissionMutation.isPending ? 'Adding...' : 'Add permission'}
                         </button>
                       </div>
+                      )}
 
                       <div className="flex justify-end gap-3 pt-4 border-t">
                         <button type="button" onClick={closeDrawer} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">

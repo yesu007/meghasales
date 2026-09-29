@@ -6,6 +6,7 @@ import { BellAlertIcon, CheckCircleIcon, PencilSquareIcon } from '@heroicons/rea
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { formatCurrency } from '@/lib/currency';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const REMINDER_LABELS: Record<string, string> = {
   UPCOMING_7D: 'Due in 7 Days',
@@ -45,6 +46,8 @@ async function fetchTemplates() {
 
 function RemindersTab() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canEdit = has('edit_payment_reminders');
   const [statusFilter, setStatusFilter] = useState('PENDING');
   const [notesDraft, setNotesDraft] = useState<Record<number, string>>({});
 
@@ -139,16 +142,17 @@ function RemindersTab() {
                         defaultValue={r.notes || ''}
                         onChange={(e) => setNotesDraft((d) => ({ ...d, [r.id]: e.target.value }))}
                         onBlur={() => saveNotes(r.id)}
+                        disabled={!canEdit}
                         placeholder="Add note..."
                         className="w-32 px-2 py-1 border border-slate-200 rounded text-xs"
                       />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {r.status === 'PENDING' ? (
+                      {r.status === 'PENDING' ? (canEdit && (
                         <button onClick={() => markFollowedUp(r.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-green-700 hover:bg-green-50" title="Mark as Followed Up">
                           <CheckCircleIcon className="h-4 w-4" /> Follow Up
                         </button>
-                      ) : (
+                      )) : (
                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-green-700 bg-green-50">
                           <CheckCircleIcon className="h-4 w-4" /> Followed Up
                         </span>
@@ -167,6 +171,8 @@ function RemindersTab() {
 
 function TemplatesTab() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canEdit = has('edit_payment_reminders');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState({ subject: '', body: '' });
 
@@ -201,7 +207,7 @@ function TemplatesTab() {
               <p className="text-sm font-semibold text-slate-800">{t.name}</p>
               <p className="text-xs text-slate-400 mt-0.5">{t.channel} · {t.reminderType.replace(/_/g, ' ')}</p>
             </div>
-            {editingId !== t.id && (
+            {canEdit && editingId !== t.id && (
               <button onClick={() => { setEditingId(t.id); setDraft({ subject: t.subject || '', body: t.body }); }} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50">
                 <PencilSquareIcon className="h-4 w-4" />
               </button>

@@ -29,6 +29,7 @@ import { IMPLEMENTATION_STATUSES as IMPL_STATUSES } from '@/lib/implementationSt
 import { useStages } from '@/hooks/useStages';
 import { invalidateImplementationData } from '@/lib/queryInvalidation';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 // Go Live / Post Go Live tab labels + the state type — the tabs' own stage
 // categorization (GO_LIVE_STAGES/POST_GO_LIVE_STAGES) is applied server-side
 // in /api/implementations, not here.
@@ -94,7 +95,7 @@ async function fetchLeads(sourceType: 'LEAD' | 'CUSTOMER'): Promise<Lead[]> {
 }
 
 async function fetchUsers(): Promise<UserOption[]> {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) throw new Error('Failed to fetch users');
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
@@ -102,6 +103,10 @@ async function fetchUsers(): Promise<UserOption[]> {
 
 export default function ImplementationsPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_implementations');
+  const canEdit = has('edit_implementations');
+  const canDelete = has('delete_implementations');
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Stage master (src/app/dashboard/stages/page.tsx) replaces the old
   // hardcoded IMPLEMENTATION_STAGES array — flattened to plain names here
@@ -363,9 +368,11 @@ export default function ImplementationsPage() {
               </div>
             </div>
           </div>
-          <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-            <PlusIcon className="h-4 w-4" /> New Project
-          </button>
+          {canCreate && (
+            <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+              <PlusIcon className="h-4 w-4" /> New Project
+            </button>
+          )}
         </div>
         <p className="text-slate-500">Track project implementations and delivery</p>
       </div>
@@ -504,6 +511,7 @@ export default function ImplementationsPage() {
                         <select
                           value={impl.status}
                           onChange={(e) => updateStatus(impl.id, e.target.value)}
+                          disabled={!canEdit}
                           className={`px-2 py-1 rounded text-xs font-medium border-0 ${IMPL_STATUSES.find(s => s.value === impl.status)?.color || 'bg-slate-100 text-slate-700'}`}
                         >
                           {IMPL_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -513,6 +521,7 @@ export default function ImplementationsPage() {
                         <select
                           value={impl.currentStage || ''}
                           onChange={(e) => updateStage(impl.id, e.target.value)}
+                          disabled={!canEdit}
                           className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
                         >
                           <option value="">Select stage</option>
@@ -524,6 +533,7 @@ export default function ImplementationsPage() {
                           type="date"
                           value={impl.startDate ? dayjs(impl.startDate).format('YYYY-MM-DD') : ''}
                           onChange={(e) => updateStartDate(impl.id, e.target.value)}
+                          disabled={!canEdit}
                           className="px-2 py-1 border border-slate-200 rounded text-xs text-slate-700 focus:ring-2 focus:ring-amber-500"
                         />
                       </td>
@@ -532,6 +542,7 @@ export default function ImplementationsPage() {
                           type="date"
                           value={impl.targetEndDate ? dayjs(impl.targetEndDate).format('YYYY-MM-DD') : ''}
                           onChange={(e) => updateTargetEndDate(impl.id, e.target.value)}
+                          disabled={!canEdit}
                           className="px-2 py-1 border border-slate-200 rounded text-xs text-slate-700 focus:ring-2 focus:ring-amber-500"
                         />
                       </td>
@@ -539,6 +550,7 @@ export default function ImplementationsPage() {
                         <select
                           value={impl.projectManagerId || ''}
                           onChange={(e) => assignManager(impl.id, e.target.value)}
+                          disabled={!canEdit}
                           className="px-2 py-1 rounded text-xs font-medium border border-slate-200 text-slate-700 bg-white focus:ring-2 focus:ring-amber-500"
                         >
                           <option value="">Unassigned</option>
@@ -547,12 +559,16 @@ export default function ImplementationsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => openEdit(impl)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => deleteImpl(impl.id, impl.projectName || `Project #${impl.id}`)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
+                          {canEdit && (
+                            <button onClick={() => openEdit(impl)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button onClick={() => deleteImpl(impl.id, impl.projectName || `Project #${impl.id}`)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -567,6 +583,8 @@ export default function ImplementationsPage() {
                   <AddableSelect
                     value={String(size)}
                     onChange={(v) => { setSize(Number(v)); setPage(0); }}
+
+                    clearable={false}
                     options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
                     placeholder="Rows per page"
                   />

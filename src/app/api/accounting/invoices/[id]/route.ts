@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/rbac';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_accounting');
+  const denied = await requirePermission('view_invoices');
   if (denied) return denied;
   try {
     const invoice = await prisma.invoice.findUnique({
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_invoices');
+  const denied = await requirePermission('edit_invoices');
   if (denied) return denied;
   try {
     const body = await request.json();
@@ -76,7 +76,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_invoices');
+  const denied = await requirePermission('delete_invoices');
   if (denied) return denied;
   try {
     const id = parseInt(params.id);

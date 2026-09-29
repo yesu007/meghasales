@@ -8,14 +8,35 @@ export const dynamic = 'force-dynamic';
 // Create-only here. Update/delete for a single sub-category live in
 // ./[id]/route.ts (added for the Expense Sub Categories table's Edit/Delete
 // actions).
+// Bill tax settings (see ExpenseSubCategory.gstType/tdsApplicable/tdsPercent
+// in prisma/schema.prisma). Only fields present in the body are returned, so
+// a name-only edit leaves them untouched.
+function parseTaxSettings(body: any): { gstType?: string; tdsApplicable?: boolean; tdsPercent?: number } | string {
+  const out: { gstType?: string; tdsApplicable?: boolean; tdsPercent?: number } = {};
+  if (body.gstType !== undefined) {
+    if (!['INPUT', 'OUTPUT'].includes(body.gstType)) return 'GST type must be INPUT or OUTPUT';
+    out.gstType = body.gstType;
+  }
+  if (body.tdsApplicable !== undefined) out.tdsApplicable = !!body.tdsApplicable;
+  if (body.tdsPercent !== undefined && body.tdsPercent !== '') {
+    const pct = Number(body.tdsPercent);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) return 'TDS % must be between 0 and 100';
+    out.tdsPercent = pct;
+  }
+  if (out.tdsApplicable === false) out.tdsPercent = 0;
+  return out;
+}
+
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('create_expenses');
   if (denied) return denied;
 
   try {
     const body = await request.json();
     if (!body.categoryId) return NextResponse.json({ message: 'categoryId is required' }, { status: 400 });
     if (!body.name) return NextResponse.json({ message: 'name is required' }, { status: 400 });
+    const tax = parseTaxSettings(body);
+    if (typeof tax === 'string') return NextResponse.json({ message: tax }, { status: 400 });
 
     const category = await prisma.expenseCategory.findUnique({ where: { id: parseInt(body.categoryId) } });
     if (!category) return NextResponse.json({ message: 'Category not found' }, { status: 404 });
@@ -25,6 +46,7 @@ export async function POST(request: NextRequest) {
         categoryId: category.id,
         name: body.name,
         sortOrder: body.sortOrder != null ? Number(body.sortOrder) : 0,
+        ...tax,
       },
     });
 

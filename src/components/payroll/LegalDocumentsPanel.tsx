@@ -21,7 +21,7 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { validateEventDocumentFile } from '@/lib/eventDocumentUpload';
+import { validateEventDocumentFile } from '@/lib/eventDocumentValidation';
 
 // Free-text pseudo-enum, same convention as Employee.employmentType — see
 // EmployeeLegalDocument's schema comment. Every upload now goes through
@@ -288,11 +288,11 @@ export default function LegalDocumentsPanel({ apiBase, queryKey, canUpload, canD
           </button>
         )}
         {(isImage(doc.mimeType) || isPdf(doc.mimeType)) && (
-          <a href={doc.filePath} target="_blank" rel="noreferrer" className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Preview">
+          <a href={`${apiBase}/${doc.id}/file`} target="_blank" rel="noreferrer" className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Preview">
             <EyeIcon className="h-4 w-4" />
           </a>
         )}
-        <a href={doc.filePath} target="_blank" rel="noreferrer" download className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download">
+        <a href={`${apiBase}/${doc.id}/file?download=1`} target="_blank" rel="noreferrer" download className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download">
           <ArrowDownTrayIcon className="h-4 w-4" />
         </a>
         {canDelete && (

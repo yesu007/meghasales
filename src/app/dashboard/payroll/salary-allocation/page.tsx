@@ -6,6 +6,7 @@ import { ChevronLeftIcon, ChevronRightIcon, ChartPieIcon } from '@heroicons/reac
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/lib/currency';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const COMPANY_WIDE = 'company-wide';
 
@@ -54,6 +55,8 @@ function getPageNumbers(current: number, total: number): (number | 'ellipsis')[]
 
 export default function SalaryAllocationPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canEdit = has('edit_salary_allocation');
   const [editingCell, setEditingCell] = useState<{ key: string; value: string } | null>(null);
 
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
@@ -167,7 +170,8 @@ export default function SalaryAllocationPage() {
                             <input
                               value={displayValue}
                               placeholder="—"
-                              onFocus={() => setEditingCell({ key, value: pct ? String(pct) : '' })}
+                              readOnly={!canEdit}
+                              onFocus={() => { if (canEdit) setEditingCell({ key, value: pct ? String(pct) : '' }); }}
                               onChange={(ev) => setEditingCell({ key, value: ev.target.value.replace(/[^0-9.]/g, '') })}
                               onKeyDown={(ev) => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur(); }}
                               onBlur={() => commitCell(e, k)}
@@ -207,6 +211,8 @@ export default function SalaryAllocationPage() {
                 <AddableSelect
                   value={String(pageSize)}
                   onChange={(v) => { setPageSize(Number(v)); setPage(0); }}
+
+                  clearable={false}
                   options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
                   placeholder="Rows"
                 />

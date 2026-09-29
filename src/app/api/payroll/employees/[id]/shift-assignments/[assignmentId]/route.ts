@@ -27,7 +27,7 @@ async function loadAssignment(employeeId: number, assignmentId: number) {
 // would silently drift out of sync with each other.
 export async function PATCH(request: NextRequest, { params }: { params: { id: string; assignmentId: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_shifts');
   if (denied) return denied;
 
   try {
@@ -100,7 +100,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 // employee is ever left with a silently broken history.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string; assignmentId: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_shifts');
   if (denied) return denied;
 
   try {

@@ -37,7 +37,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function POST(request: NextRequest, { params }: { params: { id: string; entityId: string } }) {
-  const denied = await requirePermission('manage_companies');
+  const denied = await requirePermission('edit_companies');
   if (denied) return denied;
   if (!isStorageConfigured()) {
     return NextResponse.json(

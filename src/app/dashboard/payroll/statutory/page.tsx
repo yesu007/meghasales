@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface StatutorySettings {
   pfWageCeiling: string | null;
@@ -50,6 +51,9 @@ async function fetchSlabs(): Promise<PtSlab[]> {
 
 export default function StatutorySettingsPage() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_statutory_settings');
+  const canEdit = has('edit_statutory_settings');
   const { data: settings } = useQuery({ queryKey: ['payroll-statutory-settings'], queryFn: fetchSettings });
   const { data: slabs = [] } = useQuery({ queryKey: ['pt-slabs'], queryFn: fetchSlabs });
 
@@ -110,7 +114,7 @@ export default function StatutorySettingsPage() {
         The Professional Tax slabs below are starting defaults, not a verified current rate card — check them against the latest Tamil Nadu Commercial Taxes Department notification before relying on this for an actual filing.
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); saveSettings.mutate(); }} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-4">
+      <form onSubmit={(e) => { e.preventDefault(); if (canEdit) saveSettings.mutate(); }} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-4">
         <h2 className="text-base font-semibold text-slate-800">PF &amp; ESI</h2>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -155,19 +159,23 @@ export default function StatutorySettingsPage() {
           </div>
         </div>
 
-        <div className="flex justify-end pt-2 border-t border-slate-100">
-          <button type="submit" disabled={saveSettings.isPending} className="px-4 py-2 min-h-[44px] bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-            {saveSettings.isPending ? 'Saving...' : 'Save Settings'}
-          </button>
-        </div>
+        {canEdit && (
+          <div className="flex justify-end pt-2 border-t border-slate-100">
+            <button type="submit" disabled={saveSettings.isPending} className="px-4 py-2 min-h-[44px] bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+              {saveSettings.isPending ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        )}
       </form>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-800">Professional Tax Slabs</h2>
-          <button onClick={() => setShowSlabForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
-            <PlusIcon className="h-4 w-4" /> Add Slab
-          </button>
+          {canCreate && (
+            <button onClick={() => setShowSlabForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
+              <PlusIcon className="h-4 w-4" /> Add Slab
+            </button>
+          )}
         </div>
 
         {showSlabForm && (
@@ -194,9 +202,15 @@ export default function StatutorySettingsPage() {
                 <td className="py-2 pr-4 text-slate-600">₹{Number(s.minGross).toLocaleString('en-IN')} – {s.maxGross ? `₹${Number(s.maxGross).toLocaleString('en-IN')}` : '∞'}</td>
                 <td className="py-2 pr-4 text-slate-800">₹{Number(s.monthlyAmount).toLocaleString('en-IN')}</td>
                 <td className="py-2">
-                  <button onClick={() => toggleSlab.mutate({ id: s.id, isActive: !s.isActive })} className={`px-2 py-0.5 rounded text-xs font-medium ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                    {s.isActive ? 'Active' : 'Inactive'}
-                  </button>
+                  {canEdit ? (
+                    <button onClick={() => toggleSlab.mutate({ id: s.id, isActive: !s.isActive })} className={`px-2 py-0.5 rounded text-xs font-medium ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                      {s.isActive ? 'Active' : 'Inactive'}
+                    </button>
+                  ) : (
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                      {s.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}

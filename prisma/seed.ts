@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { worldCountries } from './data/worldCountries';
 import { worldCurrencies } from './data/worldCurrencies';
+import { syncPermissionCatalog } from '../src/lib/permissionSync';
 
 const prisma = new PrismaClient();
 
@@ -323,6 +324,24 @@ async function main() {
   });
   console.log('  ✓ manage_email_settings permission seeded and granted to ADMIN');
 
+  // Dashboard home page — every seeded role gets it, matching the
+  // seed_view_dashboard_permission migration (which only reaches roles that
+  // already exist when it runs; on a fresh database the roles above are
+  // created after migrations). Untick it per role from the Roles screen.
+  const viewDashboardPermission = await prisma.permission.upsert({
+    where: { name: 'view_dashboard' },
+    update: {},
+    create: { name: 'view_dashboard', description: 'View the Dashboard home page', module: 'DASHBOARD' },
+  });
+  for (const role of roles) {
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: role.id, permissionId: viewDashboardPermission.id } },
+      update: {},
+      create: { roleId: role.id, permissionId: viewDashboardPermission.id },
+    });
+  }
+  console.log(`  ✓ view_dashboard permission seeded and granted to ${roles.length} roles`);
+
   // Lead Events permissions — Event Management feature (Events/Documents/
   // Discussions on a CONFIRMED lead). ADMIN gets all three explicitly
   // (belt-and-suspenders alongside requirePermission()'s ADMIN bypass);
@@ -545,6 +564,13 @@ async function main() {
     create: { name: 'Annual Leave', code: 'ANNUAL', isPaid: true, annualQuota: 12, isActive: false },
   });
   console.log('  ✓ Standalone Annual Leave type deactivated (superseded by the Earned/Casual/Sick pool)');
+
+  // Last, so it can convert every older manage_* grant made above into the
+  // Module → Page → View/Create/Edit/Delete permissions (see
+  // src/lib/permissionCatalog.ts) — same outcome as the
+  // split_manage_into_create_edit_delete migration on an existing database.
+  await syncPermissionCatalog(prisma);
+  console.log('  ✓ Permission catalog synced (module/page/action, split manage_* grants)');
 
   console.log('✅ Seeding complete!');
 }

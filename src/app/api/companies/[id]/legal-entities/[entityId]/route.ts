@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/rbac';
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string; entityId: string } }) {
-  const denied = await requirePermission('manage_companies');
+  const denied = await requirePermission('edit_companies');
   if (denied) return denied;
 
   try {
@@ -49,7 +49,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string; entityId: string } }) {
-  const denied = await requirePermission('manage_companies');
+  const denied = await requirePermission('edit_companies');
   if (denied) return denied;
 
   try {

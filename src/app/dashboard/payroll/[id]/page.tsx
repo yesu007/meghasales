@@ -100,9 +100,11 @@ export default function EmployeeDetailPage() {
   const id = params.id as string;
   const queryClient = useQueryClient();
   const { has } = usePermissions();
-  // Same permission the rest of this page's edit form already requires —
-  // reused rather than introducing a separate documents-specific one.
-  const canManageEmployees = has('manage_employees');
+  // Employee documents & folders use the same permission as this page's
+  // edit form (edit_employees); salary structure assignments on an
+  // employee are gated by edit_salary_structures instead.
+  const canEditEmployee = has('edit_employees');
+  const canEditSalary = has('edit_salary_structures');
 
   const { data: employee, isLoading } = useQuery({ queryKey: ['payroll-employee', id], queryFn: () => fetchEmployee(id) });
   const { data: structures = [] } = useQuery({ queryKey: ['payroll-structures'], queryFn: fetchStructures });
@@ -387,11 +389,13 @@ export default function EmployeeDetailPage() {
               </div>
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-slate-100">
-              <button type="submit" disabled={saveMutation.isPending} className="px-4 py-2 min-h-[44px] bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-                {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
+            {canEditEmployee && (
+              <div className="flex justify-end pt-2 border-t border-slate-100">
+                <button type="submit" disabled={saveMutation.isPending} className="px-4 py-2 min-h-[44px] bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                  {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            )}
           </form>
 
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
@@ -412,8 +416,12 @@ export default function EmployeeDetailPage() {
                         <td className="py-2 pr-4 text-slate-500">{dayjs(a.effectiveFrom).format('DD MMM YYYY')}</td>
                         <td className="py-2 pr-4 text-slate-500">{a.effectiveTo ? dayjs(a.effectiveTo).format('DD MMM YYYY') : <span className="text-green-600 font-medium">Current</span>}</td>
                         <td className="py-2 text-right whitespace-nowrap">
-                          <button onClick={() => openEditAssignment(a)} className="text-xs font-medium text-amber-700 hover:text-amber-800 mr-3">Edit</button>
-                          <button onClick={() => { setRevisingAssignment(a); setReviseForm({ newCtc: a.ctcAnnual, reason: '' }); }} className="text-xs font-medium text-slate-500 hover:text-slate-700">Revise CTC</button>
+                          {canEditSalary && (
+                            <>
+                              <button onClick={() => openEditAssignment(a)} className="text-xs font-medium text-amber-700 hover:text-amber-800 mr-3">Edit</button>
+                              <button onClick={() => { setRevisingAssignment(a); setReviseForm({ newCtc: a.ctcAnnual, reason: '' }); }} className="text-xs font-medium text-slate-500 hover:text-slate-700">Revise CTC</button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -452,17 +460,18 @@ export default function EmployeeDetailPage() {
               page also serves as "Payroll Employee") and in My Space >
               My Documents for this employee's own login, if they have
               one — see LegalDocumentsPanel and EmployeeLegalDocument's
-              schema comment. canDelete is gated by manage_employees,
+              schema comment. Upload/delete are gated by edit_employees,
               the same permission the rest of this page's edit form
-              already requires — no new permission introduced. */}
+              requires (matches the documents API). */}
           <LegalDocumentsPanel
             apiBase={`/api/payroll/employees/${id}/documents`}
             queryKey={`employee-documents-${id}`}
-            canUpload={canManageEmployees}
-            canDelete={canManageEmployees}
+            canUpload={canEditEmployee}
+            canDelete={canEditEmployee}
           />
         </div>
 
+        {canEditSalary && (
         <div ref={assignFormRef} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 h-fit scroll-mt-4">
           <h2 className="text-base font-semibold text-slate-800 mb-3">{editingAssignment ? 'Edit Assignment' : 'Assign Salary Structure'}</h2>
           <form
@@ -518,6 +527,7 @@ export default function EmployeeDetailPage() {
             {structures.length === 0 && <p className="text-xs text-slate-400">No salary structures yet — <Link href="/dashboard/payroll/structures" className="text-amber-700 hover:underline">create one first</Link>.</p>}
           </form>
         </div>
+        )}
       </div>
     </div>
   );

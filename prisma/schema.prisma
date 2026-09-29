@@ -24,11 +24,18 @@ model Role {
   @@map("roles")
 }
 
+// Module → Page → Action hierarchy (see src/lib/permissionCatalog.ts, the
+// source of truth the Roles screen renders from). page/action are null for
+// custom permissions added from the Roles screen without one; action is
+// view | create | edit | delete | other.
 model Permission {
   id          Int              @id @default(autoincrement())
   name        String           @unique
   description String?
   module      String
+  page        String?
+  action      String?
+  sortOrder   Int              @default(0) @map("sort_order")
   createdAt   DateTime         @default(now()) @map("created_at")
   roles       RolePermission[]
 
@@ -110,6 +117,7 @@ model User {
   issuedCreditNotes      CreditNote[]            @relation("CreditNoteIssuedBy")
   createdExchangeRates   ExchangeRate[]          @relation("ExchangeRateCreatedBy")
   recordedExpenses       Expense[]               @relation("ExpenseRecordedBy")
+  createdBills           Bill[]                  @relation("BillCreatedBy")
   approvedExpenseBudgets ExpenseBudget[]         @relation("ExpenseBudgetApprovedBy")
   createdExpenseBudgets  ExpenseBudget[]         @relation("ExpenseBudgetCreatedBy")
   revisedExpenseBudgets  ExpenseBudgetRevision[] @relation("ExpenseBudgetRevisedBy")
@@ -1502,6 +1510,7 @@ model PayrollRun {
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
   payslips Payslip[]
+  expense  Expense?
 
   @@unique([payPeriodYear, payPeriodMonth])
   @@map("payroll_runs")
@@ -2008,6 +2017,8 @@ model ExpenseCategory {
   // recordedById), a different concept from an employee's own
   // reimbursement claim even though both reuse this same category master.
   claims           ExpenseClaim[]
+  // Vendor bills (Finance → Bills) — one category per bill.
+  bills            Bill[]
 
   @@map("expense_categories")
 }
@@ -2016,17 +2027,27 @@ model ExpenseCategory {
 // scoped to one parent category rather than a flat/global list, since the
 // same sub-category name has no meaning outside its category.
 model ExpenseSubCategory {
-  id         Int      @id @default(autoincrement())
-  categoryId Int      @map("category_id")
-  name       String
-  isActive   Boolean  @default(true) @map("is_active")
-  sortOrder  Int      @default(0) @map("sort_order")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id            Int      @id @default(autoincrement())
+  categoryId    Int      @map("category_id")
+  name          String
+  isActive      Boolean  @default(true) @map("is_active")
+  sortOrder     Int      @default(0) @map("sort_order")
+  // Bill tax treatment for line items mapped to this sub-category.
+  // gstType: INPUT (GST on money the business owes — purchases/bills) or
+  // OUTPUT (GST on money owed to the business); the Bills screen shows only
+  // this one figure. tdsPercent is applied to the item value when
+  // tdsApplicable is true (defaults the line's TDS %, still editable).
+  gstType       String   @default("INPUT") @map("gst_type")
+  tdsApplicable Boolean  @default(false) @map("tds_applicable")
+  tdsPercent    Decimal  @default(0) @map("tds_percent") @db.Decimal(5, 2)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   category      ExpenseCategory                  @relation(fields: [categoryId], references: [id])
   expenses      Expense[]
+  claims        ExpenseClaim[]
   categoryLinks ExpenseCategorySubCategoryLink[]
+  billItems     BillItem[]
 
   @@unique([categoryId, name])
   @@index([categoryId])
@@ -2084,25 +2105,50 @@ model Expense {
   // historical expenses against today's rate.
   exchangeRate    Decimal   @default(1) @map("exchange_rate") @db.Decimal(15, 6)
   paymentMethod   String    @map("payment_method") // CASH | BANK_TRANSFER | CHEQUE | CARD | UPI | OTHER
-  status          String    @default("PENDING") // PENDING | PAID
+  status          String    @default("PENDING") // PENDING | PROCESSED | PARTIALLY_PAID (BILL only) | PAID
   paidDate        DateTime? @map("paid_date")
+  // Where the expense came from: MANUAL (recorded on the Expenses page),
+  // SALARY (auto-created from an approved Payroll Run, one per run — see
+  // syncPayrollRunExpense in src/lib/payroll/runService.ts) or
+  // REIMBURSEMENT (auto-created from an approved ExpenseClaim — see
+  // syncExpenseClaimExpense in src/lib/payroll/expenseClaimExpense.ts) or
+  // BILL (auto-created when a vendor Bill is posted — see src/lib/bills.ts).
+  source          String    @default("MANUAL")
+  // Set only for REIMBURSEMENT expenses. Unique, so one claim can never
+  // produce more than one expense.
+  expenseClaimId  Int?      @unique @map("expense_claim_id")
+  // Set only for SALARY expenses. Unique, so a payroll run can never produce
+  // more than one expense however often it is re-approved/processed; the
+  // employee-wise breakdown is read from the run's payslips.
+  payrollRunId    Int?      @unique @map("payroll_run_id")
+  // Set only for BILL expenses (auto-created when a Bill is posted — see
+  // syncBillExpense in src/lib/bills.ts). Unique: one expense per bill.
+  billId          Int?      @unique @map("bill_id")
   referenceNumber String?   @map("reference_number") // vendor's bill/receipt number
   attachmentUrl   String?   @map("attachment_url")
   attachmentName  String?   @map("attachment_name")
+  // Payment proof attached in the Mark Paid popup — separate from
+  // attachmentUrl (the expense's own supporting document).
+  paymentProofUrl  String?  @map("payment_proof_url")
+  paymentProofName String?  @map("payment_proof_name")
   notes           String?
   recordedById    Int?      @map("recorded_by")
   deletedAt       DateTime? @map("deleted_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  category    ExpenseCategory     @relation(fields: [categoryId], references: [id])
-  subCategory ExpenseSubCategory? @relation(fields: [subCategoryId], references: [id])
-  recordedBy  User?               @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
-  vendorLead  Lead?               @relation("ExpenseVendor", fields: [vendorLeadId], references: [id])
-  project     Project?            @relation(fields: [projectId], references: [id])
-  product     Product?            @relation(fields: [productId], references: [id])
+  category     ExpenseCategory     @relation(fields: [categoryId], references: [id])
+  subCategory  ExpenseSubCategory? @relation(fields: [subCategoryId], references: [id])
+  recordedBy   User?               @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
+  vendorLead   Lead?               @relation("ExpenseVendor", fields: [vendorLeadId], references: [id])
+  project      Project?            @relation(fields: [projectId], references: [id])
+  product      Product?            @relation(fields: [productId], references: [id])
+  payrollRun   PayrollRun?         @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+  expenseClaim ExpenseClaim?       @relation(fields: [expenseClaimId], references: [id], onDelete: SetNull)
+  bill         Bill?               @relation(fields: [billId], references: [id], onDelete: SetNull)
 
   @@index([status])
+  @@index([source])
   @@index([categoryId])
   @@index([subCategoryId])
   @@index([expenseDate])
@@ -2110,6 +2156,111 @@ model Expense {
   @@index([projectId])
   @@index([productId])
   @@map("expenses")
+}
+
+// Vendor master for Bills (Finance → Bills). A separate table from Lead
+// (Customers) since the parties we pay are not our customers; created from
+// the bill form itself when a vendor is new. GSTIN is unique when present.
+model Supplier {
+  id        Int      @id @default(autoincrement())
+  name      String
+  gstin     String?  @unique
+  pan       String?
+  address   String?
+  stateCode String?  @map("state_code")
+  phone     String?
+  email     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  bills Bill[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+// A vendor invoice keyed in manually (the PDF is attached for reference
+// only). DRAFT bills are freely editable; POSTING a bill locks its details
+// and auto-creates exactly one linked BILL expense carrying the category
+// and payable amount (Expense.billId). Payment status then lives here and
+// is mirrored onto that expense. Totals are stored (computed server-side by
+// computeBillTotals in src/lib/bills.ts) so lists/reports never recompute.
+model Bill {
+  id             Int       @id @default(autoincrement())
+  billNumber     String    @unique @map("bill_number") // BILL-00001
+  billType       String    @map("bill_type") // SUB_CONTRACTOR | MATERIAL
+  supplierId     Int       @map("supplier_id")
+  invoiceNumber  String    @map("invoice_number")
+  invoiceDate    DateTime  @map("invoice_date")
+  // Exactly one category per bill; each line item picks a sub-category of it.
+  categoryId     Int       @map("category_id")
+  itemTotal      Decimal   @default(0) @map("item_total") @db.Decimal(14, 2)
+  cgstTotal      Decimal   @default(0) @map("cgst_total") @db.Decimal(14, 2)
+  sgstTotal      Decimal   @default(0) @map("sgst_total") @db.Decimal(14, 2)
+  igstTotal      Decimal   @default(0) @map("igst_total") @db.Decimal(14, 2)
+  gstTotal       Decimal   @default(0) @map("gst_total") @db.Decimal(14, 2)
+  tdsTotal       Decimal   @default(0) @map("tds_total") @db.Decimal(14, 2)
+  // Item Value − TDS + GST
+  payableAmount  Decimal   @default(0) @map("payable_amount") @db.Decimal(14, 2)
+  status         String    @default("DRAFT") // DRAFT | POSTED
+  paymentStatus  String    @default("UNPAID") @map("payment_status") // UNPAID | PARTIALLY_PAID | PAID
+  paidAmount     Decimal   @default(0) @map("paid_amount") @db.Decimal(14, 2)
+  paidDate       DateTime? @map("paid_date")
+  paymentMethod  String?   @map("payment_method") // same values as Expense.paymentMethod
+  attachmentUrl  String?   @map("attachment_url")
+  attachmentName String?   @map("attachment_name")
+  // Payment proof attached in the Payment popup — separate from
+  // attachmentUrl (the vendor invoice PDF). Encrypted like it.
+  paymentProofUrl  String?  @map("payment_proof_url")
+  paymentProofName String?  @map("payment_proof_name")
+  notes          String?
+  postedAt       DateTime? @map("posted_at")
+  createdById    Int?      @map("created_by")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  supplier  Supplier        @relation(fields: [supplierId], references: [id])
+  category  ExpenseCategory @relation(fields: [categoryId], references: [id])
+  createdBy User?           @relation("BillCreatedBy", fields: [createdById], references: [id])
+  items     BillItem[]
+  expense   Expense?
+
+  @@index([supplierId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([invoiceDate])
+  @@map("bills")
+}
+
+model BillItem {
+  id            Int     @id @default(autoincrement())
+  billId        Int     @map("bill_id")
+  subCategoryId Int     @map("sub_category_id")
+  description   String
+  itemValue     Decimal @map("item_value") @db.Decimal(14, 2)
+  cgstRate      Decimal @default(0) @map("cgst_rate") @db.Decimal(5, 2)
+  sgstRate      Decimal @default(0) @map("sgst_rate") @db.Decimal(5, 2)
+  igstRate      Decimal @default(0) @map("igst_rate") @db.Decimal(5, 2)
+  cgstAmount    Decimal @default(0) @map("cgst_amount") @db.Decimal(14, 2)
+  sgstAmount    Decimal @default(0) @map("sgst_amount") @db.Decimal(14, 2)
+  igstAmount    Decimal @default(0) @map("igst_amount") @db.Decimal(14, 2)
+  gstAmount     Decimal @default(0) @map("gst_amount") @db.Decimal(14, 2)
+  // Snapshot of the sub-category's GST type at save time (INPUT | OUTPUT).
+  gstType       String  @default("INPUT") @map("gst_type")
+  tdsPercent    Decimal @default(0) @map("tds_percent") @db.Decimal(5, 2)
+  tdsAmount     Decimal @default(0) @map("tds_amount") @db.Decimal(14, 2)
+  payableAmount Decimal @default(0) @map("payable_amount") @db.Decimal(14, 2)
+  sortOrder     Int     @default(0) @map("sort_order")
+
+  bill        Bill               @relation(fields: [billId], references: [id], onDelete: Cascade)
+  subCategory ExpenseSubCategory @relation(fields: [subCategoryId], references: [id])
+
+  @@index([billId])
+  @@index([subCategoryId])
+  @@map("bill_items")
 }
 
 // Employee reimbursement claim (My Space → Expense Claim) — deliberately a
@@ -2131,6 +2282,12 @@ model ExpenseClaim {
   // second, parallel type list; an admin adding a category there
   // automatically becomes selectable here too.
   categoryId      Int       @map("category_id")
+  // "Sub Category" — one of the selected Category's own sub-categories
+  // (ExpenseSubCategory.categoryId, the same ownership Finance's Expenses
+  // form uses to fill its Sub Category dropdown). Nullable: a category may
+  // have no sub-categories, and claims filed before this field existed have
+  // none.
+  subCategoryId   Int?      @map("sub_category_id")
   // Project / Customer — same optional, independent pair as Demo/Quotation/
   // Implementation's own projectId/leadId fields: leadId is "Customer" (a
   // Lead row), projectId is optionally scoped to that Lead's own Projects
@@ -2166,6 +2323,10 @@ model ExpenseClaim {
   // Set only when moving to PAID, via the Mark as Paid confirmation popup —
   // HAND_CASH | BANK_TRANSFER. Null for every other status.
   paymentType     String?   @map("payment_type")
+  // Payment proof attached in the approver's Mark Paid popup — separate
+  // from attachmentUrl (the employee's own receipt). Encrypted like it.
+  paymentProofUrl  String?  @map("payment_proof_url")
+  paymentProofName String?  @map("payment_proof_name")
   // Optimistic lock — same convention as LeaveRequest.version/PayrollRun.version,
   // guards against two approvers (or an approver and the employee, e.g. a
   // Submit racing an in-flight Approve) clobbering each other's update.
@@ -2173,16 +2334,19 @@ model ExpenseClaim {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  employee  Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  category  ExpenseCategory @relation(fields: [categoryId], references: [id])
-  lead      Lead?           @relation(fields: [leadId], references: [id])
-  project   Project?        @relation(fields: [projectId], references: [id])
-  product   Product?        @relation(fields: [productId], references: [id])
-  decidedBy User?           @relation("ExpenseClaimDecidedBy", fields: [decidedById], references: [id])
+  employee    Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  category    ExpenseCategory     @relation(fields: [categoryId], references: [id])
+  subCategory ExpenseSubCategory? @relation(fields: [subCategoryId], references: [id])
+  lead        Lead?               @relation(fields: [leadId], references: [id])
+  project     Project?            @relation(fields: [projectId], references: [id])
+  product     Product?            @relation(fields: [productId], references: [id])
+  decidedBy   User?               @relation("ExpenseClaimDecidedBy", fields: [decidedById], references: [id])
+  expense     Expense?
 
   @@index([employeeId])
   @@index([status])
   @@index([categoryId])
+  @@index([subCategoryId])
   @@index([leadId])
   @@index([productId])
   @@index([projectId])

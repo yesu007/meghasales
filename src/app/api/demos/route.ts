@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
-import { requirePermission, getOwnershipFilter } from '@/lib/rbac';
+import { getOwnershipFilter, requirePermission } from '@/lib/rbac';
 import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { isNextDateOverdue } from '@/lib/leadFollowUp';
 
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_demos');
+  const denied = await requirePermission('create_demos');
   if (denied) return denied;
 
   try {

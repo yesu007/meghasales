@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { requirePermission } from '@/lib/rbac';
+import { syncExpenseClaimExpense } from '@/lib/payroll/expenseClaimExpense';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,9 +69,21 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     } else if (toStatus === 'PAID') {
       data.paidAt = new Date();
       data.paymentType = body.paymentType;
+      // Optional payment proof from the Mark Paid popup (uploaded first via
+      // /api/payroll/expense-claims/upload, same as the employee's receipt).
+      if (body.paymentProofUrl) {
+        data.paymentProofUrl = body.paymentProofUrl;
+        data.paymentProofName = body.paymentProofName || null;
+      }
     }
 
-    const updateResult = await prisma.expenseClaim.updateMany({ where: { id, version: existing.version }, data });
+    // Status change + its REIMBURSEMENT expense (created on APPROVED, marked
+    // paid on PAID — see syncExpenseClaimExpense) commit together or not at all.
+    const updateResult = await prisma.$transaction(async (tx) => {
+      const result = await tx.expenseClaim.updateMany({ where: { id, version: existing.version }, data });
+      if (result.count > 0) await syncExpenseClaimExpense(tx, id, performedById);
+      return result;
+    });
     if (updateResult.count === 0) {
       return NextResponse.json({ message: 'This reimbursement was modified elsewhere — reload and try again' }, { status: 409 });
     }
@@ -80,6 +93,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       include: {
         employee: { select: { employeeCode: true, firstName: true, lastName: true, department: true } },
         category: { select: { id: true, name: true } },
+        subCategory: { select: { id: true, name: true } },
         lead: { select: { id: true, companyName: true } },
         project: { select: { id: true, projectName: true } },
         product: { select: { id: true, productName: true } },

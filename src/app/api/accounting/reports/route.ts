@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 const VALID_TYPES: ReportType[] = ['outstanding', 'aging', 'collection', 'payment-history', 'overdue', 'monthly-collection'];
 
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_accounting');
+  const denied = await requirePermission('view_accounting_reports');
   if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);

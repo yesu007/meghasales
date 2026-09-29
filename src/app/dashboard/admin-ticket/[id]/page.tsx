@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { STATUSES, PRIORITIES, isValidStatusTransition, TicketStatus, Priority } from '@/lib/adminTicket/constants';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const STATUS_COLORS: Record<string, string> = {
   OPEN: 'bg-blue-100 text-blue-700',
@@ -34,6 +35,10 @@ export default function AdminTicketDetailPage() {
   const router = useRouter();
   const id = params.id as string;
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  // Status/priority changes and attachment uploads all require edit_admin_tickets
+  // (PATCH /tickets/[id], POST /tickets/[id]/attachments); comments only need view.
+  const canEdit = has('edit_admin_tickets');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -165,28 +170,36 @@ export default function AdminTicketDetailPage() {
         <div className="flex flex-wrap items-center gap-6 mt-5 pt-5 border-t border-slate-100">
           <div className="flex items-center gap-3">
             <label htmlFor="status-select" className="text-sm font-medium text-slate-600">Status</label>
-            <div id="status-select" className="w-56">
-              <AddableSelect
-                value={ticket.status}
-                disabled={statusMutation.isPending}
-                onChange={(v) => statusMutation.mutate(v as TicketStatus)}
-                options={availableStatuses.map((s) => ({ value: s, label: `${s.replace('_', ' ')}${s === ticket.status ? ' (current)' : ''}` }))}
-                placeholder="Select status"
-              />
-            </div>
+            {canEdit ? (
+              <div id="status-select" className="w-56">
+                <AddableSelect
+                  value={ticket.status}
+                  disabled={statusMutation.isPending}
+                  onChange={(v) => statusMutation.mutate(v as TicketStatus)}
+                  options={availableStatuses.map((s) => ({ value: s, label: `${s.replace('_', ' ')}${s === ticket.status ? ' (current)' : ''}` }))}
+                  placeholder="Select status"
+                />
+              </div>
+            ) : (
+              <span id="status-select" className="text-sm font-medium text-slate-700">{ticket.status.replace('_', ' ')}</span>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
             <label htmlFor="priority-select" className="text-sm font-medium text-slate-600">Priority</label>
-            <div id="priority-select" className="w-56">
-              <AddableSelect
-                value={ticket.priority}
-                disabled={priorityMutation.isPending}
-                onChange={(v) => priorityMutation.mutate(v as Priority)}
-                options={(PRIORITIES as readonly Priority[]).map((p) => ({ value: p, label: p }))}
-                placeholder="Select priority"
-              />
-            </div>
+            {canEdit ? (
+              <div id="priority-select" className="w-56">
+                <AddableSelect
+                  value={ticket.priority}
+                  disabled={priorityMutation.isPending}
+                  onChange={(v) => priorityMutation.mutate(v as Priority)}
+                  options={(PRIORITIES as readonly Priority[]).map((p) => ({ value: p, label: p }))}
+                  placeholder="Select priority"
+                />
+              </div>
+            ) : (
+              <span id="priority-select" className="text-sm font-medium text-slate-700">{ticket.priority}</span>
+            )}
           </div>
         </div>
       </div>
@@ -194,16 +207,18 @@ export default function AdminTicketDetailPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-slate-800">Attachments</h2>
-          <label className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer">
-            <PaperClipIcon className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload'}
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              disabled={uploading}
-              onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
-            />
-          </label>
+          {canEdit && (
+            <label className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer">
+              <PaperClipIcon className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload'}
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                disabled={uploading}
+                onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
+              />
+            </label>
+          )}
         </div>
         {ticket.attachments?.length ? (
           <ul className="divide-y divide-slate-100">

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { findEmployeeForUser } from '@/lib/payroll/selfEmployee';
+import { ensureEmployeeForUser } from '@/lib/payroll/selfEmployee';
 import { logAudit } from '@/lib/audit';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { deleteEmptyFolder, FolderNotEmptyError, renameFolder, moveFolder, InvalidFolderMoveError } from '@/lib/payroll/employeeLegalDocuments';
@@ -26,7 +26,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { folder
     const userId = currentUserId(session);
     if (!userId) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
-    const employee = await findEmployeeForUser(userId);
+    const employee = await ensureEmployeeForUser(userId);
     if (!employee) return NextResponse.json({ message: 'You do not have a payroll profile' }, { status: 404 });
 
     const folderId = parseInt(params.folderId, 10);
@@ -60,7 +60,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { folde
     const userId = currentUserId(session);
     if (!userId) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
-    const employee = await findEmployeeForUser(userId);
+    const employee = await ensureEmployeeForUser(userId);
     if (!employee) return NextResponse.json({ message: 'You do not have a payroll profile' }, { status: 404 });
 
     const folderId = parseInt(params.folderId, 10);

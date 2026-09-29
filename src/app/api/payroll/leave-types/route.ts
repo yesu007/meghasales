@@ -24,7 +24,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_salary_structures');
+  const denied = await requirePermission('create_timesheet');
   if (denied) return denied;
 
   try {

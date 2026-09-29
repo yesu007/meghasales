@@ -45,7 +45,7 @@ async function fetchTodos(params: Record<string, string>) {
 }
 
 async function fetchUsers() {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) return [];
   const data = await res.json();
   return data.content || [];
@@ -214,7 +214,8 @@ export default function TodoListPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { has: hasPermission } = usePermissions();
-  const canManageMeetings = hasPermission('manage_meetings');
+  const canCreateMeetings = hasPermission('create_meetings');
+  const canEditMeetings = hasPermission('edit_meetings');
 
   const [statusFilter, setStatusFilter] = useState('');
   const [meetingTypeFilter, setMeetingTypeFilter] = useState('');
@@ -329,7 +330,7 @@ export default function TodoListPage() {
               ))}
             </div>
           </div>
-          {canManageMeetings && (
+          {canCreateMeetings && (
             <button
               onClick={() => setShowCreateModal(true)}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
@@ -434,7 +435,7 @@ export default function TodoListPage() {
                     <td className="px-4 py-3 text-slate-600">{dayjs(m.scheduledAt).format('DD MMM YYYY, h:mm A')}</td>
                     <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{m.participantCount ?? 0}</td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      {canManageMeetings ? (
+                      {canEditMeetings ? (
                         <select
                           value={m.priority}
                           disabled={priorityMutation.isPending && priorityMutation.variables?.id === m.id}
@@ -450,7 +451,7 @@ export default function TodoListPage() {
                       )}
                     </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      {canManageMeetings ? (
+                      {canEditMeetings ? (
                         <select
                           value={m.status}
                           disabled={statusMutation.isPending && statusMutation.variables?.id === m.id}
@@ -480,6 +481,8 @@ export default function TodoListPage() {
                 <AddableSelect
                   value={String(size)}
                   onChange={(v) => { setSize(Number(v)); setPage(0); }}
+
+                  clearable={false}
                   options={[10, 20, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
                   placeholder="Rows"
                 />

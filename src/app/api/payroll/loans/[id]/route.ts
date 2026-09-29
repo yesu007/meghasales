@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_loans');
   if (denied) return denied;
 
   try {
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // repayment log, so there's one path that ever moves it.
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_loans');
   if (denied) return denied;
 
   try {

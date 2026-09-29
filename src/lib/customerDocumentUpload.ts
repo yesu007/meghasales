@@ -1,32 +1,18 @@
-import { put } from '@/lib/storage';
+import { putEncrypted } from '@/lib/storage';
 
 // Customer Documents (KYC / NDA & Contract) — a standalone copy of
 // src/lib/eventDocumentUpload.ts's validate/upload pair rather than a
 // shared import, so this feature never depends on Lead Events' own code.
-// Business requirement scopes these uploads to PDF/DOC/DOCX/JPG/PNG only
-// (narrower than the Lead Events allow-list, which also takes
-// spreadsheets/slides/zips) — same 10MB cap for consistency with the rest
-// of the app.
-export const MAX_CUSTOMER_DOCUMENT_SIZE = 10 * 1024 * 1024;
+// Validators live in the client-safe customerDocumentValidation.ts (client
+// components import them from there, since this file pulls in
+// storage/crypto); re-exported here so server callers keep a single import.
+export { MAX_CUSTOMER_DOCUMENT_SIZE, ALLOWED_CUSTOMER_DOCUMENT_MIME_TYPES, validateCustomerDocumentFile } from '@/lib/customerDocumentValidation';
 
-export const ALLOWED_CUSTOMER_DOCUMENT_MIME_TYPES = [
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
-  'image/jpeg',
-  'image/png',
-];
-
-export function validateCustomerDocumentFile(file: { size: number; type?: string }): string | null {
-  if (file.size > MAX_CUSTOMER_DOCUMENT_SIZE) return 'File exceeds the 10MB limit';
-  if (file.type && !ALLOWED_CUSTOMER_DOCUMENT_MIME_TYPES.includes(file.type)) {
-    return 'Unsupported file type — allowed: PDF, DOC/DOCX, JPG, PNG';
-  }
-  return null;
-}
-
+// Encrypted before upload (see putEncrypted / documentEncryption.ts) — the
+// stored object is ciphertext and is only readable through the Customer
+// document ".../file" endpoints, which decrypt it server-side.
 export async function uploadCustomerDocumentBlob(file: File, pathPrefix: string) {
-  return put(`${pathPrefix}/${Date.now()}-${file.name}`, file, { access: 'public' });
+  return putEncrypted(pathPrefix, file);
 }
 
 export function fileExtension(fileName: string): string {

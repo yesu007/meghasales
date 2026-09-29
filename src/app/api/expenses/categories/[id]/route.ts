@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 // The collection route (../route.ts) stays create/list-only, unchanged.
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('edit_expenses');
   if (denied) return denied;
 
   try {
@@ -39,7 +39,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('delete_expenses');
   if (denied) return denied;
 
   try {
@@ -50,15 +50,17 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     // Refuse rather than cascade — an expense/budget left pointing at a
     // deleted category (or a sub-category orphaned from its parent) would
     // be a broken reference, not a clean deletion.
-    const [expenseCount, budgetCount, subCategoryCount] = await Promise.all([
+    const [expenseCount, budgetCount, subCategoryCount, billCount] = await Promise.all([
       prisma.expense.count({ where: { categoryId: id } }),
       prisma.expenseBudget.count({ where: { categoryId: id } }),
       prisma.expenseSubCategory.count({ where: { categoryId: id } }),
+      prisma.bill.count({ where: { categoryId: id } }),
     ]);
-    if (expenseCount > 0 || budgetCount > 0 || subCategoryCount > 0) {
+    if (expenseCount > 0 || budgetCount > 0 || subCategoryCount > 0 || billCount > 0) {
       const parts: string[] = [];
       if (subCategoryCount > 0) parts.push(`${subCategoryCount} sub-categor${subCategoryCount === 1 ? 'y' : 'ies'}`);
       if (expenseCount > 0) parts.push(`${expenseCount} expense${expenseCount === 1 ? '' : 's'}`);
+      if (billCount > 0) parts.push(`${billCount} bill${billCount === 1 ? '' : 's'}`);
       if (budgetCount > 0) parts.push(`${budgetCount} budget${budgetCount === 1 ? '' : 's'}`);
       return NextResponse.json({ message: `Cannot delete — still in use (${parts.join(', ')})` }, { status: 409 });
     }

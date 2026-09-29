@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 // carries none of the compliance weight of removing it outright.
 export async function PATCH(request: NextRequest, { params }: { params: { id: string; documentId: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_employees');
   if (denied) return denied;
 
   try {
@@ -41,7 +41,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 // manage_employees and guessed/enumerated an unrelated id.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string; documentId: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_employees');
   if (denied) return denied;
 
   try {

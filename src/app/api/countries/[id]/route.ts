@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_countries');
+  const denied = await requirePermission('edit_countries');
   if (denied) return denied;
 
   try {
@@ -66,7 +66,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 // behavior), matching the isActive-flag retirement pattern already used by
 // CurrencyMaster/CountryTaxMaster.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_countries');
+  const denied = await requirePermission('delete_countries');
   if (denied) return denied;
 
   try {

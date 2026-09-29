@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 // same gate as upload/folder-create (manage_employees).
 export async function PATCH(request: NextRequest, { params }: { params: { id: string; folderId: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_employees');
   if (denied) return denied;
 
   try {
@@ -38,7 +38,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 // subfolders) — see deleteEmptyFolder's own comment.
 export async function DELETE(request: NextRequest, { params }: { params: { id: string; folderId: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_employees');
   if (denied) return denied;
 
   try {

@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 // current amount); ExpenseBudgetRevision is the append-only history of how
 // it got there.
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_expense_budgets');
+  const denied = await requirePermission('edit_expense_budgets');
   if (denied) return denied;
 
   try {

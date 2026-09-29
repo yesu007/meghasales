@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
       include: {
         employee: { select: { employeeCode: true, firstName: true, lastName: true, department: true } },
         category: { select: { id: true, name: true } },
+        subCategory: { select: { id: true, name: true } },
         lead: { select: { id: true, companyName: true } },
         project: { select: { id: true, projectName: true } },
         product: { select: { id: true, productName: true } },

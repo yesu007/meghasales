@@ -7,6 +7,7 @@ import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { getExchangeRate, RateNotFoundError } from '@/lib/exchangeRate';
 import { nextExpenseNumber } from '@/lib/nextExpenseNumber';
+import { buildExpenseWhere } from '@/lib/expenseListFilters';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,59 +23,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '0');
     const size = parseInt(searchParams.get('size') || '10');
-    const search = searchParams.get('search') || '';
-    const status = searchParams.get('status') || '';
-    const categoryId = searchParams.get('categoryId') || '';
-    const dateFrom = searchParams.get('dateFrom') || '';
-    const dateTo = searchParams.get('dateTo') || '';
     const sortBy = searchParams.get('sortBy') || 'expenseDate';
     const sortDir = searchParams.get('sortDir') || 'desc';
 
-    const where: Prisma.ExpenseWhereInput = { deletedAt: null };
-    const AND: Prisma.ExpenseWhereInput[] = [];
-
-    if (search) {
-      const searchTerm = search.trim();
-      AND.push({
-        OR: [
-          { expenseNumber: { contains: searchTerm, mode: 'insensitive' } },
-          { vendor: { contains: searchTerm, mode: 'insensitive' } },
-          { referenceNumber: { contains: searchTerm, mode: 'insensitive' } },
-        ],
-      });
-    }
-
-    if (status) AND.push({ status: status.toUpperCase() });
-    if (categoryId) AND.push({ categoryId: parseInt(categoryId) });
-    const subCategoryId = searchParams.get('subCategoryId') || '';
-    if (subCategoryId) AND.push({ subCategoryId: parseInt(subCategoryId) });
-    if (dateFrom) AND.push({ expenseDate: { gte: new Date(dateFrom) } });
-    if (dateTo) AND.push({ expenseDate: { lte: new Date(dateTo) } });
-    // Used by the Projects page's Budget vs Actual panel to total a single
-    // project's actual expenses.
-    const projectId = searchParams.get('projectId') || '';
-    if (projectId) AND.push({ projectId: parseInt(projectId) });
-    // Same, for a single Product's Product Expenses tab.
-    const productId = searchParams.get('productId') || '';
-    if (productId) AND.push({ productId: parseInt(productId) });
-    // Overall / Project / Product Expenses list tabs — same three-way split
-    // as the create form's own Expense Type toggle (both FKs null = Overall,
-    // projectId set = Project, productId set = Product) and the Expense
-    // Report's own projectOnly filter (see expenseReports.ts). OVERALL must
-    // exclude Product Expenses too, or a Product-linked row (which has no
-    // projectId) would wrongly count as Overall spend.
-    const expenseType = searchParams.get('expenseType') || '';
-    if (expenseType === 'PROJECT') AND.push({ projectId: { not: null } });
-    else if (expenseType === 'PRODUCT') AND.push({ productId: { not: null } });
-    else if (expenseType === 'OVERALL') AND.push({ projectId: null, productId: null });
-
-    if (AND.length > 0) where.AND = AND;
+    const where = buildExpenseWhere(searchParams);
 
     const validSortFields = ['expenseDate', 'amount', 'status', 'createdAt'];
     const orderField = validSortFields.includes(sortBy) ? sortBy : 'expenseDate';
     const orderDir = sortDir === 'asc' ? 'asc' : 'desc';
 
-    const [expenses, totalElements] = await Promise.all([
+    const [expenses, totalElements, amountRows] = await Promise.all([
       prisma.expense.findMany({
         where,
         orderBy: { [orderField]: orderDir },
@@ -84,10 +42,48 @@ export async function GET(request: NextRequest) {
           category: { select: { name: true } },
           subCategory: { select: { name: true } },
           recordedBy: { select: { firstName: true, lastName: true } },
+          // BILL expenses: the source bill, for the badge / payment summary.
+          bill: {
+            select: {
+              id: true, billNumber: true, paymentStatus: true, paidAmount: true, status: true,
+              billType: true, invoiceNumber: true, invoiceDate: true, itemTotal: true, gstTotal: true, tdsTotal: true, payableAmount: true,
+              supplier: { select: { name: true } },
+            },
+          },
+          // REIMBURSEMENT expenses: the source claim's details, shown inline.
+          expenseClaim: {
+            select: {
+              id: true, status: true, expenseDate: true, description: true, amount: true, attachmentName: true,
+              submittedAt: true, approvedAt: true, paidAt: true, paymentType: true, paymentProofName: true,
+              employee: { select: { employeeCode: true, firstName: true, lastName: true } },
+              lead: { select: { companyName: true } },
+              project: { select: { projectName: true } },
+              product: { select: { productName: true } },
+            },
+          },
+          // SALARY expenses: the run's employee-wise payslips, shown in the
+          // list row's "Employee Details" accordion.
+          payrollRun: {
+            select: {
+              id: true, payPeriodYear: true, payPeriodMonth: true, status: true,
+              payslips: {
+                orderBy: { employee: { firstName: 'asc' } },
+                select: {
+                  id: true, totalDays: true, payableDays: true, lopDays: true, grossEarnings: true, totalDeductions: true, netPay: true,
+                  employee: { select: { employeeCode: true, firstName: true, lastName: true, department: true, designation: true } },
+                },
+              },
+            },
+          },
         },
       }),
       prisma.expense.count({ where }),
+      // Every filtered record (not just this page) for the list's Total row.
+      prisma.expense.findMany({ where, select: { amount: true, currencyCode: true, exchangeRate: true } }),
     ]);
+    // In INR — non-INR amounts via each record's own snapshot exchangeRate
+    // (same conversion as the P&L reports' toInr).
+    const totalAmount = amountRows.reduce((sum, r) => sum + (r.currencyCode === 'INR' ? Number(r.amount) : Number(r.amount) * Number(r.exchangeRate)), 0);
 
     const content = expenses.map((e) => ({
       id: e.id,
@@ -110,9 +106,60 @@ export async function GET(request: NextRequest) {
       referenceNumber: e.referenceNumber,
       attachmentUrl: e.attachmentUrl,
       attachmentName: e.attachmentName,
+      paymentProofUrl: e.paymentProofUrl,
+      paymentProofName: e.paymentProofName,
       notes: e.notes,
       recordedByName: e.recordedBy ? `${e.recordedBy.firstName} ${e.recordedBy.lastName}` : null,
       createdAt: e.createdAt,
+      source: e.source,
+      bill: e.source === 'BILL' && e.bill
+        ? {
+            billId: e.bill.id, billNumber: e.bill.billNumber, paymentStatus: e.bill.paymentStatus, paidAmount: e.bill.paidAmount, status: e.bill.status,
+            billType: e.bill.billType, invoiceNumber: e.bill.invoiceNumber, invoiceDate: e.bill.invoiceDate, supplierName: e.bill.supplier.name,
+            itemTotal: e.bill.itemTotal, gstTotal: e.bill.gstTotal, tdsTotal: e.bill.tdsTotal, payableAmount: e.bill.payableAmount,
+          }
+        : null,
+      reimbursement: e.source === 'REIMBURSEMENT' && e.expenseClaim
+        ? {
+            claimId: e.expenseClaim.id,
+            claimStatus: e.expenseClaim.status,
+            claimDate: e.expenseClaim.expenseDate,
+            description: e.expenseClaim.description,
+            amount: e.expenseClaim.amount,
+            attachmentName: e.expenseClaim.attachmentName,
+            submittedAt: e.expenseClaim.submittedAt,
+            approvedAt: e.expenseClaim.approvedAt,
+            paidAt: e.expenseClaim.paidAt,
+            paymentType: e.expenseClaim.paymentType,
+            paymentProofName: e.expenseClaim.paymentProofName,
+            employeeName: `${e.expenseClaim.employee.firstName} ${e.expenseClaim.employee.lastName}`.trim(),
+            employeeCode: e.expenseClaim.employee.employeeCode,
+            customerName: e.expenseClaim.lead?.companyName ?? null,
+            projectName: e.expenseClaim.project?.projectName ?? null,
+            productName: e.expenseClaim.product?.productName ?? null,
+          }
+        : null,
+      payroll:e.source === 'SALARY' && e.payrollRun
+        ? {
+            runId: e.payrollRun.id,
+            payPeriodYear: e.payrollRun.payPeriodYear,
+            payPeriodMonth: e.payrollRun.payPeriodMonth,
+            runStatus: e.payrollRun.status,
+            employees: e.payrollRun.payslips.map((p) => ({
+              payslipId: p.id,
+              employeeName: `${p.employee.firstName} ${p.employee.lastName}`.trim(),
+              employeeCode: p.employee.employeeCode,
+              department: p.employee.department,
+              designation: p.employee.designation,
+              totalDays: p.totalDays,
+              payableDays: p.payableDays,
+              lopDays: p.lopDays,
+              grossEarnings: p.grossEarnings,
+              totalDeductions: p.totalDeductions,
+              netPay: p.netPay,
+            })),
+          }
+        : null,
     }));
 
     return NextResponse.json({
@@ -120,6 +167,7 @@ export async function GET(request: NextRequest) {
       page,
       size,
       totalElements,
+      totalAmount,
       totalPages: Math.ceil(totalElements / size),
       last: (page + 1) * size >= totalElements,
     });
@@ -130,7 +178,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_expenses');
+  const denied = await requirePermission('create_expenses');
   if (denied) return denied;
 
   try {

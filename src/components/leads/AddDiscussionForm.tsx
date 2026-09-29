@@ -13,7 +13,7 @@ interface UserOption {
 }
 
 async function fetchUsers(): Promise<UserOption[]> {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) return [];
   const data = await res.json();
   return data.content.map((u: any) => ({ id: u.id, fullName: u.fullName }));
@@ -22,11 +22,12 @@ async function fetchUsers(): Promise<UserOption[]> {
 interface AddDiscussionFormProps {
   leadId: number;
   eventId: number;
+  canAttach: boolean;
 }
 
 const blankForm = { notes: '', decisionsTaken: '', actionItems: '', assignedToId: '', targetDate: '' };
 
-export default function AddDiscussionForm({ leadId, eventId }: AddDiscussionFormProps) {
+export default function AddDiscussionForm({ leadId, eventId, canAttach }: AddDiscussionFormProps) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(blankForm);
   const [attachment, setAttachment] = useState<File | null>(null);
@@ -107,7 +108,7 @@ export default function AddDiscussionForm({ leadId, eventId }: AddDiscussionForm
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <DocumentUpload label={attachment ? attachment.name : 'Attach a file'} onFileSelected={setAttachment} />
+        {canAttach ? <DocumentUpload label={attachment ? attachment.name : 'Attach a file'} onFileSelected={setAttachment} /> : <span />}
         <button type="submit" disabled={addMutation.isPending || uploading} className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
           {uploading ? 'Uploading...' : addMutation.isPending ? 'Saving...' : 'Add Discussion'}
         </button>

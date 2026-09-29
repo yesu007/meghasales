@@ -32,7 +32,10 @@ interface EventDocumentRecord {
 interface DocumentListProps {
   leadId: number;
   eventId: number;
-  canManage: boolean;
+  canCreate: boolean;
+  // Replacing a version is edit_lead_events, deleting is delete_lead_events.
+  canEdit: boolean;
+  canDelete: boolean;
 }
 
 function isImage(mimeType: string | null) {
@@ -48,7 +51,7 @@ async function fetchDocuments(leadId: number, eventId: number): Promise<EventDoc
   return res.json();
 }
 
-export default function DocumentList({ leadId, eventId, canManage }: DocumentListProps) {
+export default function DocumentList({ leadId, eventId, canCreate, canEdit, canDelete }: DocumentListProps) {
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -112,7 +115,7 @@ export default function DocumentList({ leadId, eventId, canManage }: DocumentLis
     <div className="space-y-2">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <p className="text-xs font-medium text-slate-500 uppercase">Requirement Documents</p>
-        {canManage && (
+        {canCreate && (
           <DocumentUpload label="Add Document" onFileSelected={(file) => uploadMutation.mutate(file)} disabled={uploadMutation.isPending} />
         )}
       </div>
@@ -140,12 +143,12 @@ export default function DocumentList({ leadId, eventId, canManage }: DocumentLis
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {latest && (isImage(latest.mimeType) || isPdf(latest.mimeType)) && (
-                      <a href={latest.fileUrl} target="_blank" rel="noreferrer" className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Preview">
+                      <a href={`/api/leads/${leadId}/documents/${doc.id}/versions/${latest.id}/file`} target="_blank" rel="noreferrer" className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Preview">
                         <EyeIcon className="h-4 w-4" />
                       </a>
                     )}
                     {latest && (
-                      <a href={latest.fileUrl} target="_blank" rel="noreferrer" download className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download">
+                      <a href={`/api/leads/${leadId}/documents/${doc.id}/versions/${latest.id}/file?download=1`} target="_blank" rel="noreferrer" download className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download">
                         <ArrowDownTrayIcon className="h-4 w-4" />
                       </a>
                     )}
@@ -154,7 +157,7 @@ export default function DocumentList({ leadId, eventId, canManage }: DocumentLis
                         {expanded ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
                       </button>
                     )}
-                    {canManage && (
+                    {canEdit && (
                       <label className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 cursor-pointer" title="Replace with newer version">
                         <ArrowUpTrayIcon className="h-4 w-4" />
                         <input type="file" className="hidden" onChange={(e) => {
@@ -164,7 +167,7 @@ export default function DocumentList({ leadId, eventId, canManage }: DocumentLis
                         }} accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,image/*" />
                       </label>
                     )}
-                    {canManage && (
+                    {canDelete && (
                       <button onClick={() => { if (window.confirm(`Delete "${doc.fileName}"?`)) deleteMutation.mutate(doc.id); }} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
                         <TrashIcon className="h-4 w-4" />
                       </button>
@@ -178,7 +181,7 @@ export default function DocumentList({ leadId, eventId, canManage }: DocumentLis
                     {doc.versions.map((v) => (
                       <div key={v.id} className="flex items-center justify-between text-xs text-slate-600">
                         <span>v{v.versionNumber} — {v.fileName} · {v.uploadedBy ? `${v.uploadedBy.firstName} ${v.uploadedBy.lastName}` : 'Unknown'} · {dayjs(v.uploadedAt).format('DD MMM YYYY, HH:mm')}</span>
-                        <a href={v.fileUrl} target="_blank" rel="noreferrer" className="text-amber-600 hover:underline flex-shrink-0 ml-2">Download</a>
+                        <a href={`/api/leads/${leadId}/documents/${doc.id}/versions/${v.id}/file?download=1`} target="_blank" rel="noreferrer" className="text-amber-600 hover:underline flex-shrink-0 ml-2">Download</a>
                       </div>
                     ))}
                   </div>

@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 // silently drifting if someone edits a slab's amount after the fact.
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_salary_structures');
+  const denied = await requirePermission('edit_statutory_settings');
   if (denied) return denied;
 
   try {

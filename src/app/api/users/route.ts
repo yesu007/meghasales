@@ -5,12 +5,12 @@ import bcrypt from 'bcryptjs';
 import { logAudit } from '@/lib/audit';
 import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { nextEmployeeCode } from '@/lib/payroll/employeeCode';
+import { linkOrCreateEmployee } from '@/lib/payroll/selfEmployee';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const denied = await requireAnyPermission(['view_users', 'manage_users']);
+  const denied = await requireAnyPermission(['view_users', 'create_users', 'edit_users', 'delete_users']);
   if (denied) return denied;
 
   try {
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_users');
+  const denied = await requirePermission('create_users');
   if (denied) return denied;
 
   try {
@@ -154,19 +154,7 @@ export async function POST(request: NextRequest) {
       // behaves exactly as if this employee record never existed.
       let linkedEmployee = false;
       if (isPayrollModuleEnabled()) {
-        const existingEmployee = await tx.employee.findFirst({ where: { email } });
-        if (existingEmployee) {
-          if (!existingEmployee.userId) {
-            await tx.employee.update({ where: { id: existingEmployee.id }, data: { userId: user.id } });
-            linkedEmployee = true;
-          }
-        } else {
-          const employeeCode = await nextEmployeeCode(tx);
-          await tx.employee.create({
-            data: { userId: user.id, employeeCode, firstName: user.firstName, lastName: user.lastName, email },
-          });
-          linkedEmployee = true;
-        }
+        linkedEmployee = !!(await linkOrCreateEmployee(tx, user));
       }
 
       return { user, linkedEmployee };

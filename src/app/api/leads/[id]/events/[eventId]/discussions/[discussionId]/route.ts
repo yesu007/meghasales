@@ -7,7 +7,7 @@ import { validateDiscussionInput } from '@/lib/eventValidation';
 export const dynamic = 'force-dynamic';
 
 export async function PUT(request: NextRequest, { params }: { params: { discussionId: string } }) {
-  const denied = await requirePermission('manage_lead_events');
+  const denied = await requirePermission('edit_lead_events');
   if (denied) return denied;
 
   try {
@@ -43,7 +43,7 @@ export async function PUT(request: NextRequest, { params }: { params: { discussi
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { discussionId: string } }) {
-  const denied = await requirePermission('manage_lead_events');
+  const denied = await requirePermission('delete_lead_events');
   if (denied) return denied;
 
   try {

@@ -225,7 +225,7 @@ export default function ProjectFormDrawer({
                           onChange={(v) => { setForm(f => ({ ...f, customerId: v })); clearFieldError('customerId'); }}
                           options={customers.map(c => ({ value: String(c.id), label: c.companyName }))}
                           placeholder="Select Customer"
-                          onAdd={() => onAddCustomer?.()}
+                          onAdd={onAddCustomer}
                           addLabel="Add Customer"
                           disabled={!!form.leadId}
                           error={!!formErrors.customerId}

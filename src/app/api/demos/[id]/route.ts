@@ -30,7 +30,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_demos');
+  const denied = await requirePermission('edit_demos');
   if (denied) return denied;
 
   try {
@@ -114,7 +114,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_demos');
+  const denied = await requirePermission('delete_demos');
   if (denied) return denied;
 
   try {

@@ -40,7 +40,7 @@ export async function PUT(request: NextRequest) {
     // non-admin users editing other company-profile fields aren't locked
     // out by a scope change they didn't ask for.
     if (body.defaultCountryId !== undefined) {
-      const denied = await requirePermission('manage_countries');
+      const denied = await requirePermission('edit_settings');
       if (denied) return denied;
     }
 

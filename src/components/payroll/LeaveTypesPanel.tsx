@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface LeaveType {
   id: number;
@@ -41,6 +42,10 @@ async function fetchLeaveTypes(): Promise<LeaveType[]> {
 
 export default function LeaveTypesPanel() {
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_timesheet');
+  const canEdit = has('edit_timesheet');
+  const canDelete = has('delete_timesheet');
   const [showTypeForm, setShowTypeForm] = useState(false);
   const [typeForm, setTypeForm] = useState({ name: '', code: '', isPaid: true, annualQuota: '' });
 
@@ -138,9 +143,11 @@ export default function LeaveTypesPanel() {
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-slate-800">Leave Types</h2>
-        <button onClick={() => setShowTypeForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
-          <PlusIcon className="h-4 w-4" /> Add Type
-        </button>
+        {canCreate && (
+          <button onClick={() => setShowTypeForm((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
+            <PlusIcon className="h-4 w-4" /> Add Type
+          </button>
+        )}
       </div>
       {showTypeForm && (
         <form onSubmit={(e) => { e.preventDefault(); if (!typeForm.name || !typeForm.code) { toast.error('Name and code are required'); return; } createType.mutate(); }} className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
@@ -237,6 +244,7 @@ export default function LeaveTypesPanel() {
                       as the customer status dropdown on /dashboard/customers. */}
                   <select
                     value={t.isActive ? 'ACTIVE' : 'INACTIVE'}
+                    disabled={!canEdit}
                     onChange={(e) => toggleActive.mutate({ id: t.id, isActive: e.target.value === 'ACTIVE' })}
                     className={`px-2 py-1 rounded text-xs font-medium border-0 ${t.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}
                   >
@@ -245,12 +253,16 @@ export default function LeaveTypesPanel() {
                   </select>
                 </td>
                 <td className="py-2 text-right whitespace-nowrap">
-                  <button onClick={() => startEdit(t)} className="p-1.5 text-slate-400 hover:text-amber-700" title="Edit">
-                    <PencilIcon className="h-4 w-4" />
-                  </button>
-                  <button onClick={() => deleteTypeHandler(t)} disabled={deleteType.isPending} className="p-1.5 text-slate-400 hover:text-red-600 disabled:opacity-50" title="Delete">
-                    <TrashIcon className="h-4 w-4" />
-                  </button>
+                  {canEdit && (
+                    <button onClick={() => startEdit(t)} className="p-1.5 text-slate-400 hover:text-amber-700" title="Edit">
+                      <PencilIcon className="h-4 w-4" />
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button onClick={() => deleteTypeHandler(t)} disabled={deleteType.isPending} className="p-1.5 text-slate-400 hover:text-red-600 disabled:opacity-50" title="Delete">
+                      <TrashIcon className="h-4 w-4" />
+                    </button>
+                  )}
                 </td>
               </tr>
             )

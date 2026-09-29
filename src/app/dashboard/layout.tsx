@@ -24,7 +24,9 @@ import {
   CurrencyRupeeIcon,
   WalletIcon,
   CalendarDaysIcon,
+  ClockIcon,
   ReceiptPercentIcon,
+  DocumentDuplicateIcon,
   ChartPieIcon,
   ChartBarSquareIcon,
   BuildingOffice2Icon,
@@ -37,6 +39,7 @@ import {
   ChevronDownIcon,
   Bars3Icon,
   XMarkIcon,
+  KeyIcon,
 } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
 import { isAdminTicketModuleEnabled } from '@/lib/adminTicket/featureFlag';
@@ -44,6 +47,8 @@ import { isMeetingsModuleEnabled } from '@/lib/meetings/featureFlag';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { hasAnyPermission } from '@/lib/permissions';
 import { REPORTS } from '@/lib/reports/registry';
+import { getNotificationHref } from '@/lib/notificationLinks';
+import { getRequiredViewPermission } from '@/lib/permissionCatalog';
 
 dayjs.extend(relativeTime);
 
@@ -51,6 +56,9 @@ interface HeaderNotification {
   id: number;
   title: string;
   message: string | null;
+  type: string;
+  entityType: string | null;
+  entityId: number | null;
   isRead: boolean;
   createdAt: string;
 }
@@ -83,9 +91,13 @@ interface NavSection {
 // Grouped into labeled sections (rather than one flat list) so the nav
 // reads as a map of the app instead of a dozen equally-weighted rows — and
 // nested under compact headers so the whole thing fits in less vertical
-// space. Each item can carry a `permission` (single string or array —
-// array means "any of"); an item with none is always visible once its
-// section is reached (e.g. Dashboard home, personal Notifications).
+// space. An item's required permission comes from the permission catalog
+// by its href (getRequiredViewPermission — the same table the Roles screen
+// and the page guard below read), so nav and page access can't drift; an
+// explicit `permission` (single string or array — array means "any of")
+// overrides it, as the Reports children do with their data permissions. An
+// href the catalog doesn't gate (My Space, Notifications) is always visible,
+// and a group is visible when any of its children is.
 // Feature flags (isPayrollModuleEnabled, isAdminTicketModuleEnabled,
 // isMeetingsModuleEnabled) are a separate, build-time AND-condition on top
 // of the permission check.
@@ -105,34 +117,33 @@ function getNavItems(): NavSection[] {
       // items like Leads/Quotations below.
       title: 'Masters',
       items: [
-        { href: '/dashboard/verticals', label: 'Verticals', icon: BuildingOffice2Icon, permission: 'view_verticals' },
-        { href: '/dashboard/projects', label: 'Project', icon: ClipboardDocumentListIcon, permission: 'view_projects' },
-        { href: '/dashboard/products', label: 'Product', icon: TagIcon, permission: 'view_products' },
-        { href: '/dashboard/packages', label: 'Packages', icon: CubeIcon, permission: 'view_packages' },
-        { href: '/dashboard/lead-sources', label: 'Lead Sources', icon: MegaphoneIcon, permission: 'view_lead_sources' },
-        { href: '/dashboard/lead-statuses', label: 'Lead Statuses', icon: FlagIcon, permission: 'view_lead_status_options' },
-        { href: '/dashboard/stages', label: 'Stages', icon: QueueListIcon, permission: 'view_stages' },
+        { href: '/dashboard/verticals', label: 'Verticals', icon: BuildingOffice2Icon },
+        { href: '/dashboard/projects', label: 'Project', icon: ClipboardDocumentListIcon },
+        { href: '/dashboard/products', label: 'Product', icon: TagIcon },
+        { href: '/dashboard/packages', label: 'Packages', icon: CubeIcon },
+        { href: '/dashboard/lead-sources', label: 'Lead Sources', icon: MegaphoneIcon },
+        { href: '/dashboard/lead-statuses', label: 'Lead Statuses', icon: FlagIcon },
+        { href: '/dashboard/stages', label: 'Stages', icon: QueueListIcon },
       ],
     },
     {
       title: 'Sales',
       items: [
-        { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon, permission: 'view_leads' },
+        { href: '/dashboard/leads', label: 'Leads', icon: UsersIcon },
         // Customers are Leads with status=Converted — no separate entity —
-        // so this reuses the exact same view_leads/manage_leads permissions
-        // as the Leads item above rather than a new permission.
-        { href: '/dashboard/customers', label: 'Customers', icon: IdentificationIcon, permission: 'view_leads' },
-        { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon, permission: 'view_quotations' },
-        { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon, permission: 'view_demos' },
-        { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon, permission: 'view_implementations' },
+        // but have their own view/create/edit/delete_customers permissions.
+        { href: '/dashboard/customers', label: 'Customers', icon: IdentificationIcon },
+        { href: '/dashboard/quotations', label: 'Quotations', icon: DocumentTextIcon },
+        { href: '/dashboard/demos', label: 'Demos', icon: CalendarIcon },
+        { href: '/dashboard/implementations', label: 'Implementations', icon: WrenchScrewdriverIcon },
         ...(isMeetingsModuleEnabled()
           ? [{
-              href: '/dashboard/todo', label: 'Meetings', icon: CalendarDaysIcon, permission: 'view_meetings',
+              href: '/dashboard/todo', label: 'Meetings', icon: CalendarDaysIcon,
               children: [
                 { href: '/dashboard/todo', label: 'To Do' },
                 { href: '/dashboard/action-items', label: 'Action Items' },
                 { href: '/dashboard/meetings/dashboard', label: 'Dashboard' },
-                { href: '/dashboard/meetings/reports', label: 'Reports', permission: 'view_meeting_reports' },
+                { href: '/dashboard/meetings/reports', label: 'Reports' },
               ],
             }]
           : []),
@@ -142,7 +153,7 @@ function getNavItems(): NavSection[] {
       title: 'Finance',
       items: [
         {
-          href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon, permission: 'view_accounting',
+          href: '/dashboard/accounting', label: 'Accounting', icon: BanknotesIcon,
           children: [
             { href: '/dashboard/accounting', label: 'Dashboard' },
             // "Invoices" module — Pending/Paid Invoices are tabs within this
@@ -156,22 +167,24 @@ function getNavItems(): NavSection[] {
             { href: '/dashboard/accounting/reports', label: 'Reports' },
           ],
         },
-        { href: '/dashboard/expenses', label: 'Expenses', icon: ReceiptPercentIcon, permission: 'view_expenses' },
-        { href: '/dashboard/expense-budgets', label: 'Expense Budgets', icon: ChartPieIcon, permission: 'view_expense_budgets' },
+        // Vendor bills — posting one auto-creates its Expense entry.
+        { href: '/dashboard/bills', label: 'Bills', icon: DocumentDuplicateIcon },
+        { href: '/dashboard/expenses', label: 'Expenses', icon: ReceiptPercentIcon },
+        { href: '/dashboard/expense-budgets', label: 'Expense Budgets', icon: ChartPieIcon },
         // Management review queue for employee expense reimbursement claims
         // (My Space → Reimbursement is where employees submit them) — its
         // own top-level item, not nested under Payroll's children, since
-        // approve_expense_claims shouldn't also require view_payroll (a much
-        // broader, salary-data-exposing grant) just to reach this screen.
+        // approve_expense_claims shouldn't also require a Payroll page's view
+        // permission (salary-data-exposing) just to reach this screen.
         ...(isPayrollModuleEnabled()
-          ? [{ href: '/dashboard/payroll/expense-claims', label: 'Reimbursements Approvals', icon: ReceiptPercentIcon, permission: 'approve_expense_claims' }]
+          ? [{ href: '/dashboard/payroll/expense-claims', label: 'Reimbursements Approvals', icon: ReceiptPercentIcon }]
           : []),
         // Employees/Salary Structures/Runs expose everyone's salary data,
-        // not just the viewer's own, so this needs view_payroll on top of
-        // the module being enabled at all.
+        // not just the viewer's own — each child needs its own page's view
+        // permission on top of the module being enabled at all.
         ...(isPayrollModuleEnabled()
           ? [{
-              href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon, permission: 'view_payroll',
+              href: '/dashboard/payroll', label: 'Payroll', icon: CurrencyRupeeIcon,
               children: [
                 { href: '/dashboard/payroll', label: 'Employees' },
                 { href: '/dashboard/payroll/structures', label: 'Salary Structures' },
@@ -217,6 +230,7 @@ function getNavItems(): NavSection[] {
         ? [
             { href: '/dashboard/payroll/my-payslips', label: 'My Payslips', icon: WalletIcon },
             { href: '/dashboard/payroll/my-leave', label: 'My Leave', icon: CalendarDaysIcon },
+            { href: '/dashboard/payroll/my-attendance', label: 'Attendance', icon: ClockIcon },
             { href: '/dashboard/payroll/my-documents', label: 'My Documents', icon: DocumentTextIcon },
             { href: '/dashboard/payroll/my-expense-claims', label: 'Reimbursement', icon: ReceiptPercentIcon },
           ]
@@ -226,12 +240,12 @@ function getNavItems(): NavSection[] {
       title: 'Administration',
       items: [
         ...(isAdminTicketModuleEnabled()
-          ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon, permission: 'view_admin_tickets' }]
+          ? [{ href: '/dashboard/admin-ticket', label: 'Admin Tickets', icon: ClipboardDocumentCheckIcon }]
           : []),
-        { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon, permission: ['view_users', 'manage_users'] },
-        { href: '/dashboard/roles', label: 'Roles', icon: Cog6ToothIcon, permission: ['view_roles', 'manage_roles'] },
+        { href: '/dashboard/users', label: 'Users', icon: UserGroupIcon },
+        { href: '/dashboard/roles', label: 'Roles', icon: Cog6ToothIcon },
         { href: '/dashboard/notifications', label: 'Notifications', icon: BellIcon },
-        { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon, permission: 'view_audit_logs' },
+        { href: '/dashboard/audit-log', label: 'Audit Report', icon: ClipboardDocumentListIcon },
       ],
     },
   ];
@@ -263,21 +277,20 @@ function isNavItemActive(pathname: string, item: NavItem): boolean {
 }
 
 // Filters the declarative nav table above by the logged-in user's roles/
-// permissions, then drops any section left with zero items — replaces the
-// one-off canViewPayroll check with the same rule applied to every item.
-// Children get the same treatment as top-level items (a child with no
-// `permission` inherits visibility from its already-gated parent; one with
-// its own — e.g. Meetings > Reports needing view_meeting_reports on top of
-// the parent's view_meetings — is filtered independently).
+// permissions, then drops any section left with zero items. Each child is
+// filtered by its own page permission (see getNavItems), and a group is kept
+// only while at least one child survives.
 function getNavSections(roles: string[], permissions: string[]) {
+  const allowed = (entry: { href: string; permission?: string | string[] }) =>
+    isAllowed(roles, permissions, entry.permission ?? getRequiredViewPermission(entry.href));
   return getNavItems()
     .map((section) => ({
       ...section,
       items: section.items
-        .filter((item) => isAllowed(roles, permissions, item.permission))
         .map((item) => ('children' in item && item.children
-          ? { ...item, children: item.children.filter((child) => isAllowed(roles, permissions, child.permission)) }
-          : item)),
+          ? { ...item, children: item.children.filter(allowed) }
+          : item))
+        .filter((item) => (item.children ? item.children.length > 0 && isAllowed(roles, permissions, item.permission) : allowed(item))),
     }))
     // Sections collapse away entirely when every item inside is gated off
     // (e.g. "My Space" with the Payroll module disabled) rather than
@@ -357,6 +370,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // auto-expand if the session (and thus the permission check) resolves
     // after the initial render.
   }, [pathname, navItems]);
+
+  // /dashboard is where login (and "/") sends everyone, but the Dashboard
+  // page itself is gated by view_dashboard — send a role without it to the
+  // first page its nav actually offers instead of a dead end.
+  const canViewDashboard = isAllowed(roles, permissions, 'view_dashboard');
+  // Page-level View enforcement for every dashboard route the permission
+  // catalog gates — the APIs behind each page enforce it independently.
+  const canViewPage = isAllowed(roles, permissions, getRequiredViewPermission(pathname));
+  useEffect(() => {
+    if (status !== 'authenticated' || pathname !== '/dashboard' || canViewDashboard) return;
+    const first = navItems.map((item) => ('children' in item && item.children?.length ? item.children[0].href : item.href)).find((href) => href !== '/dashboard');
+    if (first) router.replace(first);
+  }, [status, pathname, canViewDashboard, navItems, router]);
 
   // Close the mobile nav drawer on navigation — otherwise it stays open
   // over the new page after tapping a link.
@@ -525,7 +551,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     recentNotifications.map((n) => (
                       <button
                         key={n.id}
-                        onClick={() => { if (!n.isRead) markNotifRead.mutate(n.id); setNotifOpen(false); router.push('/dashboard/notifications'); }}
+                        onClick={() => { if (!n.isRead) markNotifRead.mutate(n.id); setNotifOpen(false); router.push(getNotificationHref(n) ?? '/dashboard/notifications'); }}
                         className={`w-full text-left px-4 py-2.5 hover:bg-slate-50 transition-colors ${n.isRead ? '' : 'bg-amber-50/60'}`}
                       >
                         <p className={`text-sm ${n.isRead ? 'text-slate-600' : 'text-slate-800 font-medium'}`}>{n.title}</p>
@@ -573,6 +599,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <Cog6ToothIcon className="h-4 w-4" />
                   Settings
                 </Link>
+                <Link
+                  href="/dashboard/change-password"
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  <KeyIcon className="h-4 w-4" />
+                  Change Password
+                </Link>
                 <button
                   onClick={() => signOut({ callbackUrl: '/login' })}
                   className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-red-600 transition-colors"
@@ -587,7 +621,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </header>
 
         <main className="flex-1 p-4 sm:p-5 lg:p-6 overflow-x-hidden overflow-y-auto">
-          {children}
+          {canViewPage ? children : (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 text-center py-16 px-4">
+              <p className="text-lg font-medium text-slate-600">You don&apos;t have access to this page</p>
+              <p className="text-sm text-slate-400 mt-1">Ask an administrator to grant your role View permission for it on the Roles screen.</p>
+            </div>
+          )}
         </main>
       </div>
     </div>

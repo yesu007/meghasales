@@ -33,6 +33,7 @@ export default function InvoicesPage() {
   const searchParams = useSearchParams();
   const { has } = usePermissions();
   const canExport = has('export_accounting');
+  const canCreate = has('create_invoices');
   const listRef = useRef<InvoiceListPageHandle>(null);
 
   const tabParam = searchParams.get('tab') as TabKey | null;
@@ -70,7 +71,7 @@ export default function InvoicesPage() {
                 <ArrowDownTrayIcon className="h-4 w-4" /> Export
               </button>
             )}
-            {tab === 'pending' && (
+            {tab === 'pending' && canCreate && (
               <button onClick={() => listRef.current?.openCreateDrawer()} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
                 <PlusIcon className="h-4 w-4" /> New Invoice
               </button>

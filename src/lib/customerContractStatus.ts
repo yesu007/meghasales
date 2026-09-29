@@ -29,3 +29,11 @@ export const CONTRACT_TYPES = [
 export function contractTypeLabel(type: string): string {
   return CONTRACT_TYPES.find((t) => t.value === type)?.label || type;
 }
+
+// Permission required to delete an NDA / Contract document (the contract
+// record, or its attached document) — checked by the contract API's DELETE
+// and removeFile paths, and used by CustomerContractsCard to show/hide its
+// Delete/Remove buttons. Seeded by migration
+// 20260925120000_seed_delete_nda_documents_permission; granted per role from
+// Roles & Permissions.
+export const DELETE_NDA_DOCUMENTS_PERMISSION = 'delete_nda_documents';

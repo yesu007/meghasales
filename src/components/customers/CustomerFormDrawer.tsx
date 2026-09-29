@@ -9,6 +9,7 @@ import CountrySelect, { type Country } from '@/components/CountrySelect';
 import AddableSelect from '@/components/AddableSelect';
 import { useLeadSources } from '@/hooks/useLeadSources';
 import { useStages } from '@/hooks/useStages';
+import { usePermissions } from '@/hooks/usePermissions';
 import { isValidEmail } from '@/lib/email';
 import { parseBusinessVerticals } from '@/lib/businessVerticals';
 
@@ -280,6 +281,8 @@ export default function CustomerFormDrawer({
 }: CustomerFormDrawerProps) {
   const sources = useLeadSources();
   const stages = useStages();
+  // The inline "+ Create ..." Project option is only offered to users who can create Projects.
+  const canCreateProject = usePermissions().has('create_projects');
   const { data: projectOptions = [] } = useQuery({ queryKey: ['projects-for-customer-create'], queryFn: fetchProjectOptions, enabled: !disableProductProject && form.productOrProject === 'PROJECT' });
   // Needed whenever either type is active — Project's new-Project picker and
   // its existing-Project Vertical display both need it (see their own
@@ -569,7 +572,7 @@ export default function CustomerFormDrawer({
                                   {/* Only offered while the typed text is a genuinely different
                                       new name — not a re-prompt for the pending item already
                                       pinned above. */}
-                                  {trimmedProjectQuery && !projectExactMatch && trimmedProjectQuery.toLowerCase() !== form.newProjectName.trim().toLowerCase() && (
+                                  {canCreateProject && trimmedProjectQuery && !projectExactMatch && trimmedProjectQuery.toLowerCase() !== form.newProjectName.trim().toLowerCase() && (
                                     <Combobox.Option
                                       value={`create:${trimmedProjectQuery}`}
                                       className={({ active }) => `relative cursor-pointer select-none py-2 pl-3 pr-9 border-t border-slate-100 ${active ? 'bg-amber-50 text-amber-900' : 'text-amber-700'}`}

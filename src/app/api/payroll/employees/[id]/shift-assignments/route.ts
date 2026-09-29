@@ -15,7 +15,7 @@ function currentUserId(session: any): number | null {
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_payroll');
+  const denied = await requirePermission('view_shifts');
   if (denied) return denied;
 
   try {
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // employee on" for a past date, unaffected by later re-assignments.
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_employees');
+  const denied = await requirePermission('edit_shifts');
   if (denied) return denied;
 
   try {

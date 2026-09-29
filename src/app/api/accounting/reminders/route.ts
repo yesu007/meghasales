@@ -26,7 +26,7 @@ function nextReminderDate(reminderType: string, dueDate: Date): string | null {
 }
 
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_accounting');
+  const denied = await requirePermission('view_payment_reminders');
   if (denied) return denied;
   try {
     // Backfill any reminder thresholds newly crossed since the last visit —

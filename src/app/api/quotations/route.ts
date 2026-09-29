@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 import { computeResourceCosting, type ResourceLine, type CostMode } from '@/lib/quotationResourceCosting';
 import { validateMilestonePlan, type MilestonePlanInput } from '@/lib/quotationMilestones';
 
@@ -109,7 +109,7 @@ function buildResourceBasedCosting(body: any) {
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const denied = await requirePermission('view_quotations');
+  const denied = await requireAnyPermission(['view_quotations', 'view_customers', 'view_invoices', 'view_products', 'view_projects']);
   if (denied) return denied;
 
   try {
@@ -236,7 +236,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_quotations');
+  const denied = await requirePermission('create_quotations');
   if (denied) return denied;
 
   try {

@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 // the stable handle. Everything else (including isStatutory) can change.
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isPayrollModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_salary_structures');
+  const denied = await requirePermission('edit_salary_structures');
   if (denied) return denied;
 
   try {

@@ -61,7 +61,9 @@ async function fetchRoles(): Promise<RoleOption[]> {
 export default function UsersPage() {
   const queryClient = useQueryClient();
   const { has: hasPermission } = usePermissions();
-  const canManageUsers = hasPermission('manage_users');
+  const canCreateUsers = hasPermission('create_users');
+  const canEditUsers = hasPermission('edit_users');
+  const canDeleteUsers = hasPermission('delete_users');
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const [searchInput, setSearchInput] = useState('');
@@ -226,7 +228,7 @@ export default function UsersPage() {
           <h1 className="text-2xl font-bold text-slate-800">Users</h1>
           <p className="text-slate-500 mt-1">Manage user accounts and access</p>
         </div>
-        {canManageUsers && (
+        {canCreateUsers && (
           <button onClick={() => { setEditingId(null); setForm(blankForm); setDrawerOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
             <PlusIcon className="h-4 w-4" /> Add User
           </button>
@@ -346,7 +348,7 @@ export default function UsersPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        {canManageUsers ? (
+                        {canEditUsers ? (
                           <button
                             onClick={() => toggleActive(user.id, user.isActive)}
                             className={`px-2 py-0.5 rounded text-xs font-medium ${user.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
@@ -366,14 +368,18 @@ export default function UsersPage() {
                         {dayjs(user.createdAt).format('DD MMM YYYY')}
                       </td>
                       <td className="px-4 py-3">
-                        {canManageUsers ? (
+                        {canEditUsers || canDeleteUsers ? (
                           <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => openEdit(user)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
-                              <PencilIcon className="h-4 w-4" />
-                            </button>
-                            <button onClick={() => deleteUser(user.id, user.fullName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                              <TrashIcon className="h-4 w-4" />
-                            </button>
+                            {canEditUsers && (
+                              <button onClick={() => openEdit(user)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
+                                <PencilIcon className="h-4 w-4" />
+                              </button>
+                            )}
+                            {canDeleteUsers && (
+                              <button onClick={() => deleteUser(user.id, user.fullName)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                                <TrashIcon className="h-4 w-4" />
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <span className="text-slate-300">—</span>
@@ -391,6 +397,8 @@ export default function UsersPage() {
                   <AddableSelect
                     value={String(size)}
                     onChange={(v) => { setSize(Number(v)); setPage(0); }}
+
+                    clearable={false}
                     options={[10, 25, 50, 100].map(n => ({ value: String(n), label: String(n) }))}
                     placeholder="Rows"
                   />

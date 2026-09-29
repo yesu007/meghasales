@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/rbac';
 export const dynamic = 'force-dynamic';
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_invoices');
+  const denied = await requirePermission('delete_invoices');
   if (denied) return denied;
   try {
     const id = parseInt(params.id);

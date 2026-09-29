@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
 // than calling into src/app/api/leads/route.ts, so Customer creation never
 // depends on Lead's own request handling.
 export async function POST(request: NextRequest) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requirePermission('create_customers');
   if (denied) return denied;
 
   try {

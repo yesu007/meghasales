@@ -14,7 +14,7 @@ function currentUserId(session: any): number | null {
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   if (!isMeetingsModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('manage_mom');
+  const denied = await requirePermission('create_mom');
   if (denied) return denied;
 
   try {

@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 // Events' own DELETE already accepts: the previous Blob object is left
 // orphaned rather than reclaimed).
 export async function PUT(request: NextRequest, { params }: { params: { id: string; documentId: string } }) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requirePermission('edit_customers');
   if (denied) return denied;
   if (!isStorageConfigured()) {
     return NextResponse.json(
@@ -67,7 +67,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string; documentId: string } }) {
-  const denied = await requirePermission('manage_leads');
+  const denied = await requirePermission('edit_customers');
   if (denied) return denied;
 
   try {

@@ -75,6 +75,11 @@ function catalogPriceInPricingCurrency(inrAmount: number, pricing: PricingRespon
 export default function QuotationsPage() {
   const { has } = usePermissions();
   const canExport = has('export_quotations');
+  const canCreate = has('create_quotations');
+  const canEdit = has('edit_quotations');
+  const canDelete = has('delete_quotations');
+  // Generate Invoice posts to /api/accounting/invoices, gated separately.
+  const canCreateInvoice = has('create_invoices');
   const queryClient = useQueryClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -799,10 +804,12 @@ export default function QuotationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-bold text-slate-800">Quotations</h1><p className="text-slate-500 mt-1">Manage quotations</p></div>
+        {canCreate && (
         <div className="flex items-center gap-2">
           <Link href="/dashboard/quotations/calculator" className="flex items-center gap-2 px-4 py-2 border border-amber-600 text-amber-700 rounded-lg text-sm font-medium hover:bg-amber-50"><CalculatorIcon className="h-4 w-4" /> New (Resource Calculator)</Link>
           <button onClick={() => { resetCreateState(); setView('create'); }} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"><PlusIcon className="h-4 w-4" /> New Quotation</button>
         </div>
+        )}
       </div>
 
       {/* Search & Filters — filter fields sit directly beside the search
@@ -883,6 +890,7 @@ export default function QuotationsPage() {
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmt(Number(q.totalAmount || 0), symbolForCurrency(q.currencyCode || 'INR'), q.currencyCode || 'INR')}</td>
                   <td className="px-4 py-3">
+                    {canEdit ? (
                     <select
                       value={q.status}
                       onChange={(e) => updateStatus(q.id, e.target.value)}
@@ -890,6 +898,9 @@ export default function QuotationsPage() {
                     >
                       {QUOTATION_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                     </select>
+                    ) : (
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${QUOTATION_STATUSES.find(s => s.value === q.status)?.color || 'bg-slate-100 text-slate-700'}`}>{QUOTATION_STATUSES.find(s => s.value === q.status)?.label || q.status}</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-500">{dayjs(q.createdAt).format('DD MMM YYYY')}</td>
                   <td className="px-4 py-3">
@@ -898,15 +909,17 @@ export default function QuotationsPage() {
                       {canExport && (
                         <button onClick={() => downloadQuotationPDF(q)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Download PDF"><ArrowDownTrayIcon className="h-4 w-4" /></button>
                       )}
-                      {q.status === 'APPROVED' && (
+                      {q.status === 'APPROVED' && canCreateInvoice && (
                         <button onClick={() => generateInvoice(q)} className="p-1.5 rounded text-slate-400 hover:text-green-600 hover:bg-green-50" title="Generate Invoice"><DocumentPlusIcon className="h-4 w-4" /></button>
                       )}
-                      {isResourceBased ? (
+                      {canEdit && (isResourceBased ? (
                         <Link href={`/dashboard/quotations/calculator/${q.id}`} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></Link>
                       ) : (
                         <button onClick={() => openEdit(q.id)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50" title="Edit"><PencilIcon className="h-4 w-4" /></button>
+                      ))}
+                      {canDelete && (
+                        <button onClick={() => deleteQuotation(q.id, q.quotationNumber)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>
                       )}
-                      <button onClick={() => deleteQuotation(q.id, q.quotationNumber)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete"><TrashIcon className="h-4 w-4" /></button>
                     </div>
                   </td>
                 </tr>
@@ -1159,7 +1172,7 @@ export default function QuotationsPage() {
                         key={`${m.id}-${m.scheduledDate}`}
                         type="date"
                         defaultValue={dayjs(m.scheduledDate).format('YYYY-MM-DD')}
-                        disabled={m.invoice?.status === 'PAID'}
+                        disabled={m.invoice?.status === 'PAID' || !canEdit}
                         onBlur={(e) => {
                           if (e.target.value && e.target.value !== dayjs(m.scheduledDate).format('YYYY-MM-DD')) handleRescheduleMilestone(m, e.target.value);
                         }}
@@ -1314,7 +1327,9 @@ export default function QuotationsPage() {
                 <hr />
                 <div className="flex justify-between items-center pt-1"><span className="text-lg font-bold text-slate-800">Grand Total</span><span className="text-xl font-bold text-amber-700">{fmt(pricing.grandTotal + customModulesTotal, pricing.currencySymbol, pricing.currencyCode)}</span></div>
                 <div className="flex gap-2 mt-4">
-                  <button onClick={saveQuotation} className="flex-1 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700">{editingId ? 'Save Changes' : 'Save Quotation'}</button>
+                  {(editingId ? canEdit : canCreate) && (
+                    <button onClick={saveQuotation} className="flex-1 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700">{editingId ? 'Save Changes' : 'Save Quotation'}</button>
+                  )}
                   {canExport && (
                     <button onClick={downloadPDF} className="p-2 border border-slate-300 rounded-lg hover:bg-slate-50" title="Download"><ArrowDownTrayIcon className="h-4 w-4" /></button>
                   )}

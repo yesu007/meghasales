@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 import { STATUSES, PRIORITIES, isValidStatusTransition, TicketStatus, Priority } from '@/lib/adminTicket/constants';
 import PushNotificationToggle from '@/components/PushNotificationToggle';
 import AddableSelect from '@/components/AddableSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const STATUS_COLORS: Record<string, string> = {
   OPEN: 'bg-blue-100 text-blue-700',
@@ -89,7 +90,7 @@ async function fetchCategories() {
 }
 
 async function fetchUsers() {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) return [];
   const data = await res.json();
   return data.content || [];
@@ -415,6 +416,10 @@ export default function AdminTicketListPage() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<AdvanceFilters>(EMPTY_FILTERS);
   const queryClient = useQueryClient();
+  const { has } = usePermissions();
+  const canCreate = has('create_admin_tickets');
+  // Inline priority/status changers → PATCH /api/admin-ticket/tickets/[id].
+  const canEdit = has('edit_admin_tickets');
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 300);
@@ -478,12 +483,14 @@ export default function AdminTicketListPage() {
               <Squares2X2Icon className="h-4 w-4" />
             </button>
           </div>
-          <button
-            onClick={() => setShowNewModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700"
-          >
-            <PlusIcon className="h-4 w-4" /> New Ticket
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => setShowNewModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700"
+            >
+              <PlusIcon className="h-4 w-4" /> New Ticket
+            </button>
+          )}
         </div>
       </div>
 
@@ -577,28 +584,36 @@ export default function AdminTicketListPage() {
                       <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{t.dueDate ? dayjs(t.dueDate).format('DD MMM YYYY') : '—'}</td>
                       <td className="px-4 py-3 text-slate-600 hidden xl:table-cell">{dayjs(t.createdAt).format('DD MMM YYYY')}</td>
                       <td className="px-4 py-3">
-                        <select
-                          value={t.priority}
-                          disabled={patchMutation.isPending}
-                          onChange={(e) => patchMutation.mutate({ ticketId: t.id, version: t.version, patch: { priority: e.target.value as Priority } })}
-                          className={`px-2 py-1 rounded text-xs font-medium border-0 disabled:opacity-50 ${PRIORITY_COLORS[t.priority] || 'bg-slate-100 text-slate-700'}`}
-                        >
-                          {(PRIORITIES as readonly Priority[]).map((p) => (
-                            <option key={p} value={p}>{p}</option>
-                          ))}
-                        </select>
+                        {!canEdit ? (
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${PRIORITY_COLORS[t.priority] || 'bg-slate-100 text-slate-700'}`}>{t.priority}</span>
+                        ) : (
+                          <select
+                            value={t.priority}
+                            disabled={patchMutation.isPending}
+                            onChange={(e) => patchMutation.mutate({ ticketId: t.id, version: t.version, patch: { priority: e.target.value as Priority } })}
+                            className={`px-2 py-1 rounded text-xs font-medium border-0 disabled:opacity-50 ${PRIORITY_COLORS[t.priority] || 'bg-slate-100 text-slate-700'}`}
+                          >
+                            {(PRIORITIES as readonly Priority[]).map((p) => (
+                              <option key={p} value={p}>{p}</option>
+                            ))}
+                          </select>
+                        )}
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          value={t.status}
-                          disabled={patchMutation.isPending}
-                          onChange={(e) => patchMutation.mutate({ ticketId: t.id, version: t.version, patch: { status: e.target.value as TicketStatus } })}
-                          className={`px-2 py-1 rounded text-xs font-medium border-0 disabled:opacity-50 ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-700'}`}
-                        >
-                          {availableStatuses.map((s) => (
-                            <option key={s} value={s}>{s.replace('_', ' ')}</option>
-                          ))}
-                        </select>
+                        {!canEdit ? (
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-700'}`}>{t.status.replace('_', ' ')}</span>
+                        ) : (
+                          <select
+                            value={t.status}
+                            disabled={patchMutation.isPending}
+                            onChange={(e) => patchMutation.mutate({ ticketId: t.id, version: t.version, patch: { status: e.target.value as TicketStatus } })}
+                            className={`px-2 py-1 rounded text-xs font-medium border-0 disabled:opacity-50 ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-700'}`}
+                          >
+                            {availableStatuses.map((s) => (
+                              <option key={s} value={s}>{s.replace('_', ' ')}</option>
+                            ))}
+                          </select>
+                        )}
                       </td>
                     </tr>
                   );
@@ -609,7 +624,7 @@ export default function AdminTicketListPage() {
         </div>
       )}
 
-      {showNewModal && <NewTicketModal onClose={() => setShowNewModal(false)} />}
+      {showNewModal && canCreate && <NewTicketModal onClose={() => setShowNewModal(false)} />}
       {showFilterModal && (
         <AdvanceFilterModal
           initial={filters}

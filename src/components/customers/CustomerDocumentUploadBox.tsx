@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { CloudArrowUpIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { validateCustomerDocumentFile } from '@/lib/customerDocumentUpload';
+import { validateCustomerDocumentFile } from '@/lib/customerDocumentValidation';
 
 interface CustomerDocumentUploadBoxProps {
   onFileSelected: (file: File) => void;

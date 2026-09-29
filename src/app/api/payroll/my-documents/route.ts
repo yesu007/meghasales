@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { put } from '@/lib/storage';
+import { putEncrypted } from '@/lib/storage';
 import prisma from '@/lib/prisma';
-import { findEmployeeForUser } from '@/lib/payroll/selfEmployee';
+import { ensureEmployeeForUser } from '@/lib/payroll/selfEmployee';
 import { logAudit } from '@/lib/audit';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { validateEventDocumentFile, isStorageConfigured } from '@/lib/eventDocumentUpload';
@@ -34,7 +34,7 @@ export async function GET() {
     const userId = currentUserId(session);
     if (!userId) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
-    const employee = await findEmployeeForUser(userId);
+    const employee = await ensureEmployeeForUser(userId);
     if (!employee) return NextResponse.json({ employee: null, folders: [], documents: [] });
 
     const { folders, documents } = await documentTreeForEmployee(employee.id);
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const userId = currentUserId(session);
     if (!userId) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
-    const employee = await findEmployeeForUser(userId);
+    const employee = await ensureEmployeeForUser(userId);
     if (!employee) return NextResponse.json({ message: 'You do not have a payroll profile to upload documents against' }, { status: 404 });
 
     const formData = await request.formData();
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       if (!folder || folder.employeeId !== employee.id) return NextResponse.json({ message: 'Destination folder not found' }, { status: 404 });
     }
 
-    const blob = await put(`employee-legal-documents/${employee.id}/${Date.now()}-${file.name}`, file, { access: 'public' });
+    const blob = await putEncrypted(`employee-legal-documents/${employee.id}`, file);
 
     const document = await prisma.employeeLegalDocument.create({
       data: {

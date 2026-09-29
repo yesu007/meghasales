@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { findEmployeeForUser } from '@/lib/payroll/selfEmployee';
+import { ensureEmployeeForUser } from '@/lib/payroll/selfEmployee';
 import { logAudit } from '@/lib/audit';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { resolveOrCreateFolderPath } from '@/lib/payroll/employeeLegalDocuments';
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     const userId = currentUserId(session);
     if (!userId) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
-    const employee = await findEmployeeForUser(userId);
+    const employee = await ensureEmployeeForUser(userId);
     if (!employee) return NextResponse.json({ message: 'You do not have a payroll profile to organize documents against' }, { status: 404 });
 
     const body = await request.json();

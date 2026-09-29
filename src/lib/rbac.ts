@@ -30,7 +30,7 @@ export async function requireAuth(): Promise<NextResponse | null> {
 }
 
 // Usage in a route handler:
-//   const denied = await requirePermission('manage_invoices');
+//   const denied = await requirePermission('create_invoices');
 //   if (denied) return denied;
 export async function requirePermission(permission: string): Promise<NextResponse | null> {
   const session = await getServerSession(authOptions);

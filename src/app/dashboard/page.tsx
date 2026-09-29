@@ -10,6 +10,7 @@ import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import LeadPickerCombobox, { type LeadOption } from '@/components/leads/LeadPickerCombobox';
 import ActivityTimeline from '@/components/leads/ActivityTimeline';
 import { useLeadStatusOptions } from '@/hooks/useLeadStatusOptions';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface LeadDetail {
   id: number;
@@ -25,54 +26,47 @@ interface LeadDetail {
   assignedBa: { firstName: string; lastName: string } | null;
 }
 
+// All Dashboard data comes from /api/dashboard/*, gated by view_dashboard
+// alone — not the Leads/Quotations/Demos/Implementations APIs, which need
+// their own view_* permissions and left roles without them with zeros and
+// "failed to load" toasts.
 async function fetchLeadDetail(id: number): Promise<LeadDetail> {
-  const res = await fetch(`/api/leads/${id}`);
+  const res = await fetch(`/api/dashboard/leads/${id}`);
   if (!res.ok) throw new Error('Failed to fetch lead');
   return res.json();
 }
 
-async function countFor(url: string): Promise<number> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch ${url}`);
-  const data = await res.json();
-  return data.totalElements || 0;
-}
-
-async function fetchDashboardStats() {
-  const results = await Promise.allSettled([
-    countFor('/api/leads?size=1'),
-    countFor('/api/quotations?status=DRAFT&size=1'),
-    countFor('/api/quotations?status=SENT&size=1'),
-    countFor('/api/demos?status=SCHEDULED&size=1'),
-    countFor('/api/demos?status=RESCHEDULED&size=1'),
-    countFor('/api/implementations?size=1'),
-  ]);
-
-  const value = (i: number) => (results[i].status === 'fulfilled' ? (results[i] as PromiseFulfilledResult<number>).value : 0);
-  const hadFailure = results.some((r) => r.status === 'rejected');
-
-  return {
-    totalLeads: value(0),
-    activeQuotations: value(1) + value(2),
-    scheduledDemos: value(3) + value(4),
-    implementations: value(5),
-    hadFailure,
-  };
+async function fetchDashboardStats(): Promise<{ totalLeads: number; activeQuotations: number; scheduledDemos: number; implementations: number }> {
+  const res = await fetch('/api/dashboard/stats');
+  if (!res.ok) throw new Error('Failed to fetch dashboard stats');
+  return res.json();
 }
 
 export default function DashboardPage() {
   const { data: session } = useSession();
   const [selectedLead, setSelectedLead] = useState<LeadOption | null>(null);
   const { label: leadStatusLabel, color: leadStatusColor } = useLeadStatusOptions();
+  // Gated by view_dashboard (Roles screen). Without it the layout redirects
+  // to the first page the user's nav offers; nothing is fetched meanwhile.
+  const { has } = usePermissions();
+  const canViewDashboard = has('view_dashboard');
+  // Links out of the Dashboard only appear when the target page would
+  // actually open for this user.
+  const quickActions = [
+    { href: '/dashboard/leads', label: 'Manage Leads', permission: 'view_leads', className: 'bg-blue-600 hover:bg-blue-700' },
+    { href: '/dashboard/quotations', label: 'Create Quotation', permission: 'view_quotations', className: 'bg-amber-600 hover:bg-amber-700' },
+    { href: '/dashboard/demos', label: 'Schedule Demo', permission: 'view_demos', className: 'bg-purple-600 hover:bg-purple-700' },
+  ].filter((a) => has(a.permission));
 
   const { data: stats, isLoading, isError } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: fetchDashboardStats,
+    enabled: canViewDashboard,
   });
 
   useEffect(() => {
-    if (isError || stats?.hadFailure) toast.error('Some dashboard stats failed to load');
-  }, [isError, stats?.hadFailure]);
+    if (isError) toast.error('Failed to load dashboard stats');
+  }, [isError]);
 
   const { data: leadDetail, isLoading: isLeadLoading, isError: isLeadError } = useQuery({
     queryKey: ['lead', String(selectedLead?.id)],
@@ -90,6 +84,15 @@ export default function DashboardPage() {
     { label: 'Scheduled Demos', value: stats?.scheduledDemos, color: 'bg-purple-50 text-purple-700' },
     { label: 'Implementations', value: stats?.implementations, color: 'bg-green-50 text-green-700' },
   ];
+
+  if (!canViewDashboard) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 text-center py-16 px-4">
+        <p className="text-lg font-medium text-slate-600">Welcome, {session?.user?.name?.split(' ')[0]}</p>
+        <p className="text-sm text-slate-400 mt-1">You don&apos;t have access to the Dashboard. Contact an administrator if you need it.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -123,7 +126,7 @@ export default function DashboardPage() {
           <p className="text-sm text-slate-500 mt-0.5">Find a lead to view its current status and full history of status changes and interactions.</p>
         </div>
         <div className="max-w-md">
-          <LeadPickerCombobox value={selectedLead} onChange={setSelectedLead} />
+          <LeadPickerCombobox value={selectedLead} onChange={setSelectedLead} searchUrl="/api/dashboard/leads" />
         </div>
 
         {selectedLead && (
@@ -140,9 +143,11 @@ export default function DashboardPage() {
                   <span className={`px-3 py-1.5 min-h-[36px] inline-flex items-center rounded-full text-sm font-medium ${leadStatusColor(leadDetail.status)}`}>
                     {leadStatusLabel(leadDetail.status)}
                   </span>
-                  <Link href={`/dashboard/leads/${leadDetail.id}`} className="flex items-center gap-1 min-h-[44px] text-sm text-amber-600 hover:text-amber-700 font-medium">
-                    Full details <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
-                  </Link>
+                  {has('view_leads') && (
+                    <Link href={`/dashboard/leads/${leadDetail.id}`} className="flex items-center gap-1 min-h-[44px] text-sm text-amber-600 hover:text-amber-700 font-medium">
+                      Full details <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
                 </div>
               </div>
 
@@ -155,7 +160,7 @@ export default function DashboardPage() {
 
               <div>
                 <h4 className="text-sm font-semibold text-slate-700 mb-2">Status &amp; Interaction History</h4>
-                <ActivityTimeline leadId={leadDetail.id} />
+                <ActivityTimeline leadId={leadDetail.id} activitiesUrl={`/api/dashboard/leads/${leadDetail.id}/activities`} />
               </div>
             </div>
           ) : null
@@ -163,20 +168,18 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick Actions */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
-        <h2 className="text-base sm:text-lg font-semibold text-slate-800 mb-3">Quick Actions</h2>
-        <div className="flex flex-wrap gap-2 sm:gap-3">
-          <a href="/dashboard/leads" className="flex items-center px-4 py-2 min-h-[44px] bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-            Manage Leads
-          </a>
-          <a href="/dashboard/quotations" className="flex items-center px-4 py-2 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-            Create Quotation
-          </a>
-          <a href="/dashboard/demos" className="flex items-center px-4 py-2 min-h-[44px] bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700">
-            Schedule Demo
-          </a>
+      {quickActions.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+          <h2 className="text-base sm:text-lg font-semibold text-slate-800 mb-3">Quick Actions</h2>
+          <div className="flex flex-wrap gap-2 sm:gap-3">
+            {quickActions.map((a) => (
+              <a key={a.href} href={a.href} className={`flex items-center px-4 py-2 min-h-[44px] text-white rounded-lg text-sm font-medium ${a.className}`}>
+                {a.label}
+              </a>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

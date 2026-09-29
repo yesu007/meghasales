@@ -112,7 +112,7 @@ async function fetchMeeting(id: string) {
 }
 
 async function fetchUsers() {
-  const res = await fetch('/api/users?size=100&sortBy=firstName&sortDir=asc');
+  const res = await fetch('/api/users/options');
   if (!res.ok) return [];
   const data = await res.json();
   return data.content || [];
@@ -1176,7 +1176,7 @@ function MomHistorySection({ momId }: { momId: number }) {
 
 // Documents and voice-note recordings attached to a MOM — list is visible
 // to anyone who can view the meeting; upload controls are gated on
-// canManageMom, same as the rest of the MOM authoring actions. Attachments
+// canEditMom, same as the rest of the MOM authoring actions. Attachments
 // are append-only and not part of the optimistic-locked MOM content
 // (Mom.version), so uploading doesn't require the MOM to be in an
 // editable status.
@@ -1260,8 +1260,9 @@ export default function TodoDetailPage() {
   const id = params.id as string;
   const queryClient = useQueryClient();
   const { has: hasPermission } = usePermissions();
-  const canManageMeetings = hasPermission('manage_meetings');
-  const canManageMom = hasPermission('manage_mom');
+  const canEditMeetings = hasPermission('edit_meetings');
+  const canCreateMom = hasPermission('create_mom');
+  const canEditMom = hasPermission('edit_mom');
   const canApproveMom = hasPermission('approve_mom');
   const canPublishMom = hasPermission('publish_mom');
   const canAssignActionItems = hasPermission('assign_action_items');
@@ -1408,7 +1409,7 @@ export default function TodoDetailPage() {
             <div className="w-56">
               <AddableSelect
                 value={meeting.status}
-                disabled={!canManageMeetings || statusMutation.isPending}
+                disabled={!canEditMeetings || statusMutation.isPending}
                 onChange={(v) => statusMutation.mutate(v as MeetingStatus)}
                 options={availableStatuses.map((s) => ({ value: s, label: `${s.replace('_', ' ')}${s === meeting.status ? ' (current)' : ''}` }))}
                 placeholder="Select status"
@@ -1416,7 +1417,7 @@ export default function TodoDetailPage() {
             </div>
           </div>
 
-          {canManageMeetings && (
+          {canEditMeetings && (
             <div className="flex items-center gap-2 ml-auto">
               <button
                 onClick={() => setShowEditModal(true)}
@@ -1474,7 +1475,7 @@ export default function TodoDetailPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-slate-800">Participants</h2>
-          {canManageMeetings && (
+          {canEditMeetings && (
             <button
               onClick={() => setShowAddParticipant((v) => !v)}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-700 hover:bg-amber-100"
@@ -1518,7 +1519,7 @@ export default function TodoDetailPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-slate-800">Agenda</h2>
-          {canManageMeetings && (
+          {canEditMeetings && (
             <button
               onClick={() => setShowAddAgendaItem((v) => !v)}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-700 hover:bg-amber-100"
@@ -1561,7 +1562,7 @@ export default function TodoDetailPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-slate-800">Minutes of Meeting</h2>
-          {!meeting.mom && canManageMom && (
+          {!meeting.mom && canCreateMom && (
             <button
               onClick={() => setShowCreateMomModal(true)}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-700 hover:bg-amber-100"
@@ -1580,7 +1581,7 @@ export default function TodoDetailPage() {
                 {meeting.mom.status}
               </span>
               <div className="flex flex-wrap items-center gap-2 justify-end">
-                {isMomContentEditable(meeting.mom.status) && canManageMom && (
+                {isMomContentEditable(meeting.mom.status) && canEditMom && (
                   <>
                     <button
                       onClick={() => setShowEditMomModal(true)}
@@ -1631,7 +1632,7 @@ export default function TodoDetailPage() {
               </div>
             </div>
 
-            {showAddDecision && isMomContentEditable(meeting.mom.status) && canManageMom && (
+            {showAddDecision && isMomContentEditable(meeting.mom.status) && canEditMom && (
               <div className="mt-4">
                 <AddMomDecisionForm mom={meeting.mom} onDone={() => setShowAddDecision(false)} />
               </div>
@@ -1666,7 +1667,7 @@ export default function TodoDetailPage() {
               )}
             </div>
 
-            <MomAttachmentsSection momId={meeting.mom.id} canUpload={canManageMom} />
+            <MomAttachmentsSection momId={meeting.mom.id} canUpload={canEditMom} />
 
             {meeting.mom.status === 'PUBLISHED' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-100 text-sm">

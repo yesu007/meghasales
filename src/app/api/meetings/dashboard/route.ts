@@ -21,7 +21,7 @@ function currentUserId(session: any): number | null {
 // org-wide management block. A user can hold more than one tier at once.
 export async function GET(request: NextRequest) {
   if (!isMeetingsModuleEnabled()) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-  const denied = await requirePermission('view_meetings');
+  const denied = await requirePermission('view_meetings_dashboard');
   if (denied) return denied;
 
   try {

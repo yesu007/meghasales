@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requirePermission } from '@/lib/rbac';
+import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('view_products');
+  const denied = await requireAnyPermission(['view_products', 'view_customers']);
   if (denied) return denied;
   try {
     const product = await prisma.product.findUnique({
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_products');
+  const denied = await requirePermission('edit_products');
   if (denied) return denied;
   try {
     const body = await request.json();
@@ -126,7 +126,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 // Soft-delete (isActive = false), same convention as Project/Vertical —
 // fully reversible from the same screen (Edit -> Reactivate).
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const denied = await requirePermission('manage_products');
+  const denied = await requirePermission('delete_products');
   if (denied) return denied;
   try {
     const id = parseInt(params.id);
