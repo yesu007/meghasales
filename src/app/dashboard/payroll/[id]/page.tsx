@@ -8,6 +8,7 @@ import { ArrowLeftIcon, PencilIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
+import { WEEK_OFF_TEAMS } from '@/lib/payroll/teamWeekOff';
 import LegalDocumentsPanel from '@/components/payroll/LegalDocumentsPanel';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useScrollFormIntoView } from '@/hooks/useScrollFormIntoView';
@@ -66,6 +67,8 @@ interface EmployeeDetail {
   esiApplicable: boolean;
   ptApplicable: boolean;
   status: string;
+  accessControlId: string | null;
+  weekOffTeam: string | null;
   user: { phone: string | null } | null;
   salaryAssignments: Assignment[];
 }
@@ -110,6 +113,26 @@ export default function EmployeeDetailPage() {
   const { data: structures = [] } = useQuery({ queryKey: ['payroll-structures'], queryFn: fetchStructures });
   const { data: managerOptions = [] } = useQuery({ queryKey: ['payroll-employees-manager-options'], queryFn: fetchManagerOptions });
   const { data: verticalOptions = [] } = useQuery({ queryKey: ['verticals'], queryFn: fetchVerticals });
+  // Shift — the same Shift Master mapping (Employee Shift and Team
+  // Assignment) as Assign Shift & Team; only for users who can edit it.
+  const canAssignShift = has('edit_shifts');
+  const { data: shiftOptions = [] } = useQuery({
+    queryKey: ['payroll-shifts-active'],
+    queryFn: async (): Promise<{ id: number; name: string; startTime: string; endTime: string; isActive: boolean }[]> => {
+      const res = await fetch('/api/payroll/shifts');
+      return res.ok ? res.json() : [];
+    },
+    enabled: canAssignShift,
+  });
+  const { data: shiftAssignments = [] } = useQuery({
+    queryKey: ['payroll-employee-shift-assignments', id],
+    queryFn: async (): Promise<{ id: number; shiftId: number; effectiveFrom: string; effectiveTo: string | null; shift: { name: string } }[]> => {
+      const res = await fetch(`/api/payroll/employees/${id}/shift-assignments`);
+      return res.ok ? res.json() : [];
+    },
+    enabled: canAssignShift,
+  });
+  const currentAssignment = shiftAssignments.find((a) => !a.effectiveTo) ?? null;
 
   const [form, setForm] = useState<Record<string, any>>({});
   // Starts true (not false, like the create form's default) — the already-
@@ -124,6 +147,8 @@ export default function EmployeeDetailPage() {
     if (employee) {
       setForm({
         employeeCode: employee.employeeCode,
+        accessControlId: employee.accessControlId || '',
+        weekOffTeam: employee.weekOffTeam || '',
         firstName: employee.firstName, lastName: employee.lastName, email: employee.email,
         department: employee.department || '', designation: employee.designation || '',
         role: employee.role || '', managerId: employee.managerId ? String(employee.managerId) : '',
@@ -141,6 +166,12 @@ export default function EmployeeDetailPage() {
       setProbationEndDateTouched(true);
     }
   }, [employee]);
+  // Show the current shift in the form once assignments load — declared
+  // after the effect above (which replaces the whole form when the employee
+  // (re)loads) and re-run on that too, so the shift is never wiped.
+  useEffect(() => {
+    setForm((f) => ({ ...f, shiftId: currentAssignment ? String(currentAssignment.shiftId) : '', shiftEffectiveFrom: '' }));
+  }, [employee, currentAssignment?.id, currentAssignment?.shiftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (form.employmentType !== 'PROBATION' || probationEndDateTouched) return;
@@ -154,11 +185,26 @@ export default function EmployeeDetailPage() {
 
   const saveMutation = useMutation({
     mutationFn: async (data: Record<string, any>) => {
-      const res = await fetch(`/api/payroll/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      const { shiftId, shiftEffectiveFrom, ...profile } = data;
+      const res = await fetch(`/api/payroll/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile) });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save'); }
+      // A different shift → a new Shift Master assignment from the chosen
+      // date (the current one is closed the day before), carrying the team.
+      if (canAssignShift && shiftId && Number(shiftId) !== currentAssignment?.shiftId) {
+        const r = await fetch(`/api/payroll/employees/${id}/shift-assignments`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shiftId: Number(shiftId), weekOffTeam: profile.weekOffTeam || null, effectiveFrom: shiftEffectiveFrom || dayjs().format('YYYY-MM-DD') }),
+        });
+        if (!r.ok) { const err = await r.json(); throw new Error(`Profile saved, but the shift wasn't assigned: ${err.message || 'failed'}`); }
+      }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['payroll-employee', id] }); toast.success('Employee profile updated'); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll-employee', id] });
+      queryClient.invalidateQueries({ queryKey: ['payroll-employee-shift-assignments', id] });
+      queryClient.invalidateQueries({ queryKey: ['shift-assignments-all'] });
+      toast.success('Employee profile updated');
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -276,6 +322,15 @@ export default function EmployeeDetailPage() {
                   title="Changing this updates the Employee ID everywhere it's shown, including for this person's linked login — it's the same underlying record, not a copy."
                 />
               </Field>
+              <Field label="Login User ID">
+                <input
+                  value={form.accessControlId || ''}
+                  onChange={(e) => setForm((f) => ({ ...f, accessControlId: e.target.value }))}
+                  className={inputCls}
+                  placeholder="Device user ID"
+                  title="The user ID this employee is enrolled under on the Access Control device — attendance punches are mapped to the employee by this ID."
+                />
+              </Field>
               <Field label="First Name"><input value={form.firstName || ''} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} className={inputCls} /></Field>
               <Field label="Last Name"><input value={form.lastName || ''} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} className={inputCls} /></Field>
               <Field label="Email"><input type="email" value={form.email || ''} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputCls} /></Field>
@@ -306,6 +361,33 @@ export default function EmployeeDetailPage() {
                   className={inputCls}
                 />
               </Field>
+              <Field label="Team">
+                <AddableSelect
+                  value={form.weekOffTeam || ''}
+                  onChange={(v) => setForm((f) => ({ ...f, weekOffTeam: v }))}
+                  options={WEEK_OFF_TEAMS.map((t) => ({ value: t.value, label: t.label }))}
+                  placeholder="No team — company Saturday policy"
+                />
+              </Field>
+              {canAssignShift && (
+                <Field label="Shift">
+                  <AddableSelect
+                    value={form.shiftId || ''}
+                    onChange={(v) => setForm((f) => ({ ...f, shiftId: v }))}
+                    options={shiftOptions.filter((sh) => sh.isActive || sh.id === currentAssignment?.shiftId).map((sh) => ({ value: String(sh.id), label: `${sh.name} (${sh.startTime}–${sh.endTime})` }))}
+                    placeholder="No shift"
+                    clearable={!currentAssignment}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    {currentAssignment ? `Current: ${currentAssignment.shift.name} since ${dayjs(currentAssignment.effectiveFrom).format('DD MMM YYYY')} · ` : ''}Saved to Shift Master → Employee Shift and Team Assignment.
+                  </p>
+                </Field>
+              )}
+              {canAssignShift && form.shiftId && Number(form.shiftId) !== currentAssignment?.shiftId && (
+                <Field label="Shift effective from">
+                  <input type="date" value={form.shiftEffectiveFrom || dayjs().format('YYYY-MM-DD')} onChange={(e) => setForm((f) => ({ ...f, shiftEffectiveFrom: e.target.value }))} className={inputCls} />
+                </Field>
+              )}
               <Field label="Employment Type">
                 <AddableSelect
                   value={form.employmentType || 'FULL_TIME'}

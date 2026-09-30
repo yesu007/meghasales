@@ -168,3 +168,85 @@ export async function findOverlappingDepartmentColleagues(
   }
   return Array.from(seen.values());
 }
+
+// --- Month-wise leave / LOP split -----------------------------------------
+// A leave request is allocated date by date, in order: each date uses the
+// paid balance available AS OF ITS OWN MONTH (that month's accrual counts;
+// a later month's never covers an earlier date), and only what that balance
+// can't cover becomes Loss of Pay. The request's `days` are spread evenly
+// over its calendar dates (1 per date when days = the span, 0.5 for a
+// half-day) — the same "even spread" convention clippedDays uses.
+//
+// The result is one segment per (month, paid-or-LOP), each with its own
+// real dates — e.g. 30 Sep–10 Oct, 9 days available by October:
+//   Sick 30 Sep (1) · Sick 1–8 Oct (8) · LOP 9–10 Oct (2)
+// so the Timesheet, attendance and LOP all see exactly which dates are
+// which, month by month.
+export interface LeaveSegment {
+  kind: 'PAID' | 'LOP';
+  startDate: string; // YYYY-MM-DD
+  endDate: string;
+  days: number;
+}
+
+export interface LeaveAllocation {
+  paidDays: number;
+  lopDays: number;
+  segments: LeaveSegment[];
+  byMonth: { month: string; paidDays: number; lopDays: number }[]; // month = YYYY-MM
+}
+
+const isoDay = (d: dayjs.Dayjs) => d.format('YYYY-MM-DD');
+
+// `availableAsOf(day)` = paid days the employee can take for dates up to and
+// including `day`'s month, before this request (e.g. accrued-by-that-month
+// − already used that year). Tracked per calendar year, so a request that
+// crosses into January starts on the new year's balance.
+export function allocateLeaveByDate({ startDate, endDate, days, availableAsOf }: {
+  startDate: string;
+  endDate: string;
+  days: number;
+  availableAsOf: (day: string) => number;
+}): LeaveAllocation {
+  const start = dayjs(startDate);
+  const span = dayjs(endDate).diff(start, 'day') + 1;
+  const perDate = span > 0 ? days / span : 0;
+  const assignedByYear = new Map<string, number>();
+  const parts: { day: string; paid: number; lop: number }[] = [];
+  for (let i = 0; i < span; i++) {
+    const day = isoDay(start.add(i, 'day'));
+    const year = day.slice(0, 4);
+    const assigned = assignedByYear.get(year) || 0;
+    const canPay = Math.max(0, availableAsOf(day) - assigned);
+    const paid = round2(Math.min(perDate, canPay));
+    const lop = round2(perDate - paid);
+    assignedByYear.set(year, assigned + paid);
+    parts.push({ day, paid, lop });
+  }
+
+  const segments: LeaveSegment[] = [];
+  const months = new Map<string, { paidDays: number; lopDays: number }>();
+  for (const kind of ['PAID', 'LOP'] as const) {
+    const byMonth = new Map<string, LeaveSegment>();
+    for (const p of parts) {
+      const amount = kind === 'PAID' ? p.paid : p.lop;
+      if (amount <= 0) continue;
+      const month = p.day.slice(0, 7);
+      const seg = byMonth.get(month);
+      if (seg) { seg.endDate = p.day; seg.days = round2(seg.days + amount); }
+      else byMonth.set(month, { kind, startDate: p.day, endDate: p.day, days: amount });
+      const m = months.get(month) ?? { paidDays: 0, lopDays: 0 };
+      if (kind === 'PAID') m.paidDays = round2(m.paidDays + amount); else m.lopDays = round2(m.lopDays + amount);
+      months.set(month, m);
+    }
+    segments.push(...Array.from(byMonth.values()));
+  }
+  segments.sort((a, b) => (a.startDate === b.startDate ? (a.kind === 'PAID' ? -1 : 1) : a.startDate.localeCompare(b.startDate)));
+
+  return {
+    paidDays: round2(parts.reduce((s, p) => s + p.paid, 0)),
+    lopDays: round2(parts.reduce((s, p) => s + p.lop, 0)),
+    segments,
+    byMonth: Array.from(months.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([month, m]) => ({ month, ...m })),
+  };
+}

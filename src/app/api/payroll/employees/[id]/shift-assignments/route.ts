@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
+import { createShiftAssignment } from '@/lib/payroll/shiftEngine';
+import { isWeekOffTeam, teamLabel } from '@/lib/payroll/teamWeekOff';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 
 export const dynamic = 'force-dynamic';
@@ -56,34 +58,26 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (!shift) return NextResponse.json({ message: 'Shift not found' }, { status: 404 });
 
     const newFrom = new Date(effectiveFrom);
-    const openAssignment = await prisma.employeeShiftAssignment.findFirst({
-      where: { employeeId, effectiveTo: null },
-      orderBy: { effectiveFrom: 'desc' },
-    });
-    if (openAssignment && newFrom <= openAssignment.effectiveFrom) {
-      return NextResponse.json({ message: `The new assignment must start after the current one's start date (${openAssignment.effectiveFrom.toISOString().slice(0, 10)})` }, { status: 400 });
-    }
+    if (Number.isNaN(newFrom.getTime())) return NextResponse.json({ message: 'effectiveFrom is not a valid date' }, { status: 400 });
+    const weekOffTeam = body.weekOffTeam || null;
+    if (weekOffTeam && !isWeekOffTeam(weekOffTeam)) return NextResponse.json({ message: 'Team must be Team A or Team B' }, { status: 400 });
 
     const session = await getServerSession(authOptions);
     const createdById = currentUserId(session);
 
-    const assignment = await prisma.$transaction(async (tx) => {
-      if (openAssignment) {
-        const dayBefore = new Date(newFrom);
-        dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
-        await tx.employeeShiftAssignment.update({ where: { id: openAssignment.id }, data: { effectiveTo: dayBefore } });
-      }
-      return tx.employeeShiftAssignment.create({
-        data: { employeeId, shiftId: Number(shiftId), effectiveFrom: newFrom, createdById },
-      });
-    });
+    let assignment;
+    try {
+      assignment = await prisma.$transaction((tx) => createShiftAssignment(tx, { employeeId, shiftId: Number(shiftId), effectiveFrom: newFrom, weekOffTeam, createdById }));
+    } catch (err: any) {
+      return NextResponse.json({ message: err.message || 'Failed to assign shift' }, { status: 400 });
+    }
 
     await logAudit({
       action: 'CREATE',
       entityType: 'EMPLOYEE_SHIFT_ASSIGNMENT',
       entityId: assignment.id,
       newValue: assignment,
-      description: `${employee.employeeCode} assigned shift "${shift.name}" from ${newFrom.toISOString().slice(0, 10)}`,
+      description: `${employee.employeeCode} assigned shift "${shift.name}"${weekOffTeam ? ` (${teamLabel(weekOffTeam)})` : ''} from ${newFrom.toISOString().slice(0, 10)}`,
       request,
     });
 

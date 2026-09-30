@@ -4,6 +4,7 @@ import { logAudit } from '@/lib/audit';
 import { requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { isShiftAssignmentUsedInClosedPayroll } from '@/lib/payroll/shiftEngine';
+import { isWeekOffTeam } from '@/lib/payroll/teamWeekOff';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,8 +38,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (!existing) return NextResponse.json({ message: 'Shift assignment not found' }, { status: 404 });
 
     const body = await request.json();
-    if (body.shiftId === undefined && body.effectiveFrom === undefined) {
-      return NextResponse.json({ message: 'Nothing to update — provide shiftId and/or effectiveFrom' }, { status: 400 });
+    if (body.shiftId === undefined && body.effectiveFrom === undefined && body.weekOffTeam === undefined) {
+      return NextResponse.json({ message: 'Nothing to update — provide shiftId, effectiveFrom and/or weekOffTeam' }, { status: 400 });
+    }
+    let newTeam = existing.weekOffTeam;
+    if (body.weekOffTeam !== undefined) {
+      if (body.weekOffTeam && !isWeekOffTeam(body.weekOffTeam)) return NextResponse.json({ message: 'Team must be Team A or Team B' }, { status: 400 });
+      newTeam = body.weekOffTeam || null;
     }
 
     const usedAlready = await isShiftAssignmentUsedInClosedPayroll(prisma, employeeId, existing.effectiveFrom, existing.effectiveTo);
@@ -73,12 +79,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const updated = await prisma.$transaction(async (tx) => {
       const record = await tx.employeeShiftAssignment.update({
         where: { id: assignmentId },
-        data: { shiftId: newShiftId, effectiveFrom: newFrom },
+        data: { shiftId: newShiftId, effectiveFrom: newFrom, weekOffTeam: newTeam },
         include: { shift: { select: { id: true, name: true, startTime: true, endTime: true, attendanceRequirement: true } } },
       });
       if (prev) {
         await tx.employeeShiftAssignment.update({ where: { id: prev.id }, data: { effectiveTo: dayBefore(newFrom) } });
       }
+      // The current (open) assignment's team is the employee's team.
+      if (!record.effectiveTo) await tx.employee.update({ where: { id: employeeId }, data: { weekOffTeam: newTeam } });
       return record;
     });
 
@@ -124,6 +132,8 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       if (prev) {
         await tx.employeeShiftAssignment.update({ where: { id: prev.id }, data: { effectiveTo: next ? dayBefore(next.effectiveFrom) : null } });
       }
+      // Deleting the current assignment makes the previous one current again — its team becomes the employee's team.
+      if (!existing.effectiveTo && prev) await tx.employee.update({ where: { id: employeeId }, data: { weekOffTeam: prev.weekOffTeam } });
     });
 
     await logAudit({ action: 'DELETE', entityType: 'EMPLOYEE_SHIFT_ASSIGNMENT', entityId: assignmentId, oldValue: existing, description: `Shift assignment ${assignmentId} for employee ${employeeId} deleted`, request });

@@ -12,5 +12,8 @@ export function getNotificationHref(n: LinkableNotification): string | null {
   if (n.type === 'PASSWORD_RESET_REQUEST' && n.entityType === 'USER' && n.entityId) {
     return `/dashboard/users/${n.entityId}/reset-password`;
   }
+  if (n.type === 'MANUAL_ATTENDANCE_APPLIED') return '/dashboard/payroll/timesheet?tab=manual';
+  if (n.type === 'LEAVE_APPLIED') return '/dashboard/payroll/timesheet?tab=requests';
+  if (n.type === 'MANUAL_ATTENDANCE_DECIDED') return '/dashboard/payroll/my-attendance';
   return null;
 }

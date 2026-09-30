@@ -4,6 +4,8 @@ import { logAudit } from '@/lib/audit';
 import { requireAnyPermission, requirePermission } from '@/lib/rbac';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { isProbationEmploymentType } from '@/lib/payroll/probationEngine';
+import { relinkPunchesForEmployee } from '@/lib/payroll/attendanceImport';
+import { isWeekOffTeam } from '@/lib/payroll/teamWeekOff';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,9 +55,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
     const body = await request.json();
     const data: Record<string, unknown> = {};
+    // '' clears an optional field to null — except the required (non-null)
+    // name columns, where a blank stays blank rather than failing the save.
+    const REQUIRED_TEXT = ['firstName', 'lastName'];
     for (const field of EDITABLE_FIELDS) {
-      if (body[field] !== undefined) data[field] = body[field] === '' ? null : body[field];
+      if (body[field] === undefined) continue;
+      data[field] = REQUIRED_TEXT.includes(field) ? String(body[field] ?? '') : body[field] === '' ? null : body[field];
     }
+    if (data.firstName !== undefined && !String(data.firstName).trim()) return NextResponse.json({ message: 'First name cannot be empty' }, { status: 400 });
     for (const field of DATE_FIELDS) {
       if (body[field] !== undefined) data[field] = body[field] ? new Date(body[field]) : null;
     }
@@ -134,7 +141,35 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       data.employeeCode = employeeCode;
     }
 
+    // Access Control ID — the device user ID attendance imports map punches
+    // by. Must be unique across employees; clearing it unmaps the punches.
+    if (body.accessControlId !== undefined) {
+      const accessControlId = body.accessControlId === null ? '' : String(body.accessControlId).trim();
+      if (accessControlId && !/^[A-Za-z0-9]{1,24}$/.test(accessControlId)) {
+        return NextResponse.json({ message: 'Login User ID must be letters/digits only (max 24)' }, { status: 400 });
+      }
+      if (accessControlId && accessControlId !== existing.accessControlId) {
+        const conflict = await prisma.employee.findFirst({ where: { accessControlId, id: { not: id } } });
+        if (conflict) return NextResponse.json({ message: `Login User ID ${accessControlId} is already mapped to ${conflict.firstName} ${conflict.lastName} (${conflict.employeeCode})` }, { status: 409 });
+      }
+      data.accessControlId = accessControlId || null;
+    }
+
+    // Alternate-Saturday week-off team — TEAM_A | TEAM_B, or '' / null to clear.
+    if (body.weekOffTeam !== undefined) {
+      if (body.weekOffTeam && !isWeekOffTeam(body.weekOffTeam)) return NextResponse.json({ message: 'Team must be Team A or Team B' }, { status: 400 });
+      data.weekOffTeam = body.weekOffTeam || null;
+    }
+
     const employee = await prisma.employee.update({ where: { id }, data });
+    // Team is also recorded on the current shift assignment (Shift Master →
+    // Employee Shift and Team Assignment) — keep the two in step.
+    if (data.weekOffTeam !== undefined && data.weekOffTeam !== existing.weekOffTeam) {
+      await prisma.employeeShiftAssignment.updateMany({ where: { employeeId: id, effectiveTo: null }, data: { weekOffTeam: data.weekOffTeam as string | null } });
+    }
+    if (existing.accessControlId !== employee.accessControlId) {
+      await relinkPunchesForEmployee(id, existing.accessControlId, employee.accessControlId);
+    }
     await logAudit({
       action: 'UPDATE',
       entityType: 'EMPLOYEE',
@@ -150,7 +185,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json(employee);
   } catch (error: any) {
     if (error.code === 'P2002') {
-      return NextResponse.json({ message: 'Another employee already uses this Employee ID' }, { status: 409 });
+      const target = String(error.meta?.target || '');
+      return NextResponse.json({ message: target.includes('access_control_id') ? 'Another employee already uses this Login User ID' : 'Another employee already uses this Employee ID' }, { status: 409 });
     }
     console.error('PATCH /api/payroll/employees/[id] error:', error);
     return NextResponse.json({ message: error.message || 'Failed to update employee' }, { status: 400 });

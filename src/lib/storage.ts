@@ -64,17 +64,27 @@ function getS3Client(): S3Client {
   return s3Client;
 }
 
+// Optional folder every S3 key goes under — e.g. S3_KEY_PREFIX="dev" keeps
+// a developer's local uploads apart from live ones in a shared bucket.
+// Unset (live) = keys exactly as before. Reads need no change: they go by
+// the stored URL, which already includes the prefix.
+function s3Key(pathname: string): string {
+  const prefix = (process.env.S3_KEY_PREFIX || '').trim().replace(/^\/+|\/+$/g, '');
+  return prefix ? `${prefix}/${pathname}` : pathname;
+}
+
 async function uploadToS3(pathname: string, body: Buffer, contentType: string): Promise<string> {
   const bucket = getS3BucketName()!;
   const region = getS3Region();
+  const key = s3Key(pathname);
   try {
     await getS3Client().send(
-      new PutObjectCommand({ Bucket: bucket, Key: pathname, Body: body, ContentType: contentType })
+      new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType })
     );
   } catch (err) {
     throw new Error(describeS3Error(err, bucket, region));
   }
-  return `https://${bucket}.s3.${region}.amazonaws.com/${pathname}`;
+  return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
 }
 
 // Maps AWS SDK errors to a clear, secret-free message. Only the error
@@ -82,6 +92,12 @@ async function uploadToS3(pathname: string, body: Buffer, contentType: string): 
 // request (which carries the signed Authorization header).
 function describeS3Error(err: unknown, bucket: string, region: string, op: 'upload' | 'download' = 'upload'): string {
   const e = err as { name?: string; Code?: string; code?: string; $metadata?: { httpStatusCode?: number } };
+  // Network-level failures surface as a plain "Error" whose `code` says
+  // what actually happened (DNS lookup, refused connection…) — name those.
+  const networkCodes = ['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH'];
+  if (e?.code && networkCodes.includes(e.code)) {
+    return `Can't reach S3 from this server (${e.code}) — a network or DNS problem, not the bucket or credentials. Check the internet connection / DNS for *.amazonaws.com`;
+  }
   const code = e?.name || e?.Code || e?.code || 'UnknownError';
   switch (code) {
     case 'InvalidAccessKeyId':

@@ -1015,52 +1015,52 @@ model Country {
 // ============================================================
 
 model CompanyProfile {
-  id                        Int      @id @default(autoincrement())
-  companyName               String   @map("company_name")
+  id                        Int       @id @default(autoincrement())
+  companyName               String    @map("company_name")
   tagline                   String?
-  logoUrl                   String?  @map("logo_url")
-  addressLine1              String?  @map("address_line1")
-  addressLine2              String?  @map("address_line2")
+  logoUrl                   String?   @map("logo_url")
+  addressLine1              String?   @map("address_line1")
+  addressLine2              String?   @map("address_line2")
   city                      String?
   state                     String?
   country                   String?
-  postalCode                String?  @map("postal_code")
+  postalCode                String?   @map("postal_code")
   phone                     String?
   email                     String?
   website                   String?
-  gstNumber                 String?  @map("gst_number")
-  panNumber                 String?  @map("pan_number")
-  bankName                  String?  @map("bank_name")
-  bankAccountNumber         String?  @map("bank_account_number")
-  bankIfsc                  String?  @map("bank_ifsc")
-  authorizedSignatory       String?  @map("authorized_signatory")
-  signatoryDesignation      String?  @map("signatory_designation")
-  primaryColor              String?  @default("#1E3A5F") @map("primary_color")
-  secondaryColor            String?  @default("#D4AF37") @map("secondary_color")
-  termsAndConditions        String?  @map("terms_and_conditions")
-  paymentTerms              String?  @map("payment_terms")
-  warrantyTerms             String?  @map("warranty_terms")
+  gstNumber                 String?   @map("gst_number")
+  panNumber                 String?   @map("pan_number")
+  bankName                  String?   @map("bank_name")
+  bankAccountNumber         String?   @map("bank_account_number")
+  bankIfsc                  String?   @map("bank_ifsc")
+  authorizedSignatory       String?   @map("authorized_signatory")
+  signatoryDesignation      String?   @map("signatory_designation")
+  primaryColor              String?   @default("#1E3A5F") @map("primary_color")
+  secondaryColor            String?   @default("#D4AF37") @map("secondary_color")
+  termsAndConditions        String?   @map("terms_and_conditions")
+  paymentTerms              String?   @map("payment_terms")
+  warrantyTerms             String?   @map("warranty_terms")
   assumptions               String?
   exclusions                String?
-  confidentialityNotice     String?  @map("confidentiality_notice")
-  supplierStateCode         String?  @default("TN") @map("supplier_state_code")
+  confidentialityNotice     String?   @map("confidentiality_notice")
+  supplierStateCode         String?   @default("TN") @map("supplier_state_code")
   // Default Admin/Overhead allocation the Quotation Calculator pre-fills a
   // new quotation with (mirrors that calculator's own PCT/FIXED toggle —
   // see ResourceLine costing in src/lib/quotationResourceCosting.ts). Only
   // a starting default: still freely editable per quotation, and an
   // existing quotation keeps whatever it was saved with regardless of a
   // later change here.
-  defaultAdminOverheadMode  String   @default("PCT") @map("default_admin_overhead_mode")
-  defaultAdminOverheadValue Decimal  @default(10) @map("default_admin_overhead_value") @db.Decimal(10, 2)
-  defaultCountryId          Int?     @map("default_country_id")
-  isActive                  Boolean  @default(true) @map("is_active")
+  defaultAdminOverheadMode  String    @default("PCT") @map("default_admin_overhead_mode")
+  defaultAdminOverheadValue Decimal   @default(10) @map("default_admin_overhead_value") @db.Decimal(10, 2)
+  defaultCountryId          Int?      @map("default_country_id")
+  isActive                  Boolean   @default(true) @map("is_active")
   // Payroll statutory identifiers — the business's own GST/PAN/bank details
   // already exist above; these four are specifically what Payroll's
   // compliance reports (PF/ESI/PT/TDS) need and nothing else in the app uses.
-  tanNumber                 String?  @map("tan_number")
-  pfEstablishmentCode       String?  @map("pf_establishment_code")
-  esiEstablishmentCode      String?  @map("esi_establishment_code")
-  ptRegistrationNumber      String?  @map("pt_registration_number")
+  tanNumber                 String?   @map("tan_number")
+  pfEstablishmentCode       String?   @map("pf_establishment_code")
+  esiEstablishmentCode      String?   @map("esi_establishment_code")
+  ptRegistrationNumber      String?   @map("pt_registration_number")
   // Payroll Phase 4 — the actual rates/thresholds the run engine applies
   // (see SalaryComponent.statutoryType). Nullable ceiling/threshold means
   // "no cap" — a company that pays PF on full actual basic rather than
@@ -1069,19 +1069,24 @@ model CompanyProfile {
   // which would incorrectly reduce net pay) purely so compliance reports
   // can show the employer's contribution alongside what was actually
   // deducted from the employee.
-  pfWageCeiling             Decimal? @default(15000) @map("pf_wage_ceiling") @db.Decimal(12, 2)
-  pfEmployerRate            Decimal? @default(12) @map("pf_employer_rate") @db.Decimal(5, 2)
-  esiGrossThreshold         Decimal? @default(21000) @map("esi_gross_threshold") @db.Decimal(12, 2)
-  esiEmployerRate           Decimal? @default(3.25) @map("esi_employer_rate") @db.Decimal(5, 2)
+  pfWageCeiling             Decimal?  @default(15000) @map("pf_wage_ceiling") @db.Decimal(12, 2)
+  pfEmployerRate            Decimal?  @default(12) @map("pf_employer_rate") @db.Decimal(5, 2)
+  esiGrossThreshold         Decimal?  @default(21000) @map("esi_gross_threshold") @db.Decimal(12, 2)
+  esiEmployerRate           Decimal?  @default(3.25) @map("esi_employer_rate") @db.Decimal(5, 2)
   // Time & Attendance — which Saturdays are a weekly off, not every-Saturday
   // (the common alternate-Saturday policy at Indian companies). Sunday is
   // always off regardless of this setting; only Saturday's treatment
   // varies. NONE | ALL | FIRST_THIRD | SECOND_FOURTH — see
   // isWeeklyOff() in timesheetEngine.ts for how each is interpreted.
   // Defaults to SECOND_FOURTH, the most common convention.
-  weeklyOffSaturdays        String   @default("SECOND_FOURTH") @map("weekly_off_saturdays")
-  createdAt                 DateTime @default(now()) @map("created_at")
-  updatedAt                 DateTime @updatedAt @map("updated_at")
+  weeklyOffSaturdays        String    @default("SECOND_FOURTH") @map("weekly_off_saturdays")
+  // Team-based alternate Saturdays: the Saturday on which Team A has its
+  // week off; from there Saturdays alternate A, B, A, B… in both
+  // directions. Null = team rotation off (team members then follow
+  // weeklyOffSaturdays like everyone else). See teamWeekOff.ts.
+  teamWeekOffStartDate      DateTime? @map("team_week_off_start_date") @db.Date
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
 
   defaultCountry Country? @relation(fields: [defaultCountryId], references: [id])
 
@@ -1253,6 +1258,18 @@ model Employee {
   // Deliberately its own field rather than reusing/collapsing `status`, at
   // the requester's explicit direction.
   timesheetStatus         String    @default("ACTIVE") @map("timesheet_status") // ACTIVE | INACTIVE
+  // The user ID this person is enrolled under on the Access Control
+  // (biometric) device — the only key attendance imports map a punch to an
+  // employee by (never the name, which the device stores free-text). Set
+  // manually by HR; an import never creates or fills this.
+  accessControlId         String?   @unique @map("access_control_id")
+  // Alternate-Saturday week-off team — TEAM_A | TEAM_B, same free-text
+  // pseudo-enum convention as employmentType. Kept in sync with the
+  // current shift assignment's team (EmployeeShiftAssignment.weekOffTeam);
+  // used when no assignment carries a team for a date. Null everywhere =
+  // the company-wide Saturday policy (CompanyProfile.weeklyOffSaturdays),
+  // as before. See teamWeekOff.ts.
+  weekOffTeam             String?   @map("week_off_team")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
 
@@ -1271,6 +1288,9 @@ model Employee {
   documentFolders       EmployeeDocumentFolder[]
   expenseClaims         ExpenseClaim[]
   shiftAssignments      EmployeeShiftAssignment[]
+  attendancePunches     AttendancePunch[]
+  dailyAttendance       DailyAttendanceSummary[]
+  manualAttendance      ManualAttendanceRequest[]
 
   @@map("employees")
 }
@@ -1709,15 +1729,20 @@ model LoanRepayment {
 // LeaveRequest and PaidHoliday, the same "no duplicate source of truth"
 // convention LeaveRequest.days uses instead of a separate LeaveBalance table.
 model TimesheetEntry {
-  id            Int      @id @default(autoincrement())
-  employeeId    Int      @map("employee_id")
-  periodYear    Int      @map("period_year")
-  periodMonth   Int      @map("period_month") // 1-12
-  regularHours  Decimal  @default(0) @map("regular_hours") @db.Decimal(6, 1)
-  overtimeHours Decimal  @default(0) @map("overtime_hours") @db.Decimal(6, 1)
-  updatedById   Int?     @map("updated_by")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id                  Int      @id @default(autoincrement())
+  employeeId          Int      @map("employee_id")
+  periodYear          Int      @map("period_year")
+  periodMonth         Int      @map("period_month") // 1-12
+  regularHours        Decimal  @default(0) @map("regular_hours") @db.Decimal(6, 1)
+  overtimeHours       Decimal  @default(0) @map("overtime_hours") @db.Decimal(6, 1)
+  // HR's manual Regular Days for the period, overriding the calculated
+  // value (computeRegularDays) — null = use the calculated value. Its own
+  // column so older HR-typed regularHours values (from before Regular was
+  // calculated) are never mistaken for an override.
+  regularDaysOverride Decimal? @map("regular_days_override") @db.Decimal(6, 1)
+  updatedById         Int?     @map("updated_by")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
@@ -1766,6 +1791,12 @@ model EmployeeShiftAssignment {
   shiftId       Int       @map("shift_id")
   effectiveFrom DateTime  @map("effective_from")
   effectiveTo   DateTime? @map("effective_to")
+  // Alternate-Saturday week-off team for this assignment's period —
+  // TEAM_A | TEAM_B, or null (Shift Master → Employee Shift and Team
+  // Assignment). Dated with the shift, so a team change keeps history; the
+  // current (open) assignment's team is kept in sync with
+  // Employee.weekOffTeam. See weekOffConfig.ts for precedence.
+  weekOffTeam   String?   @map("week_off_team")
   createdById   Int?      @map("created_by")
   createdAt     DateTime  @default(now()) @map("created_at")
 
@@ -1808,6 +1839,146 @@ model TimesheetPeriod {
 
   @@unique([periodYear, periodMonth])
   @@map("timesheet_periods")
+}
+
+// Access Control attendance import — one row per attendance log file
+// pulled from the device's SFTP drop (or uploaded by HR). fileHash makes
+// the same file a no-op the second time it's seen; the counts are filled
+// in when processing finishes. unmatchedRecords is the row count behind
+// unmatchedEmployees (distinct device user IDs with no Employee mapped).
+model AttendanceImportFile {
+  id                    Int       @id @default(autoincrement())
+  fileName              String    @map("file_name")
+  fileHash              String    @unique @map("file_hash") // SHA-256 of the raw file bytes
+  source                String    @default("SFTP") // SFTP | UPLOAD
+  deviceId              String?   @map("device_id")
+  fileSize              Int?      @map("file_size")
+  remoteModifiedAt      DateTime? @map("remote_modified_at")
+  rawFileUrl            String?   @map("raw_file_url") // original log, kept so an import can be re-processed
+  excelFileUrl          String?   @map("excel_file_url") // normalized Login/Logout workbook
+  uploadedAt            DateTime  @default(now()) @map("uploaded_at")
+  processingStartedAt   DateTime? @map("processing_started_at")
+  processingCompletedAt DateTime? @map("processing_completed_at")
+  totalRecords          Int       @default(0) @map("total_records")
+  successfulRecords     Int       @default(0) @map("successful_records")
+  duplicateRecords      Int       @default(0) @map("duplicate_records")
+  invalidRecords        Int       @default(0) @map("invalid_records")
+  unmatchedRecords      Int       @default(0) @map("unmatched_records")
+  unmatchedEmployees    Int       @default(0) @map("unmatched_employees")
+  status                String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | PARTIAL | FAILED
+  errorMessage          String?   @map("error_message")
+  // { invalidRows: [{ line, reason }], unmatchedIds: [{ accessControlId, name, rows }] } — capped, for the import status screen
+  details               Json?
+  createdById           Int?      @map("created_by")
+
+  punches AttendancePunch[]
+
+  @@index([uploadedAt])
+  @@map("attendance_import_files")
+}
+
+// Raw device punches, exactly as read from the log — never edited by the
+// daily calculation, which only reads from here. employeeId is null while
+// the device user ID isn't mapped to any Employee.accessControlId yet; the
+// row is still kept (so mapping it later backfills attendance without
+// needing the file again). The unique key is what makes re-importing a
+// cumulative device log idempotent.
+model AttendancePunch {
+  id              Int      @id @default(autoincrement())
+  employeeId      Int?     @map("employee_id")
+  accessControlId String   @map("access_control_id")
+  punchAt         DateTime @map("punch_at")
+  punchType       String   @map("punch_type") // IN | OUT | BREAK_OUT | BREAK_IN | OT_IN | OT_OUT
+  verifyMode      Int?     @map("verify_mode")
+  deviceId        String   @map("device_id")
+  source          String   @default("SFTP") // SFTP | UPLOAD
+  sourceFile      String   @map("source_file")
+  importFileId    Int?     @map("import_file_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee   Employee?             @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  importFile AttendanceImportFile? @relation(fields: [importFileId], references: [id], onDelete: SetNull)
+
+  @@unique([deviceId, accessControlId, punchAt])
+  @@index([employeeId, punchAt])
+  @@index([accessControlId])
+  @@map("attendance_punches")
+}
+
+// Calculated per employee per day from AttendancePunch — safe to delete
+// and rebuild at any time. loginTime = first punch, logoutTime = last
+// punch, totalWorkingMinutes = the span between them (the same figures the
+// generated Login/Logout workbook shows); sessionCount = IN→OUT pairs by
+// the device's punch state.
+model DailyAttendanceSummary {
+  id                  Int       @id @default(autoincrement())
+  employeeId          Int       @map("employee_id")
+  attendanceDate      DateTime  @map("attendance_date") @db.Date
+  loginTime           DateTime? @map("login_time")
+  logoutTime          DateTime? @map("logout_time")
+  totalWorkingMinutes Int       @default(0) @map("total_working_minutes")
+  sessionCount        Int       @default(0) @map("session_count")
+  punchCount          Int       @default(0) @map("punch_count")
+  status              String    @default("PRESENT") // PRESENT | INCOMPLETE (single punch — no logout)
+  calculatedAt        DateTime  @default(now()) @map("calculated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, attendanceDate])
+  @@index([attendanceDate])
+  @@map("daily_attendance_summaries")
+}
+
+// Manual attendance — for staff the Access Control device can't see (e.g.
+// working from another country): the employee applies from My Space →
+// Attendance with the day's login/logout, an approver (approve_manual_
+// attendance) decides from Time & Attendance → Manual Attendance. Only an
+// APPROVED request makes the day Present (see buildDailyAttendanceRows);
+// PENDING/REJECTED/CANCELLED leave it Absent. Kept apart from
+// AttendancePunch/DailyAttendanceSummary so device data stays device-only.
+// Same linear PENDING → APPROVED/REJECTED (+ CANCELLED) workflow and
+// optimistic `version` as LeaveRequest. loginTime/logoutTime are plain
+// "HH:mm" as entered, in the employee's own working time.
+model ManualAttendanceRequest {
+  id             Int       @id @default(autoincrement())
+  employeeId     Int       @map("employee_id")
+  attendanceDate DateTime  @map("attendance_date") @db.Date
+  loginTime      String    @map("login_time")
+  logoutTime     String    @map("logout_time")
+  workLocation   String?   @map("work_location")
+  reason         String
+  status         String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  appliedAt      DateTime  @default(now()) @map("applied_at")
+  decidedById    Int?      @map("decided_by")
+  decidedAt      DateTime? @map("decided_at")
+  decisionNote   String?   @map("decision_note")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, attendanceDate])
+  @@index([status])
+  @@map("manual_attendance_requests")
+}
+
+// A Saturday on which both teams work (see CompanyProfile.
+// teamWeekOffStartDate). It pauses the alternate-Saturday rotation: the
+// team whose turn it was takes the next Saturday, and the alternation
+// continues from there. `date` is the only input the schedule is derived
+// from (teamWeekOff.ts); `team` / `carryForwardDate` record whose turn it
+// paused and where it carried to, refreshed whenever the list changes.
+model CommonWorkingDay {
+  id               Int      @id @default(autoincrement())
+  date             DateTime @unique @db.Date
+  team             String // TEAM_A | TEAM_B
+  carryForwardDate DateTime @map("carry_forward_date") @db.Date
+  note             String?
+  createdById      Int?     @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("common_working_days")
 }
 
 model StatusMaster {
@@ -2076,66 +2247,66 @@ model ExpenseCategorySubCategoryLink {
 }
 
 model Expense {
-  id              Int       @id @default(autoincrement())
-  expenseNumber   String    @unique @map("expense_number")
-  categoryId      Int       @map("category_id")
-  subCategoryId   Int?      @map("sub_category_id")
+  id               Int       @id @default(autoincrement())
+  expenseNumber    String    @unique @map("expense_number")
+  categoryId       Int       @map("category_id")
+  subCategoryId    Int?      @map("sub_category_id")
   // Vendor is now selected from the Customer module (a Lead row) rather
   // than typed freehand. vendorLeadId is the source of truth for the
   // dropdown/edit-mode selection; vendor stays in sync as the resolved
   // companyName so existing search-by-vendor (route.ts) and historical
   // free-text rows (recorded before this field existed) keep working
   // unchanged.
-  vendorLeadId    Int?      @map("vendor_lead_id")
-  vendor          String?
+  vendorLeadId     Int?      @map("vendor_lead_id")
+  vendor           String?
   // Set only for a Project Expense (the create form's "Overall Expense" vs
   // "Project Expense" toggle) — null means Overall/company-wide spend, same
   // "optional FK, null when not applicable" convention as Demo.projectId /
   // Implementation.projectId.
-  projectId       Int?      @map("project_id")
+  projectId        Int?      @map("project_id")
   // Same shape as projectId above, for a Product Expense (the create
   // form's own Overall / Project / Product Expense toggle) — null means
   // not a Product Expense, same convention.
-  productId       Int?      @map("product_id")
-  expenseDate     DateTime  @map("expense_date")
-  amount          Decimal   @db.Decimal(14, 2)
-  currencyCode    String    @default("INR") @map("currency_code")
+  productId        Int?      @map("product_id")
+  expenseDate      DateTime  @map("expense_date")
+  amount           Decimal   @db.Decimal(14, 2)
+  currencyCode     String    @default("INR") @map("currency_code")
   // Snapshot of the rate to the base currency at record time — same
   // auditability reasoning as Payment.exchangeRate: never recompute
   // historical expenses against today's rate.
-  exchangeRate    Decimal   @default(1) @map("exchange_rate") @db.Decimal(15, 6)
-  paymentMethod   String    @map("payment_method") // CASH | BANK_TRANSFER | CHEQUE | CARD | UPI | OTHER
-  status          String    @default("PENDING") // PENDING | PROCESSED | PARTIALLY_PAID (BILL only) | PAID
-  paidDate        DateTime? @map("paid_date")
+  exchangeRate     Decimal   @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  paymentMethod    String    @map("payment_method") // CASH | BANK_TRANSFER | CHEQUE | CARD | UPI | OTHER
+  status           String    @default("PENDING") // PENDING | PROCESSED | PARTIALLY_PAID (BILL only) | PAID
+  paidDate         DateTime? @map("paid_date")
   // Where the expense came from: MANUAL (recorded on the Expenses page),
   // SALARY (auto-created from an approved Payroll Run, one per run — see
   // syncPayrollRunExpense in src/lib/payroll/runService.ts) or
   // REIMBURSEMENT (auto-created from an approved ExpenseClaim — see
   // syncExpenseClaimExpense in src/lib/payroll/expenseClaimExpense.ts) or
   // BILL (auto-created when a vendor Bill is posted — see src/lib/bills.ts).
-  source          String    @default("MANUAL")
+  source           String    @default("MANUAL")
   // Set only for REIMBURSEMENT expenses. Unique, so one claim can never
   // produce more than one expense.
-  expenseClaimId  Int?      @unique @map("expense_claim_id")
+  expenseClaimId   Int?      @unique @map("expense_claim_id")
   // Set only for SALARY expenses. Unique, so a payroll run can never produce
   // more than one expense however often it is re-approved/processed; the
   // employee-wise breakdown is read from the run's payslips.
-  payrollRunId    Int?      @unique @map("payroll_run_id")
+  payrollRunId     Int?      @unique @map("payroll_run_id")
   // Set only for BILL expenses (auto-created when a Bill is posted — see
   // syncBillExpense in src/lib/bills.ts). Unique: one expense per bill.
-  billId          Int?      @unique @map("bill_id")
-  referenceNumber String?   @map("reference_number") // vendor's bill/receipt number
-  attachmentUrl   String?   @map("attachment_url")
-  attachmentName  String?   @map("attachment_name")
+  billId           Int?      @unique @map("bill_id")
+  referenceNumber  String?   @map("reference_number") // vendor's bill/receipt number
+  attachmentUrl    String?   @map("attachment_url")
+  attachmentName   String?   @map("attachment_name")
   // Payment proof attached in the Mark Paid popup — separate from
   // attachmentUrl (the expense's own supporting document).
-  paymentProofUrl  String?  @map("payment_proof_url")
-  paymentProofName String?  @map("payment_proof_name")
-  notes           String?
-  recordedById    Int?      @map("recorded_by")
-  deletedAt       DateTime? @map("deleted_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  paymentProofUrl  String?   @map("payment_proof_url")
+  paymentProofName String?   @map("payment_proof_name")
+  notes            String?
+  recordedById     Int?      @map("recorded_by")
+  deletedAt        DateTime? @map("deleted_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   category     ExpenseCategory     @relation(fields: [categoryId], references: [id])
   subCategory  ExpenseSubCategory? @relation(fields: [subCategoryId], references: [id])
@@ -2187,39 +2358,39 @@ model Supplier {
 // is mirrored onto that expense. Totals are stored (computed server-side by
 // computeBillTotals in src/lib/bills.ts) so lists/reports never recompute.
 model Bill {
-  id             Int       @id @default(autoincrement())
-  billNumber     String    @unique @map("bill_number") // BILL-00001
-  billType       String    @map("bill_type") // SUB_CONTRACTOR | MATERIAL
-  supplierId     Int       @map("supplier_id")
-  invoiceNumber  String    @map("invoice_number")
-  invoiceDate    DateTime  @map("invoice_date")
+  id               Int       @id @default(autoincrement())
+  billNumber       String    @unique @map("bill_number") // BILL-00001
+  billType         String    @map("bill_type") // SUB_CONTRACTOR | MATERIAL
+  supplierId       Int       @map("supplier_id")
+  invoiceNumber    String    @map("invoice_number")
+  invoiceDate      DateTime  @map("invoice_date")
   // Exactly one category per bill; each line item picks a sub-category of it.
-  categoryId     Int       @map("category_id")
-  itemTotal      Decimal   @default(0) @map("item_total") @db.Decimal(14, 2)
-  cgstTotal      Decimal   @default(0) @map("cgst_total") @db.Decimal(14, 2)
-  sgstTotal      Decimal   @default(0) @map("sgst_total") @db.Decimal(14, 2)
-  igstTotal      Decimal   @default(0) @map("igst_total") @db.Decimal(14, 2)
-  gstTotal       Decimal   @default(0) @map("gst_total") @db.Decimal(14, 2)
-  tdsTotal       Decimal   @default(0) @map("tds_total") @db.Decimal(14, 2)
+  categoryId       Int       @map("category_id")
+  itemTotal        Decimal   @default(0) @map("item_total") @db.Decimal(14, 2)
+  cgstTotal        Decimal   @default(0) @map("cgst_total") @db.Decimal(14, 2)
+  sgstTotal        Decimal   @default(0) @map("sgst_total") @db.Decimal(14, 2)
+  igstTotal        Decimal   @default(0) @map("igst_total") @db.Decimal(14, 2)
+  gstTotal         Decimal   @default(0) @map("gst_total") @db.Decimal(14, 2)
+  tdsTotal         Decimal   @default(0) @map("tds_total") @db.Decimal(14, 2)
   // Item Value − TDS + GST
-  payableAmount  Decimal   @default(0) @map("payable_amount") @db.Decimal(14, 2)
-  status         String    @default("DRAFT") // DRAFT | POSTED
-  paymentStatus  String    @default("UNPAID") @map("payment_status") // UNPAID | PARTIALLY_PAID | PAID
-  paidAmount     Decimal   @default(0) @map("paid_amount") @db.Decimal(14, 2)
-  paidDate       DateTime? @map("paid_date")
-  paymentMethod  String?   @map("payment_method") // same values as Expense.paymentMethod
-  attachmentUrl  String?   @map("attachment_url")
-  attachmentName String?   @map("attachment_name")
+  payableAmount    Decimal   @default(0) @map("payable_amount") @db.Decimal(14, 2)
+  status           String    @default("DRAFT") // DRAFT | POSTED
+  paymentStatus    String    @default("UNPAID") @map("payment_status") // UNPAID | PARTIALLY_PAID | PAID
+  paidAmount       Decimal   @default(0) @map("paid_amount") @db.Decimal(14, 2)
+  paidDate         DateTime? @map("paid_date")
+  paymentMethod    String?   @map("payment_method") // same values as Expense.paymentMethod
+  attachmentUrl    String?   @map("attachment_url")
+  attachmentName   String?   @map("attachment_name")
   // Payment proof attached in the Payment popup — separate from
   // attachmentUrl (the vendor invoice PDF). Encrypted like it.
-  paymentProofUrl  String?  @map("payment_proof_url")
-  paymentProofName String?  @map("payment_proof_name")
-  notes          String?
-  postedAt       DateTime? @map("posted_at")
-  createdById    Int?      @map("created_by")
-  deletedAt      DateTime? @map("deleted_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  paymentProofUrl  String?   @map("payment_proof_url")
+  paymentProofName String?   @map("payment_proof_name")
+  notes            String?
+  postedAt         DateTime? @map("posted_at")
+  createdById      Int?      @map("created_by")
+  deletedAt        DateTime? @map("deleted_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   supplier  Supplier        @relation(fields: [supplierId], references: [id])
   category  ExpenseCategory @relation(fields: [categoryId], references: [id])
@@ -2274,65 +2445,65 @@ model BillItem {
 // reference this model — reimbursement is tracked and paid separately, by
 // design, per the task that introduced this model).
 model ExpenseClaim {
-  id              Int       @id @default(autoincrement())
-  employeeId      Int       @map("employee_id")
-  expenseDate     DateTime  @map("expense_date")
+  id               Int       @id @default(autoincrement())
+  employeeId       Int       @map("employee_id")
+  expenseDate      DateTime  @map("expense_date")
   // "Expense Type" — reuses the existing Expense Category master (Finance's
   // Expenses > Category/Sub Category screen) rather than inventing a
   // second, parallel type list; an admin adding a category there
   // automatically becomes selectable here too.
-  categoryId      Int       @map("category_id")
+  categoryId       Int       @map("category_id")
   // "Sub Category" — one of the selected Category's own sub-categories
   // (ExpenseSubCategory.categoryId, the same ownership Finance's Expenses
   // form uses to fill its Sub Category dropdown). Nullable: a category may
   // have no sub-categories, and claims filed before this field existed have
   // none.
-  subCategoryId   Int?      @map("sub_category_id")
+  subCategoryId    Int?      @map("sub_category_id")
   // Project / Customer — same optional, independent pair as Demo/Quotation/
   // Implementation's own projectId/leadId fields: leadId is "Customer" (a
   // Lead row), projectId is optionally scoped to that Lead's own Projects
   // (see GET /api/projects's leadId filter). Both nullable — a claim isn't
   // required to be tied to any customer/project (e.g. general office
   // supplies).
-  leadId          Int?      @map("lead_id")
-  projectId       Int?      @map("project_id")
+  leadId           Int?      @map("lead_id")
+  projectId        Int?      @map("project_id")
   // Product — same optional, independent-of-Project scoping as Product
   // Master itself (Product.customerId/leadId, no projectId on Product at
   // all), just displayed alongside Project in the form/tables per the UI
   // spec; the dropdown's actual options come from the selected Customer,
   // not the selected Project (see useProductsForLead).
-  productId       Int?      @map("product_id")
-  description     String
-  amount          Decimal   @db.Decimal(12, 2)
+  productId        Int?      @map("product_id")
+  description      String
+  amount           Decimal   @db.Decimal(12, 2)
   // Vercel Blob URL + original filename — same shape/convention as
   // Expense.attachmentUrl/attachmentName and EmployeeLegalDocument.filePath.
-  attachmentUrl   String?   @map("attachment_url")
-  attachmentName  String?   @map("attachment_name")
-  status          String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | REJECTED | PAID
-  submittedAt     DateTime? @map("submitted_at")
+  attachmentUrl    String?   @map("attachment_url")
+  attachmentName   String?   @map("attachment_name")
+  status           String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | REJECTED | PAID
+  submittedAt      DateTime? @map("submitted_at")
   // decidedById/decidedAt cover both an Approve and a Reject decision (one
   // pair, not two), same "one decision, whichever way it went" shape as
   // LeaveRequest.approvedById/approvedAt (which also doubles for rejections
   // there) — rejectedAt below is additionally split out since the task
   // explicitly asks for a Rejected Date distinct from an Approved Date.
-  decidedById     Int?      @map("decided_by")
-  approvedAt      DateTime? @map("approved_at")
-  rejectedAt      DateTime? @map("rejected_at")
-  rejectionReason String?   @map("rejection_reason")
-  paidAt          DateTime? @map("paid_at")
+  decidedById      Int?      @map("decided_by")
+  approvedAt       DateTime? @map("approved_at")
+  rejectedAt       DateTime? @map("rejected_at")
+  rejectionReason  String?   @map("rejection_reason")
+  paidAt           DateTime? @map("paid_at")
   // Set only when moving to PAID, via the Mark as Paid confirmation popup —
   // HAND_CASH | BANK_TRANSFER. Null for every other status.
-  paymentType     String?   @map("payment_type")
+  paymentType      String?   @map("payment_type")
   // Payment proof attached in the approver's Mark Paid popup — separate
   // from attachmentUrl (the employee's own receipt). Encrypted like it.
-  paymentProofUrl  String?  @map("payment_proof_url")
-  paymentProofName String?  @map("payment_proof_name")
+  paymentProofUrl  String?   @map("payment_proof_url")
+  paymentProofName String?   @map("payment_proof_name")
   // Optimistic lock — same convention as LeaveRequest.version/PayrollRun.version,
   // guards against two approvers (or an approver and the employee, e.g. a
   // Submit racing an in-flight Approve) clobbering each other's update.
-  version         Int       @default(1)
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  version          Int       @default(1)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   employee    Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   category    ExpenseCategory     @relation(fields: [categoryId], references: [id])

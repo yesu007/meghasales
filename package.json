@@ -31,6 +31,7 @@
     "dayjs": "^1.11.21",
     "docx-preview": "^0.4.1",
     "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
@@ -43,6 +44,7 @@
     "react-hook-form": "^7.81.0",
     "react-hot-toast": "^2.6.0",
     "recharts": "^3.9.2",
+    "ssh2-sftp-client": "^12.1.1",
     "web-push": "^3.6.7",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
@@ -54,6 +56,7 @@
     "@types/nodemailer": "^8.0.1",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/ssh2-sftp-client": "^9.0.6",
     "@types/web-push": "^3.6.4",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",

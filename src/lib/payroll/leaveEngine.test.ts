@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeAutoLopDaysFromRequests, computeAccruedPoolDays, countsTowardAnnualLeave, ANNUAL_LEAVE_EXCLUDED_CODES } from './leaveEngine';
+import { computeAutoLopDaysFromRequests, computeAccruedPoolDays, countsTowardAnnualLeave, ANNUAL_LEAVE_EXCLUDED_CODES, allocateLeaveByDate } from './leaveEngine';
 
 describe('countsTowardAnnualLeave', () => {
   it('excludes Loss of Pay, Earned Leave, and Paid Holidays (MATERNITY)', () => {
@@ -139,5 +139,53 @@ describe('computeAccruedPoolDays', () => {
 
   it('18-day entitlement: caps at 18 (not 12) in December', () => {
     expect(computeAccruedPoolDays(18, 2026, new Date('2026-12-31'))).toBe(18);
+  });
+});
+
+describe('allocateLeaveByDate — month-wise leave / LOP split', () => {
+  // Annual pool 12/yr accruing 1/month, 0 used: available by a month = month number.
+  const accrualOnly = (used: number) => (day: string) => Number(day.slice(5, 7)) - used;
+
+  it('Scenario 1: 30 Sep–10 Oct (11 days), 9 available and no new October balance → Sep 1 paid; Oct 8 paid + 2 LOP', () => {
+    const r = allocateLeaveByDate({ startDate: '2026-09-30', endDate: '2026-10-10', days: 11, availableAsOf: () => 9 });
+    expect(r).toMatchObject({ paidDays: 9, lopDays: 2 });
+    expect(r.byMonth).toEqual([{ month: '2026-09', paidDays: 1, lopDays: 0 }, { month: '2026-10', paidDays: 8, lopDays: 2 }]);
+    expect(r.segments).toEqual([
+      { kind: 'PAID', startDate: '2026-09-30', endDate: '2026-09-30', days: 1 },
+      { kind: 'PAID', startDate: '2026-10-01', endDate: '2026-10-08', days: 8 },
+      { kind: 'LOP', startDate: '2026-10-09', endDate: '2026-10-10', days: 2 },
+    ]);
+  });
+  it('Scenario 2: October accrues 1 more day → 10 paid, 1 LOP, the extra day only covers October', () => {
+    // 9 available by September, 10 by October
+    const r = allocateLeaveByDate({ startDate: '2026-09-30', endDate: '2026-10-10', days: 11, availableAsOf: (d) => (d < '2026-10-01' ? 9 : 10) });
+    expect(r).toMatchObject({ paidDays: 10, lopDays: 1 });
+    expect(r.byMonth).toEqual([{ month: '2026-09', paidDays: 1, lopDays: 0 }, { month: '2026-10', paidDays: 9, lopDays: 1 }]);
+    expect(r.segments.find((s) => s.kind === 'LOP')).toEqual({ kind: 'LOP', startDate: '2026-10-10', endDate: '2026-10-10', days: 1 });
+  });
+  it("October's new balance never covers September: nothing left in September → September is LOP", () => {
+    // all 9 September days already used; October adds 1
+    const r = allocateLeaveByDate({ startDate: '2026-09-29', endDate: '2026-10-02', days: 4, availableAsOf: accrualOnly(9) });
+    expect(r.byMonth).toEqual([{ month: '2026-09', paidDays: 0, lopDays: 2 }, { month: '2026-10', paidDays: 1, lopDays: 1 }]);
+    expect(r.segments.map((s) => `${s.kind} ${s.startDate}→${s.endDate} ${s.days}`)).toEqual([
+      'LOP 2026-09-29→2026-09-30 2', 'PAID 2026-10-01→2026-10-01 1', 'LOP 2026-10-02→2026-10-02 1',
+    ]);
+  });
+  it('within balance, single month → one paid segment (unchanged behaviour)', () => {
+    const r = allocateLeaveByDate({ startDate: '2026-09-07', endDate: '2026-09-09', days: 3, availableAsOf: () => 5 });
+    expect(r).toMatchObject({ paidDays: 3, lopDays: 0, segments: [{ kind: 'PAID', startDate: '2026-09-07', endDate: '2026-09-09', days: 3 }] });
+  });
+  it('half-day and fractional balance', () => {
+    expect(allocateLeaveByDate({ startDate: '2026-09-07', endDate: '2026-09-07', days: 0.5, availableAsOf: () => 0.25 })).toMatchObject({ paidDays: 0.25, lopDays: 0.25 });
+    const r = allocateLeaveByDate({ startDate: '2026-09-07', endDate: '2026-09-09', days: 3, availableAsOf: () => 1.5 });
+    expect(r.segments).toEqual([
+      { kind: 'PAID', startDate: '2026-09-07', endDate: '2026-09-08', days: 1.5 },
+      { kind: 'LOP', startDate: '2026-09-08', endDate: '2026-09-09', days: 1.5 },
+    ]);
+  });
+  it('crossing into a new year starts on the new year\'s balance', () => {
+    // December: 0 left; January: 1 accrued
+    const r = allocateLeaveByDate({ startDate: '2026-12-31', endDate: '2027-01-02', days: 3, availableAsOf: (d) => (d.startsWith('2027') ? 1 : 0) });
+    expect(r.byMonth).toEqual([{ month: '2026-12', paidDays: 0, lopDays: 1 }, { month: '2027-01', paidDays: 1, lopDays: 1 }]);
   });
 });

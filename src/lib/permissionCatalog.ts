@@ -231,7 +231,10 @@ export const PERMISSION_CATALOG: CatalogModule[] = [
         paths: ['/dashboard/payroll/timesheet', '/dashboard/payroll/leave'],
         view: newView('view_timesheet', 'View time & attendance, leave requests and holidays', ['view_payroll']),
         legacy: ['manage_employees', 'manage_salary_structures'],
-        extra: [existing('approve_leave', 'Approve or reject leave requests')],
+        extra: [
+          existing('approve_leave', 'Approve or reject leave requests'),
+          newView('approve_manual_attendance', 'Approve or reject manual attendance requests', ['approve_leave']),
+        ],
       }),
       crud('shifts', 'Shift Master', {
         paths: ['/dashboard/payroll/shifts'],
