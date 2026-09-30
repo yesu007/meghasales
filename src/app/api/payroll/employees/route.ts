@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
-import { requireAnyPermission, requirePermission } from '@/lib/rbac';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { checkPermission, requireAnyPermission, requirePermission } from '@/lib/rbac';
+import { createShiftAssignment } from '@/lib/payroll/shiftEngine';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { nextEmployeeCode } from '@/lib/payroll/employeeCode';
+import { isWeekOffTeam } from '@/lib/payroll/teamWeekOff';
 import { computeProbationEndDate, isProbationEmploymentType } from '@/lib/payroll/probationEngine';
 
 export const dynamic = 'force-dynamic';
@@ -122,6 +126,22 @@ export async function POST(request: NextRequest) {
     }
 
     const employmentType = body.employmentType || 'FULL_TIME';
+    if (body.weekOffTeam && !isWeekOffTeam(body.weekOffTeam)) {
+      return NextResponse.json({ message: 'Team must be Team A or Team B' }, { status: 400 });
+    }
+    // Optional Shift — creates the Shift Master mapping (Employee Shift and
+    // Team Assignment) for this employee in the same transaction, from the
+    // Date of Joining (today if none). Same permission as assigning a shift
+    // from Shift Master.
+    const session = await getServerSession(authOptions);
+    const shiftId = body.shiftId ? Number(body.shiftId) : null;
+    let shiftName: string | null = null;
+    if (shiftId) {
+      if (!checkPermission(session, 'edit_shifts')) return NextResponse.json({ message: 'Assigning a shift needs the Edit Shift Master permission' }, { status: 403 });
+      const shift = await prisma.shift.findUnique({ where: { id: shiftId } });
+      if (!shift || !shift.isActive) return NextResponse.json({ message: 'Selected shift not found or inactive' }, { status: 400 });
+      shiftName = shift.name;
+    }
     const dateOfJoining = body.dateOfJoining ? new Date(body.dateOfJoining) : null;
 
     // Probation Duration/End Date only ever apply to the PROBATION
@@ -153,7 +173,7 @@ export async function POST(request: NextRequest) {
 
     const employee = await prisma.$transaction(async (tx) => {
       const employeeCode = await nextEmployeeCode(tx);
-      return tx.employee.create({
+      const created = await tx.employee.create({
         data: {
           userId: matchingUser?.id ?? null,
           employeeCode,
@@ -167,6 +187,7 @@ export async function POST(request: NextRequest) {
           verticalId,
           dateOfJoining,
           employmentType,
+          weekOffTeam: body.weekOffTeam || null,
           probationDurationMonths,
           probationEndDate,
           panNumber: body.panNumber || null,
@@ -182,6 +203,12 @@ export async function POST(request: NextRequest) {
           ptApplicable: body.ptApplicable ?? true,
         },
       });
+      if (shiftId) {
+        const createdById = session?.user ? parseInt((session.user as any).id, 10) : null;
+        const from = dateOfJoining ?? new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z');
+        await createShiftAssignment(tx, { employeeId: created.id, shiftId, effectiveFrom: from, weekOffTeam: created.weekOffTeam, createdById: Number.isFinite(createdById) ? createdById : null });
+      }
+      return created;
     });
 
     await logAudit({
@@ -189,7 +216,7 @@ export async function POST(request: NextRequest) {
       entityType: 'EMPLOYEE',
       entityId: employee.id,
       newValue: employee,
-      description: `Employee ${employee.employeeCode} (${firstName} ${lastName}) onboarded to payroll${matchingUser ? ' — linked to existing system user' : ''}`,
+      description: `Employee ${employee.employeeCode} (${firstName} ${lastName}) onboarded to payroll${matchingUser ? ' — linked to existing system user' : ''}${shiftName ? ` — shift "${shiftName}" assigned` : ''}`,
       request,
     });
 

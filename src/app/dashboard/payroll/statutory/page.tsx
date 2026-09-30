@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
 import { usePermissions } from '@/hooks/usePermissions';
+import { notifyAttendanceScheduleChanged } from '@/lib/payroll/attendanceScheduleSync';
 
 interface StatutorySettings {
   pfWageCeiling: string | null;
@@ -17,6 +19,7 @@ interface StatutorySettings {
   esiEstablishmentCode: string | null;
   ptRegistrationNumber: string | null;
   weeklyOffSaturdays: string | null;
+  teamWeekOffStartDate: string | null;
 }
 
 const SATURDAY_POLICY_OPTIONS = [
@@ -66,6 +69,7 @@ export default function StatutorySettingsPage() {
         tanNumber: settings.tanNumber ?? '', pfEstablishmentCode: settings.pfEstablishmentCode ?? '',
         esiEstablishmentCode: settings.esiEstablishmentCode ?? '', ptRegistrationNumber: settings.ptRegistrationNumber ?? '',
         weeklyOffSaturdays: settings.weeklyOffSaturdays || 'SECOND_FOURTH',
+        teamWeekOffStartDate: settings.teamWeekOffStartDate || '',
       });
     }
   }, [settings]);
@@ -76,7 +80,8 @@ export default function StatutorySettingsPage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to save'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['payroll-statutory-settings'] }); toast.success('Statutory settings saved'); },
+    // The Saturday policy / team rotation start decide every week-off — refresh attendance everywhere.
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['payroll-statutory-settings'] }); queryClient.invalidateQueries({ queryKey: ['saturday-policy'] }); notifyAttendanceScheduleChanged(queryClient); toast.success('Statutory settings saved'); },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -145,7 +150,21 @@ export default function StatutorySettingsPage() {
               options={SATURDAY_POLICY_OPTIONS}
               placeholder="Select policy"
             />
-            <p className="text-xs text-slate-400 mt-1">Controls which Saturdays show as a day off on the Time &amp; Attendance timesheet. Sunday is always off.</p>
+            <p className="text-xs text-slate-400 mt-1">Controls which Saturdays show as a day off on the Time &amp; Attendance timesheet. Sunday is always off. Employees in Team A / Team B follow the team rotation below instead.</p>
+          </div>
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-slate-700 mb-1">Team A&apos;s first week-off Saturday</label>
+            <input
+              type="date"
+              value={form.teamWeekOffStartDate || ''}
+              onChange={(e) => setForm((f) => ({ ...f, teamWeekOffStartDate: e.target.value }))}
+              className={inputCls}
+            />
+            <p className="text-xs text-slate-400 mt-1">
+              Team A is off on this Saturday, Team B the next, and they keep alternating every week after (and before) it — for every month and year.
+              {form.teamWeekOffStartDate && dayjs(form.teamWeekOffStartDate).day() !== 6 && <span className="text-red-500"> This date isn&apos;t a Saturday.</span>}
+              {' '}Leave empty to switch team rotation off.
+            </p>
           </div>
         </div>
 

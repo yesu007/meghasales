@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { notifyAttendanceScheduleChanged } from '@/lib/payroll/attendanceScheduleSync';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
 
 interface LeaveType { id: number; name: string; code: string; isPaid: boolean; annualQuota: string | null; isActive: boolean }
-interface Balance { leaveTypeId: number; name: string; code: string; isPaid: boolean; quota: number | null; usedDays: number; remaining: number | null; accruedDays?: number }
+interface Balance { leaveTypeId: number; name: string; code: string; isPaid: boolean; quota: number | null; usedDays: number; remaining: number | null; accruedDays?: number; earnedDays?: number }
 interface MyRequest {
   id: number;
   startDate: string;
@@ -42,7 +43,20 @@ async function fetchLeaveTypes(): Promise<LeaveType[]> {
 
 export default function MyLeavePage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ['my-leave'], queryFn: fetchMine });
+  const { data, isLoading } = useQuery({
+    queryKey: ['my-leave'],
+    queryFn: fetchMine,
+    staleTime: 0, // refetch on focus — an approver may have decided in the meantime
+    // While a request is awaiting a decision, keep checking so an approval shows up without a reload.
+    refetchInterval: (q) => ((q.state.data as any)?.requests?.some((r: { status: string }) => r.status === 'PENDING') ? 20_000 : false),
+  });
+  // A request just got decided elsewhere → refresh Timesheet / attendance in every open tab too.
+  const leaveSignature = (data?.requests || []).map((r) => `${r.id}:${r.status}`).join(',');
+  const lastLeaveSignature = useRef(leaveSignature);
+  useEffect(() => {
+    if (lastLeaveSignature.current && lastLeaveSignature.current !== leaveSignature) notifyAttendanceScheduleChanged(queryClient);
+    lastLeaveSignature.current = leaveSignature;
+  }, [leaveSignature, queryClient]);
   const { data: leaveTypes = [] } = useQuery({ queryKey: ['leave-types'], queryFn: fetchLeaveTypes });
 
   const blankForm = { leaveTypeId: '', startDate: '', endDate: '', days: '', reason: '' };
@@ -52,13 +66,14 @@ export default function MyLeavePage() {
   // its leave type's quota — lets the employee choose to still submit, with
   // the excess days logged against Loss of Pay (see the apply mutation's
   // acknowledgeLossOfPay resubmit below), rather than rejecting outright.
-  const [quotaConfirm, setQuotaConfirm] = useState<{ leaveTypeName: string; availableDays: number; excessDays: number } | null>(null);
+  const [quotaConfirm, setQuotaConfirm] = useState<{ leaveTypeName: string; availableDays: number; excessDays: number; byMonth?: { month: string; paidDays: number; lopDays: number }[] } | null>(null);
 
   interface QuotaExceededError extends Error {
     quotaExceeded: true;
     leaveTypeName: string;
     availableDays: number;
     excessDays: number;
+    byMonth?: { month: string; paidDays: number; lopDays: number }[];
   }
 
   const apply = useMutation({
@@ -68,7 +83,7 @@ export default function MyLeavePage() {
         const err = await res.json();
         if (err.quotaExceeded) {
           const quotaErr = new Error(err.message) as QuotaExceededError;
-          Object.assign(quotaErr, { quotaExceeded: true, leaveTypeName: err.leaveTypeName, availableDays: err.availableDays, excessDays: err.excessDays });
+          Object.assign(quotaErr, { quotaExceeded: true, leaveTypeName: err.leaveTypeName, availableDays: err.availableDays, excessDays: err.excessDays, byMonth: err.byMonth });
           throw quotaErr;
         }
         throw new Error(err.message || 'Failed to apply');
@@ -76,7 +91,7 @@ export default function MyLeavePage() {
       return res.json();
     },
     onSuccess: (data: { departmentOverlapWarning?: string | null; split?: boolean; availableDays?: number; excessDays?: number }) => {
-      queryClient.invalidateQueries({ queryKey: ['my-leave'] });
+      notifyAttendanceScheduleChanged(queryClient); // My Leave + Timesheet + attendance, every open tab
       if (data.split) {
         toast.success(`Leave request submitted — ${data.availableDays} day(s) as leave, ${data.excessDays} day(s) as Loss of Pay`);
       } else {
@@ -88,7 +103,7 @@ export default function MyLeavePage() {
     },
     onError: (err: Error | QuotaExceededError) => {
       if ('quotaExceeded' in err && err.quotaExceeded) {
-        setQuotaConfirm({ leaveTypeName: err.leaveTypeName, availableDays: err.availableDays, excessDays: err.excessDays });
+        setQuotaConfirm({ leaveTypeName: err.leaveTypeName, availableDays: err.availableDays, excessDays: err.excessDays, byMonth: err.byMonth });
         return;
       }
       toast.error(err.message);
@@ -101,7 +116,7 @@ export default function MyLeavePage() {
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to cancel'); }
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['my-leave'] }); toast.success('Request cancelled'); },
+    onSuccess: () => { notifyAttendanceScheduleChanged(queryClient); toast.success('Request cancelled'); },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -143,7 +158,15 @@ export default function MyLeavePage() {
         {otherBalances.map((b) => (
           <div key={b.leaveTypeId} className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4">
             <p className="text-xs sm:text-sm text-slate-500">{b.name}</p>
-            <p className="text-xl sm:text-2xl font-bold mt-1 text-slate-700">{b.usedDays}</p>
+            {b.earnedDays != null ? (
+              <>
+                {/* Earned by working week offs / paid holidays — balance, like Annual Leave. */}
+                <p className="text-xl sm:text-2xl font-bold mt-1 text-slate-700">{b.remaining}</p>
+                <p className="text-[11px] text-slate-400">{b.usedDays} used of {b.earnedDays} earned</p>
+              </>
+            ) : (
+              <p className="text-xl sm:text-2xl font-bold mt-1 text-slate-700">{b.usedDays}</p>
+            )}
           </div>
         ))}
       </div>
@@ -231,6 +254,16 @@ export default function MyLeavePage() {
             <p className="text-xs text-slate-400 mt-3">
               {quotaConfirm.availableDays} day(s) → {quotaConfirm.leaveTypeName}, {quotaConfirm.excessDays} day(s) → Loss of Pay
             </p>
+            {/* Month by month, on the actual dates — LOP only where that month's balance runs out. */}
+            {quotaConfirm.byMonth && quotaConfirm.byMonth.length > 1 && (
+              <ul className="mt-2 space-y-0.5 text-xs text-slate-600">
+                {quotaConfirm.byMonth.map((m) => (
+                  <li key={m.month}>
+                    {dayjs(`${m.month}-01`).format('MMMM YYYY')}: {m.paidDays} day(s) {quotaConfirm.leaveTypeName}{m.lopDays > 0 ? `, ${m.lopDays} day(s) Loss of Pay` : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => setQuotaConfirm(null)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800">Cancel</button>
               <button
