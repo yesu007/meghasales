@@ -33,8 +33,8 @@ const ATTENDANCE_STYLES = {
   incomplete: { cls: 'bg-amber-100 text-amber-700 hover:bg-amber-200', dot: 'bg-amber-300', label: 'Missing logout' },
   absent: { cls: 'bg-red-500 text-white shadow-sm shadow-red-100 hover:bg-red-600', dot: 'bg-red-500', label: 'Absent' },
   leave: { cls: 'bg-blue-100 text-blue-700 hover:bg-blue-200', dot: 'bg-blue-300', label: 'On Leave' },
-  holiday: { cls: 'bg-slate-300 text-slate-600', dot: 'bg-slate-300', label: 'Paid Holiday' },
-  weekOff: { cls: 'bg-violet-50 text-violet-400 hover:bg-violet-100', dot: 'bg-violet-200', label: 'Weekly off' },
+  holiday: { cls: 'bg-slate-500 text-white shadow-sm', dot: 'bg-slate-500', label: 'Paid Holiday' },
+  weekOff: { cls: 'bg-red-100 text-red-500 hover:bg-red-200', dot: 'bg-red-200', label: 'Weekly off' },
   noData: { cls: 'bg-white text-slate-400 border border-slate-200', dot: 'bg-white border border-slate-300', label: 'No data yet' },
 } as const;
 
@@ -119,11 +119,11 @@ export default function TimesheetDayStrip({ year, month, saturdayPolicy, holiday
               title={holidayName ? `Paid Holiday: ${holidayName}` : isWeekend ? (weekOffByDate?.get(`${year}-${pad(month)}-${pad(d)}`) || 'Weekly off') : undefined}
               className={`flex-1 min-w-[34px] text-center text-[11px] font-semibold py-1.5 rounded-xl transition-shadow duration-150 ${
                 holidayName
-                  ? `bg-slate-300 text-slate-600${isToday ? ' ring-2 ring-amber-400 ring-offset-1 shadow-sm' : ''}`
+                  ? `bg-slate-500 text-white shadow-sm${isToday ? ' ring-2 ring-amber-400 ring-offset-1 shadow-sm' : ''}`
                   : isToday
                   ? 'bg-white text-slate-800 ring-2 ring-amber-400 ring-offset-1 shadow-sm'
                   : isWeekend
-                  ? 'bg-rose-50 text-rose-300 hover:bg-rose-100'
+                  ? 'bg-red-100 text-red-500 hover:bg-red-200'
                   : 'bg-gradient-to-b from-emerald-400 to-emerald-500 text-white shadow-sm shadow-emerald-100 hover:shadow-md'
               }`}
             >
@@ -142,8 +142,8 @@ export default function TimesheetDayStrip({ year, month, saturdayPolicy, holiday
       ) : (
       <div className="flex items-center gap-4 text-[11px] text-slate-400 px-0.5">
         <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-gradient-to-b from-emerald-400 to-emerald-500" /> Working day</span>
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-100" /> {weekOffLabel || 'Weekly off'}</span>
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-slate-300" /> Paid Holiday</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-200" /> {weekOffLabel || 'Weekly off'}</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-slate-500" /> Paid Holiday</span>
         <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-white ring-2 ring-amber-400" /> Today</span>
       </div>
       )}
