@@ -42,6 +42,13 @@ function getS3Region(): string {
   return process.env.AWS_REGION || 'ap-south-1';
 }
 
+// Optional folder inside the bucket, e.g. S3_KEY_PREFIX="dev" puts every
+// upload under dev/ so environments sharing one bucket stay separated.
+function getS3KeyPrefix(): string {
+  const prefix = (process.env.S3_KEY_PREFIX || '').trim().replace(/^\/+|\/+$/g, '');
+  return prefix ? `${prefix}/` : '';
+}
+
 export function isS3Configured(): boolean {
   return !!getS3BucketName();
 }
@@ -69,8 +76,9 @@ function getS3Client(): S3Client {
 // Unset (live) = keys exactly as before. Reads need no change: they go by
 // the stored URL, which already includes the prefix.
 function s3Key(pathname: string): string {
-  const prefix = (process.env.S3_KEY_PREFIX || '').trim().replace(/^\/+|\/+$/g, '');
-  return prefix ? `${prefix}/${pathname}` : pathname;
+  const prefix = getS3KeyPrefix();
+  // Strip leading slashes only under a prefix, so "dev/" + "/x" can't become "dev//x".
+  return prefix ? `${prefix}${pathname.replace(/^\/+/, '')}` : pathname;
 }
 
 async function uploadToS3(pathname: string, body: Buffer, contentType: string): Promise<string> {
