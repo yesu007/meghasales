@@ -9,6 +9,7 @@ import { PlusIcon, XMarkIcon, InboxIcon, PencilIcon, TrashIcon, ChevronLeftIcon,
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
+import { WEEK_OFF_TEAMS } from '@/lib/payroll/teamWeekOff';
 import { usePermissions } from '@/hooks/usePermissions';
 
 interface EmployeeRow {
@@ -85,7 +86,7 @@ function getPageNumbers(current: number, total: number): (number | 'ellipsis')[]
 
 const blankForm = {
   firstName: '', lastName: '', email: '', department: '', designation: '', role: '', managerId: '', verticalId: '', dateOfJoining: '',
-  employmentType: 'FULL_TIME', probationDurationMonths: '', probationEndDate: '',
+  employmentType: 'FULL_TIME', probationDurationMonths: '', probationEndDate: '', weekOffTeam: '', shiftId: '',
   bankAccountNumber: '', bankIfsc: '', bankAccountHolder: '', bankName: '',
 };
 
@@ -138,6 +139,18 @@ export default function PayrollEmployeesPage() {
     enabled: drawerOpen,
   });
 
+  // Active shifts for the onboarding form's Shift dropdown (needs Shift
+  // Master access — the field is hidden without it).
+  const canAssignShift = has('edit_shifts');
+  const { data: shiftOptions = [] } = useQuery({
+    queryKey: ['payroll-shifts-active'],
+    queryFn: async (): Promise<{ id: number; name: string; startTime: string; endTime: string; isActive: boolean }[]> => {
+      const res = await fetch('/api/payroll/shifts');
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: canAssignShift,
+  });
   const { data: verticalOptions = [] } = useQuery({
     queryKey: ['verticals'],
     queryFn: fetchVerticals,
@@ -158,6 +171,7 @@ export default function PayrollEmployeesPage() {
       return res.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shift-assignments-all'] }); // the Shift Master mapping created with the employee
       queryClient.invalidateQueries({ queryKey: ['payroll-employees'] });
       toast.success('Employee onboarded to payroll');
       setDrawerOpen(false);
@@ -437,6 +451,28 @@ export default function PayrollEmployeesPage() {
                           />
                         </div>
                       </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Team</label>
+                        <AddableSelect
+                          value={form.weekOffTeam}
+                          onChange={(v) => setForm((f) => ({ ...f, weekOffTeam: v }))}
+                          options={WEEK_OFF_TEAMS.map((t) => ({ value: t.value, label: t.label }))}
+                          placeholder="No team — company Saturday policy"
+                        />
+                        <p className="text-xs text-slate-400 mt-1">Team A and Team B take alternate Saturdays off. Leave empty to use the company Saturday policy.</p>
+                      </div>
+                      {canAssignShift && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Shift</label>
+                          <AddableSelect
+                            value={form.shiftId}
+                            onChange={(v) => setForm((f) => ({ ...f, shiftId: v }))}
+                            options={shiftOptions.filter((sh) => sh.isActive).map((sh) => ({ value: String(sh.id), label: `${sh.name} (${sh.startTime}–${sh.endTime})` }))}
+                            placeholder="No shift"
+                          />
+                          <p className="text-xs text-slate-400 mt-1">Also added to Shift Master → Employee Shift and Team Assignment, from the Date of Joining (today if none), with the team above.</p>
+                        </div>
+                      )}
                       {form.employmentType === 'PROBATION' && (
                         <div className="grid grid-cols-2 gap-4">
                           <div>

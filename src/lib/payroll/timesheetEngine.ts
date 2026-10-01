@@ -167,21 +167,60 @@ export async function computePaidHolidayLeaveDays(tx: Client, employeeId: number
   return computePaidHolidayLeaveDaysFromRequests(requests, periodStart, periodEnd);
 }
 
-// The same "Total Days" formula the Timesheet screen's own column computes
-// (GET /api/payroll/timesheet) — pulled out as a pure function so the
-// "Send To Payroll" zero-days business rule (see timesheet/submit/route.ts)
-// and the actual payroll proration (see runService.ts) all read off the
-// exact same number the user sees on that screen, rather than a second,
-// independently-maintained formula that could drift out of sync with it.
+// Regular Days and Total Days — the Timesheet day counts on Payroll → Time
+// & Attendance and My Space → Attendance (also the "Send To Payroll"
+// zero-days gate and payroll eligibility):
 //
-//   Total Days = Regular + Overtime + Paid Holidays - LOP
+//   Regular Days = Eligible Days − LOP + worked week-off days + worked holidays
+//   Eligible Days = the employee's applicable days in the period − Absent
+//   Total Days   = Regular Days + Overtime
 //
-// Paid Holidays = paidHolidayLeaveDays (approved Paid Holidays leave — see
-// computePaidHolidayLeaveDays) + companyHolidayDays (the holiday calendar —
-// computePaidHolidayHours / HOURS_PER_DAY), i.e. the Paid Holiday column.
-// `lopDays` (already in days — see computeAutoLopDays in leaveEngine.ts,
-// already clipped to this period) subtracts. Sick/Casual/Earned and any
-// other leave type are display-only and never touch it.
-export function computeTotalDaysFromHours(regularHours: number, overtimeHours: number, paidHolidayLeaveDays: number, lopDays: number, companyHolidayDays: number = 0): number {
-  return round2(regularHours + overtimeHours + paidHolidayLeaveDays + companyHolidayDays - lopDays);
+// Applicable days are every day in the period (within their joining/
+// leaving dates) that isn't their week off — so worked days, Sick / Casual
+// / Earned / other paid leave and Paid Holidays are all already inside it
+// and are only *displayed* in their own columns, never added or deducted
+// again. Absent days (from attendance) don't count. LOP (unpaid leave, in
+// days — see computeAutoLopDays) is the only leave that deducts. A week off
+// the employee actually worked (login AND logout, shown as Present ·
+// worked on week off) adds 1 — it isn't in the applicable days. A Paid
+// Holiday worked the same way also adds 1, on top of the holiday itself
+// (which is already an applicable day). A holiday on a week off counts
+// once. Overtime
+// (days, entered by HR) is added on top in Total Days. Never below 0. See
+// regularDays.ts for how the inputs are gathered.
+export interface RegularDaysInput {
+  applicableDays: number;
+  absentDays: number;
+  lopDays: number;
+  weekOffWorkedDays?: number; // week offs worked with login + logout
+  holidayWorkedDays?: number; // paid holidays worked with login + logout (not on a week off)
+}
+
+export function computeRegularDays({ applicableDays, absentDays, lopDays, weekOffWorkedDays = 0, holidayWorkedDays = 0 }: RegularDaysInput): number {
+  return Math.max(0, round2(applicableDays - absentDays - lopDays + weekOffWorkedDays + holidayWorkedDays));
+}
+
+export function computeTotalDays(regularDays: number, overtimeDays: number): number {
+  return round2(regularDays + overtimeDays);
+}
+
+// Regular Days after HR's manual edit (TimesheetEntry.regularDaysOverride):
+// the override when there is one, else the calculated value.
+export function effectiveRegularDays(calculated: number, override: number | null | undefined): number {
+  return override != null ? Math.max(0, round2(override)) : calculated;
+}
+
+// Paid days for the payroll run: calendar days in the employee's window
+// minus LOP (computePayableDays) minus Absent — week offs and paid
+// holidays stay paid — plus however many days HR's Regular Days edit
+// moved from the calculated value. Never below 0 or above the month.
+export function computePaidDays({ calendarPayableDays, absentDays, calculatedRegular, overrideRegular, monthDays }: {
+  calendarPayableDays: number;
+  absentDays: number;
+  calculatedRegular: number;
+  overrideRegular: number | null | undefined;
+  monthDays: number;
+}): number {
+  const adjustment = overrideRegular != null ? effectiveRegularDays(calculatedRegular, overrideRegular) - calculatedRegular : 0;
+  return Math.min(monthDays, Math.max(0, round2(calendarPayableDays - absentDays + adjustment)));
 }

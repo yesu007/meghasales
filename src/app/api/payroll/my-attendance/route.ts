@@ -6,6 +6,10 @@ import { ensureEmployeeForUser } from '@/lib/payroll/selfEmployee';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
 import { periodRange } from '@/lib/payroll/timesheetEngine';
 import { buildTimesheetRow } from '@/lib/payroll/timesheetRow';
+import { buildDailyAttendanceRows } from '@/lib/payroll/dailyAttendance';
+import { loadAttendanceDayCounts } from '@/lib/payroll/regularDays';
+import { teamLabel } from '@/lib/payroll/teamWeekOff';
+import { loadTeamResolver } from '@/lib/payroll/weekOffConfig';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +67,17 @@ export async function GET(request: NextRequest) {
       prisma.companyProfile.findFirst({ select: { weeklyOffSaturdays: true } }),
     ]);
 
+    // Daily login/logout/working hours from the Access Control device —
+    // the same rows Payroll sees on Time & Attendance → Attendance Log,
+    // scoped to this employee only.
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+    const monthEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+    const daily = await buildDailyAttendanceRows({ from: `${monthStr}-01`, to: monthEnd, employeeId: employee.id });
+
+    // The employee's week-off team (shown on the page) — as of the month's last day.
+    const teamOf = await loadTeamResolver(prisma, [employee], `${monthStr}-01`, monthEnd);
+    const currentTeam = teamOf(employee.id, monthEnd);
+
     const row = await buildTimesheetRow(prisma, {
       employee,
       periodStart: start,
@@ -70,16 +85,30 @@ export async function GET(request: NextRequest) {
       entry,
       holidays,
       loanDeduction: repayments.reduce((s, r) => s + Number(r.amount), 0),
+      dayCounts: (await loadAttendanceDayCounts(prisma, [employee], year, month)).get(employee.id)!,
     });
 
     return NextResponse.json({
       employee: { employeeCode: employee.employeeCode, name: row.name, designation: employee.designation, department: employee.department },
       period: { year, month, status: period?.status || 'OPEN', submittedAt: period?.submittedAt || null },
       weeklyOffSaturdays: profile?.weeklyOffSaturdays || 'SECOND_FOURTH',
+      weekOffTeam: currentTeam ? { value: currentTeam, label: teamLabel(currentTeam) } : null,
       // This month's Holiday Calendar entries (already loaded above for the
       // row) — the day strip greys these dates out.
       holidays: holidays.map((h) => ({ date: h.date, name: h.name })),
       row,
+      hasLoginUserId: !!employee.accessControlId,
+      // Attendance is tracked for this employee — by the device and/or
+      // manual attendance requests — so the day strip can colour real data.
+      // Any request still awaiting a decision — the page keeps refreshing
+      // while this is > 0, so an approval turns the day Present by itself.
+      pendingManualCount: await prisma.manualAttendanceRequest.count({ where: { employeeId: employee.id, status: 'PENDING' } }),
+      attendanceTracked: !!employee.accessControlId || (await prisma.manualAttendanceRequest.count({ where: { employeeId: employee.id, status: { not: 'CANCELLED' } } })) > 0,
+      daily: daily.map(({ date, loginTime, logoutTime, totalWorkingMinutes, workingHours, sessionCount, punchCount, status, leaveType, holidayName, source, manualStatus, workLocation, weekOffNote, commonWorking, deviceLoginTime }) => ({
+        date, loginTime, logoutTime, totalWorkingMinutes, workingHours, sessionCount, punchCount, status, leaveType: leaveType ?? null, holidayName: holidayName ?? null,
+        source: source ?? null, manualStatus: manualStatus ?? null, workLocation: workLocation ?? null,
+        weekOffNote: weekOffNote ?? null, commonWorking: !!commonWorking, deviceLoginTime: deviceLoginTime ?? null,
+      })),
       leaves: leaves.map((r) => ({
         id: r.id,
         startDate: r.startDate,

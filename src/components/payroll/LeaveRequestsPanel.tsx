@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { notifyAttendanceScheduleChanged } from '@/lib/payroll/attendanceScheduleSync';
 
 interface LeaveRequestRow {
   id: number;
@@ -43,7 +44,7 @@ export default function LeaveRequestsPanel({ initialStatus = 'PENDING' }: { init
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState(initialStatus);
 
-  const { data: requests = [], isLoading } = useQuery({ queryKey: ['leave-requests', statusFilter], queryFn: () => fetchRequests(statusFilter) });
+  const { data: requests = [], isLoading } = useQuery({ queryKey: ['leave-requests', statusFilter], queryFn: () => fetchRequests(statusFilter), staleTime: 0 });
 
   const decide = useMutation({
     mutationFn: async ({ id, status, decisionNote }: { id: number; status: 'APPROVED' | 'REJECTED' | 'CANCELLED'; decisionNote?: string }) => {
@@ -52,12 +53,10 @@ export default function LeaveRequestsPanel({ initialStatus = 'PENDING' }: { init
       return res.json();
     },
     onSuccess: (_, { status }) => {
-      queryClient.invalidateQueries({ queryKey: ['leave-requests'] });
-      // Approving/rejecting/cancelling here changes the balances shown on
-      // My Leave (it reads the same leave requests) — without this, that
-      // page could keep showing pre-decision numbers until its own 30s
-      // staleTime lapses or the user hard-refreshes.
-      queryClient.invalidateQueries({ queryKey: ['my-leave'] });
+      // A decision changes My Leave, the Timesheet (leave columns, LOP,
+      // Regular / Total Days) and attendance (On Leave days) — refresh them
+      // here and in every other open tab.
+      notifyAttendanceScheduleChanged(queryClient);
       toast.success(`Request ${status.toLowerCase()}`);
     },
     onError: (err: Error) => toast.error(err.message),

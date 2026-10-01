@@ -1,5 +1,6 @@
 import { Employee, Prisma, PrismaClient } from '@prisma/client';
-import { computeLeaveHours, computePaidHolidayHours, computePaidHolidayLeaveDays, computeTotalDaysFromHours, HOURS_PER_DAY } from './timesheetEngine';
+import { computeLeaveHours, computePaidHolidayHours, computeRegularDays, computeTotalDays, effectiveRegularDays } from './timesheetEngine';
+import type { AttendanceDayCounts } from './regularDays';
 import { computeAutoLopDays } from './leaveEngine';
 import { round2 } from './runEngine';
 import { resolveShiftForEmployeeOnDate } from './shiftEngine';
@@ -23,8 +24,16 @@ export interface TimesheetRow {
   earnedLeaveHours: number;
   lopDays: number;
   totalDays: number;
+  // Regular Days breakdown (see computeRegularDays): applicable days − absent − LOP; Total = Regular + overtime.
+  applicableDays: number;
+  absentDays: number;
+  weekOffWorkedDays: number; // week offs worked (login + logout), added to Regular
+  holidayWorkedDays: number; // paid holidays worked (login + logout), added to Regular
+  calculatedRegularDays: number; // before any HR edit
+  regularOverridden: boolean; // regularHours is HR's edit (TimesheetEntry.regularDaysOverride)
   loanDeduction: number;
   shiftName: string | null;
+  team: string | null; // TEAM_A | TEAM_B as of the period's last day — same convention as shiftName
 }
 
 interface TimesheetRowInput {
@@ -32,11 +41,13 @@ interface TimesheetRowInput {
   periodStart: Date;
   periodEnd: Date;
   // This employee's TimesheetEntry for the period, if one's been entered.
-  entry: { regularHours: Prisma.Decimal | number; overtimeHours: Prisma.Decimal | number } | null | undefined;
+  entry: { regularHours: Prisma.Decimal | number; overtimeHours: Prisma.Decimal | number; regularDaysOverride?: Prisma.Decimal | number | null } | null | undefined;
   // Active company holidays already filtered to the period.
   holidays: { date: Date }[];
   // Sum of this employee's LoanRepayment amounts for the period.
   loanDeduction: number;
+  // Applicable / Absent days for the period (loadAttendanceDayCounts), batched by the caller.
+  dayCounts: AttendanceDayCounts;
 }
 
 // One Timesheet row — the exact per-employee figures Payroll → Time &
@@ -46,8 +57,8 @@ interface TimesheetRowInput {
 // caller batches the period-wide lookups (entries, holidays, loan
 // repayments) so the Timesheet screen still makes one query per table for
 // every employee rather than one per employee.
-export async function buildTimesheetRow(tx: Client, { employee: emp, periodStart: start, periodEnd: end, entry, holidays, loanDeduction }: TimesheetRowInput): Promise<TimesheetRow> {
-  const regularHours = entry ? Number(entry.regularHours) : 0;
+export async function buildTimesheetRow(tx: Client, { employee: emp, periodStart: start, periodEnd: end, entry, holidays, loanDeduction, dayCounts }: TimesheetRowInput): Promise<TimesheetRow> {
+  // Overtime is the one figure HR still enters (in days); Regular is calculated below.
   const overtimeHours = entry ? Number(entry.overtimeHours) : 0;
   const { sickLeaveHours, ptoHours, earnedLeaveHours, paidHolidayLeaveHours } = await computeLeaveHours(tx, emp.id, start, end);
   // Paid Holiday combines two independent sources into one column: the
@@ -65,15 +76,15 @@ export async function buildTimesheetRow(tx: Client, { employee: emp, periodStart
   const shift = await resolveShiftForEmployeeOnDate(tx, emp.id, end);
 
   const lopDays = await computeAutoLopDays(tx, emp.id, start, end);
-  // Regular/Overtime are entered directly as days (no 8-hours=1-day
-  // conversion). Total Days = Regular + Overtime + Paid Holidays - LOP:
-  // Paid Holidays is this row's Paid Holiday column in days (approved
-  // Paid Holidays leave + company holiday calendar), LOP (already in days)
-  // subtracts, and Sick/PTO/Earned are display-only — see
-  // computeTotalDaysFromHours.
-  const paidHolidayLeaveDays = await computePaidHolidayLeaveDays(tx, emp.id, start, end);
-  const companyHolidayDays = round2(companyHolidayHours / HOURS_PER_DAY);
-  const totalDays = computeTotalDaysFromHours(regularHours, overtimeHours, paidHolidayLeaveDays, lopDays, companyHolidayDays);
+  // Regular Days = (applicable days − Absent) − LOP; Total Days = Regular +
+  // Overtime — Sick/Casual/Earned/Paid Holiday are already inside the
+  // applicable days and only shown in their own columns. See
+  // computeRegularDays / computeTotalDays.
+  // HR can edit Regular Days (Payroll → Time & Attendance); the edit wins.
+  const calculatedRegularDays = computeRegularDays({ applicableDays: dayCounts.applicableDays, absentDays: dayCounts.absentDays, lopDays, weekOffWorkedDays: dayCounts.weekOffWorkedDays, holidayWorkedDays: dayCounts.holidayWorkedDays });
+  const override = entry?.regularDaysOverride != null ? Number(entry.regularDaysOverride) : null;
+  const regularHours = effectiveRegularDays(calculatedRegularDays, override);
+  const totalDays = computeTotalDays(regularHours, overtimeHours);
 
   return {
     employeeId: emp.id,
@@ -92,7 +103,14 @@ export async function buildTimesheetRow(tx: Client, { employee: emp, periodStart
     earnedLeaveHours,
     lopDays,
     totalDays,
+    applicableDays: dayCounts.applicableDays,
+    absentDays: dayCounts.absentDays,
+    weekOffWorkedDays: dayCounts.weekOffWorkedDays,
+    holidayWorkedDays: dayCounts.holidayWorkedDays,
+    calculatedRegularDays,
+    regularOverridden: override != null,
     loanDeduction,
     shiftName: shift?.name ?? null,
+    team: dayCounts.team,
   };
 }

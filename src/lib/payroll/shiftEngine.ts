@@ -54,3 +54,33 @@ export async function isShiftAssignmentUsedInClosedPayroll(tx: Client, employeeI
   }
   return false;
 }
+
+// Creates an employee's shift (and week-off team) assignment from
+// `effectiveFrom`, closing their currently open assignment the day before —
+// the one path both Shift Master → Employee Shift and Team Assignment and
+// Employee onboarding (Shift dropdown) go through, so both produce the
+// same mapping. The open assignment's team is the employee's current
+// team, so Employee.weekOffTeam is kept in sync with it. Throws with a
+// user-facing message when the dates don't fit.
+export async function createShiftAssignment(
+  tx: Client,
+  { employeeId, shiftId, effectiveFrom, weekOffTeam, createdById }: { employeeId: number; shiftId: number; effectiveFrom: Date; weekOffTeam: string | null; createdById: number | null },
+) {
+  const openAssignment = await tx.employeeShiftAssignment.findFirst({
+    where: { employeeId, effectiveTo: null },
+    orderBy: { effectiveFrom: 'desc' },
+  });
+  if (openAssignment && effectiveFrom <= openAssignment.effectiveFrom) {
+    throw new Error(`The new assignment must start after the current one's start date (${openAssignment.effectiveFrom.toISOString().slice(0, 10)})`);
+  }
+  if (openAssignment) {
+    const dayBefore = new Date(effectiveFrom);
+    dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+    await tx.employeeShiftAssignment.update({ where: { id: openAssignment.id }, data: { effectiveTo: dayBefore } });
+  }
+  const assignment = await tx.employeeShiftAssignment.create({
+    data: { employeeId, shiftId, effectiveFrom, weekOffTeam, createdById },
+  });
+  await tx.employee.update({ where: { id: employeeId }, data: { weekOffTeam } });
+  return assignment;
+}

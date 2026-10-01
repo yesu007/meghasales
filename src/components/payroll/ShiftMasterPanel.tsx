@@ -1,6 +1,6 @@
 'use client';
 
-// Shift Master + Employee Shift Assignment — rendered by its own top-level
+// Shift Master + Employee Shift and Team Assignment — rendered by its own top-level
 // Payroll page (/dashboard/payroll/shifts), a sibling of Time & Attendance
 // in the sidebar rather than a tab inside it, and deliberately not under
 // My Space. Mirrors the Salary Structures page's list+inline-form+expand
@@ -13,6 +13,7 @@ import { PlusIcon, PencilIcon, TrashIcon, EyeIcon, ChevronDownIcon, ChevronUpIco
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import AddableSelect from '@/components/AddableSelect';
+import { teamLabel, WEEK_OFF_TEAMS } from '@/lib/payroll/teamWeekOff';
 import { usePermissions } from '@/hooks/usePermissions';
 
 interface Shift {
@@ -30,7 +31,7 @@ interface Shift {
   _count?: { assignments: number };
 }
 interface EmployeeOption { id: number; employeeCode: string; userName: string }
-// One row of the company-wide Employee Shift Assignment table — the
+// One row of the company-wide Employee Shift and Team Assignment table — the
 // employee and shift are joined server-side (GET /api/payroll/shift-
 // assignments) since this table shows every employee's current AND
 // historical mapping in one place, not one employee at a time.
@@ -40,6 +41,7 @@ interface ShiftAssignment {
   shiftId: number;
   effectiveFrom: string;
   effectiveTo: string | null;
+  weekOffTeam: string | null;
   employee: { id: number; employeeCode: string; firstName: string; lastName: string };
   shift: { id: number; name: string; startTime: string; endTime: string; attendanceRequirement: 'LOGIN_ONLY' | 'LOGIN_AND_LOGOUT' };
 }
@@ -169,34 +171,34 @@ export default function ShiftMasterPanel() {
     deleteShift.mutate(s.id);
   };
 
-  // ---- Employee Shift Assignment (company-wide table) ----
+  // ---- Employee Shift and Team Assignment (company-wide table) ----
   const { data: assignments = [] } = useQuery({ queryKey: ['shift-assignments-all'], queryFn: fetchAllShiftAssignments });
   const invalidateAssignments = () => queryClient.invalidateQueries({ queryKey: ['shift-assignments-all'] });
 
   const [showAssignForm, setShowAssignForm] = useState(false);
-  const [assignForm, setAssignForm] = useState({ employeeId: '', shiftId: '', effectiveFrom: '' });
-  const resetAssignForm = () => { setAssignForm({ employeeId: '', shiftId: '', effectiveFrom: '' }); setShowAssignForm(false); };
+  const [assignForm, setAssignForm] = useState({ employeeId: '', shiftId: '', weekOffTeam: '', effectiveFrom: '' });
+  const resetAssignForm = () => { setAssignForm({ employeeId: '', shiftId: '', weekOffTeam: '', effectiveFrom: '' }); setShowAssignForm(false); };
 
   const assignShift = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/payroll/employees/${assignForm.employeeId}/shift-assignments`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shiftId: Number(assignForm.shiftId), effectiveFrom: assignForm.effectiveFrom }),
+        body: JSON.stringify({ shiftId: Number(assignForm.shiftId), weekOffTeam: assignForm.weekOffTeam || null, effectiveFrom: assignForm.effectiveFrom }),
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to assign shift'); }
       return res.json();
     },
-    onSuccess: () => { invalidateAssignments(); toast.success('Shift assigned'); resetAssignForm(); },
+    onSuccess: () => { invalidateAssignments(); queryClient.invalidateQueries({ queryKey: ['payroll-employees'] }); toast.success('Shift and team assigned'); resetAssignForm(); },
     onError: (err: Error) => toast.error(err.message),
   });
 
   const [viewTarget, setViewTarget] = useState<ShiftAssignment | null>(null);
   const [editTarget, setEditTarget] = useState<ShiftAssignment | null>(null);
-  const [editForm, setEditForm] = useState({ shiftId: '', effectiveFrom: '' });
+  const [editForm, setEditForm] = useState({ shiftId: '', weekOffTeam: '', effectiveFrom: '' });
 
   const openEditAssignment = (a: ShiftAssignment) => {
     setEditTarget(a);
-    setEditForm({ shiftId: String(a.shiftId), effectiveFrom: a.effectiveFrom.slice(0, 10) });
+    setEditForm({ shiftId: String(a.shiftId), weekOffTeam: a.weekOffTeam || '', effectiveFrom: a.effectiveFrom.slice(0, 10) });
   };
 
   const editAssignment = useMutation({
@@ -204,7 +206,7 @@ export default function ShiftMasterPanel() {
       if (!editTarget) throw new Error('Nothing to update');
       const res = await fetch(`/api/payroll/employees/${editTarget.employeeId}/shift-assignments/${editTarget.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shiftId: Number(editForm.shiftId), effectiveFrom: editForm.effectiveFrom }),
+        body: JSON.stringify({ shiftId: Number(editForm.shiftId), weekOffTeam: editForm.weekOffTeam || null, effectiveFrom: editForm.effectiveFrom }),
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed to update shift assignment'); }
       return res.json();
@@ -292,6 +294,7 @@ export default function ShiftMasterPanel() {
                 <label className="text-xs text-slate-500">LOP Rule (minutes)</label>
                 <input type="number" min="0" placeholder="Optional" value={shiftForm.lopRuleMinutes} onChange={(e) => setShiftForm((f) => ({ ...f, lopRuleMinutes: e.target.value }))} className={inputCls} />
               </div>
+
             </div>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={resetShiftForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
@@ -365,7 +368,7 @@ export default function ShiftMasterPanel() {
         )}
       </div>
 
-      {/* Employee Shift Assignment — kept as its own card, logically separate
+      {/* Employee Shift and Team Assignment — kept as its own card, logically separate
           from Shift Master above: this is the mapping of WHICH employee
           uses a shift, not the shift's own policy. Company-wide table
           (every employee, current + historical rows) rather than a
@@ -373,16 +376,16 @@ export default function ShiftMasterPanel() {
           at a glance. */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-800">Employee Shift Assignment</h2>
+          <h2 className="text-base font-semibold text-slate-800">Employee Shift and Team Assignment</h2>
           {canEditAssignments && (
             <button onClick={() => setShowAssignForm(true)} className="flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-800">
-              <PlusIcon className="h-4 w-4" /> Assign Shift
+              <PlusIcon className="h-4 w-4" /> Assign Shift &amp; Team
             </button>
           )}
         </div>
 
         {assignments.length === 0 ? (
-          <p className="text-sm text-slate-400 py-6 text-center">No shift assignments yet — use Assign Shift to map an employee to a shift.</p>
+          <p className="text-sm text-slate-400 py-6 text-center">No shift assignments yet — use Assign Shift &amp; Team to map an employee to a shift and team.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -391,6 +394,7 @@ export default function ShiftMasterPanel() {
                   <th className="px-4 py-3 text-left font-semibold text-white">Employee</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Employee Code</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Shift</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Team</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Start Time</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">End Time</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Attendance Type</th>
@@ -406,6 +410,7 @@ export default function ShiftMasterPanel() {
                     <td className="px-4 py-3 font-medium text-slate-800">{a.employee.firstName} {a.employee.lastName}</td>
                     <td className="px-4 py-3 text-slate-600">{a.employee.employeeCode}</td>
                     <td className="px-4 py-3 text-slate-600">{a.shift.name}</td>
+                    <td className="px-4 py-3 text-slate-600">{teamLabel(a.weekOffTeam) ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{a.shift.startTime}</td>
                     <td className="px-4 py-3 text-slate-600">{a.shift.endTime}</td>
                     <td className="px-4 py-3 text-slate-600">{ATTENDANCE_TYPE_LABELS[a.shift.attendanceRequirement]}</td>
@@ -435,12 +440,12 @@ export default function ShiftMasterPanel() {
         )}
       </div>
 
-      {/* Assign Shift modal */}
+      {/* Assign Shift & Team modal */}
       {showAssignForm && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px] z-50 flex items-center justify-center p-4" onClick={resetAssignForm}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-semibold text-slate-800">Assign Shift</h3>
+              <h3 className="text-base font-semibold text-slate-800">Assign Shift &amp; Team</h3>
               <button onClick={resetAssignForm} className="p-1 text-slate-400 hover:text-slate-600"><XMarkIcon className="h-4 w-4" /></button>
             </div>
             <form
@@ -460,13 +465,17 @@ export default function ShiftMasterPanel() {
                 <AddableSelect value={assignForm.shiftId} onChange={(v) => setAssignForm((f) => ({ ...f, shiftId: v }))} options={activeShiftOptions} placeholder="Select shift" />
               </div>
               <div>
+                <label className="text-xs text-slate-500">Team (alternate Saturday week-off)</label>
+                <AddableSelect value={assignForm.weekOffTeam} onChange={(v) => setAssignForm((f) => ({ ...f, weekOffTeam: v }))} options={WEEK_OFF_TEAMS.map((t) => ({ value: t.value, label: t.label }))} placeholder="No team — company Saturday policy" />
+              </div>
+              <div>
                 <label className="text-xs text-slate-500">Effective Date</label>
                 <input type="date" value={assignForm.effectiveFrom} onChange={(e) => setAssignForm((f) => ({ ...f, effectiveFrom: e.target.value }))} className={inputCls} />
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={resetAssignForm} className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
                 <button type="submit" disabled={assignShift.isPending} className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50">
-                  {assignShift.isPending ? 'Assigning...' : 'Assign Shift'}
+                  {assignShift.isPending ? 'Assigning...' : 'Assign'}
                 </button>
               </div>
             </form>
@@ -482,7 +491,7 @@ export default function ShiftMasterPanel() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px] z-50 flex items-center justify-center p-4" onClick={() => setEditTarget(null)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-semibold text-slate-800">Edit Shift Assignment</h3>
+              <h3 className="text-base font-semibold text-slate-800">Edit Shift &amp; Team Assignment</h3>
               <button onClick={() => setEditTarget(null)} className="p-1 text-slate-400 hover:text-slate-600"><XMarkIcon className="h-4 w-4" /></button>
             </div>
             <p className="text-sm text-slate-500 mb-3">{editTarget.employee.firstName} {editTarget.employee.lastName} <span className="text-slate-400">({editTarget.employee.employeeCode})</span></p>
@@ -497,6 +506,10 @@ export default function ShiftMasterPanel() {
               <div>
                 <label className="text-xs text-slate-500">Shift</label>
                 <AddableSelect value={editForm.shiftId} onChange={(v) => setEditForm((f) => ({ ...f, shiftId: v }))} options={activeShiftOptions} placeholder="Select shift" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">Team (alternate Saturday week-off)</label>
+                <AddableSelect value={editForm.weekOffTeam} onChange={(v) => setEditForm((f) => ({ ...f, weekOffTeam: v }))} options={WEEK_OFF_TEAMS.map((t) => ({ value: t.value, label: t.label }))} placeholder="No team — company Saturday policy" />
               </div>
               <div>
                 <label className="text-xs text-slate-500">Effective Date</label>
@@ -526,6 +539,7 @@ export default function ShiftMasterPanel() {
               <div><p className="text-xs text-slate-400">Employee</p><p className="text-slate-800">{viewTarget.employee.firstName} {viewTarget.employee.lastName}</p></div>
               <div><p className="text-xs text-slate-400">Employee Code</p><p className="text-slate-800">{viewTarget.employee.employeeCode}</p></div>
               <div><p className="text-xs text-slate-400">Shift</p><p className="text-slate-800">{viewTarget.shift.name}</p></div>
+              <div><p className="text-xs text-slate-400">Team</p><p className="text-slate-800">{teamLabel(viewTarget.weekOffTeam) ?? '—'}</p></div>
               <div><p className="text-xs text-slate-400">Attendance Type</p><p className="text-slate-800">{ATTENDANCE_TYPE_LABELS[viewTarget.shift.attendanceRequirement]}</p></div>
               <div><p className="text-xs text-slate-400">Start Time</p><p className="text-slate-800">{viewTarget.shift.startTime}</p></div>
               <div><p className="text-xs text-slate-400">End Time</p><p className="text-slate-800">{viewTarget.shift.endTime}</p></div>

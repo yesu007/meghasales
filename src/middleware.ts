@@ -16,6 +16,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Vercel Cron calls carry no session — the attendance SFTP cron route
+  // authenticates itself with the CRON_SECRET bearer token instead.
+  if (pathname === '/api/payroll/attendance/imports/cron') {
+    return NextResponse.next();
+  }
+
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
   if (token) {
     return NextResponse.next();

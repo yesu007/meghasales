@@ -3,8 +3,9 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { ensureEmployeeForUser } from '@/lib/payroll/selfEmployee';
+import { computeEarnedLeaveDays } from '@/lib/payroll/regularDays';
 import { isPayrollModuleEnabled } from '@/lib/payroll/featureFlag';
-import { findOverlappingDepartmentColleagues, ANNUAL_LEAVE_EXCLUDED_CODES, ANNUAL_LEAVE_CONFIG_CODE, countsTowardAnnualLeave, getAnnualLeaveConfig, computeAccruedPoolDays } from '@/lib/payroll/leaveEngine';
+import { findOverlappingDepartmentColleagues, ANNUAL_LEAVE_EXCLUDED_CODES, ANNUAL_LEAVE_CONFIG_CODE, countsTowardAnnualLeave, getAnnualLeaveConfig, computeAccruedPoolDays, allocateLeaveByDate } from '@/lib/payroll/leaveEngine';
 import { round2 } from '@/lib/payroll/runEngine';
 import { isPushConfigured, sendPushToUser } from '@/lib/push';
 
@@ -62,7 +63,7 @@ export async function GET() {
     const poolTypes = applicableLeaveTypes.filter((lt) => countsTowardAnnualLeave(lt.code));
     const otherTypes = applicableLeaveTypes.filter((lt) => !countsTowardAnnualLeave(lt.code));
 
-    const balances: Array<{ leaveTypeId: number; name: string; code: string; isPaid: boolean; quota: number | null; usedDays: number; remaining: number | null; accruedDays?: number }> = [];
+    const balances: Array<{ leaveTypeId: number; name: string; code: string; isPaid: boolean; quota: number | null; usedDays: number; remaining: number | null; accruedDays?: number; earnedDays?: number }> = [];
 
     const poolUsedDaysByType = new Map<number, number>();
     for (const lt of poolTypes) {
@@ -101,6 +102,13 @@ export async function GET() {
       const usedDays = requests
         .filter((r) => r.leaveTypeId === lt.id && r.status === 'APPROVED' && new Date(r.startDate).getFullYear() === currentYear)
         .reduce((s, r) => s + Number(r.days), 0);
+      // Earned Leave is earned by working a week off / paid holiday (1 day
+      // each, login + logout) — its balance is what's been earned this year.
+      if (lt.code === 'EARNED') {
+        const earnedDays = await computeEarnedLeaveDays(employee.id, currentYear);
+        balances.push({ leaveTypeId: lt.id, name: lt.name, code: lt.code, isPaid: lt.isPaid, quota: earnedDays, usedDays, remaining: Math.max(0, round2(earnedDays - usedDays)), earnedDays });
+        continue;
+      }
       const quota = lt.annualQuota != null ? Number(lt.annualQuota) : null;
       balances.push({ leaveTypeId: lt.id, name: lt.name, code: lt.code, isPaid: lt.isPaid, quota, usedDays, remaining: quota != null ? quota - usedDays : null });
     }
@@ -150,33 +158,48 @@ export async function POST(request: NextRequest) {
     });
     if (overlapping) return NextResponse.json({ message: 'You already have a pending or approved request overlapping these dates' }, { status: 409 });
 
-    // Every leave type except LOP/Earned/Paid Holidays (see
-    // countsTowardAnnualLeave in leaveEngine.ts) draws from ONE shared,
-    // monthly-accruing balance instead of each carrying its own annual
-    // quota — checked here ahead of (and instead of) that type's own
-    // annualQuota column. This is exclusion-based: a new paid leave type an
-    // admin adds later automatically joins this shared pool unless its code
-    // is added to ANNUAL_LEAVE_EXCLUDED_CODES. The excluded types keep the
-    // original per-type check in the else-if below, untouched. The pool's
-    // entitlement itself comes from Time-off Policy (getAnnualLeaveConfig)
-    // — if it hasn't been configured yet, no cap applies at all here (falls
-    // straight through to the plain create at the bottom), rather than
-    // enforcing a made-up default.
+    // Paid balance — either the shared, monthly-accruing Annual Leave pool
+    // (every type except LOP/Earned/Paid Holidays, see
+    // countsTowardAnnualLeave; entitlement from Time-off Policy — none
+    // configured = no cap) or the type's own annualQuota (Earned etc.).
+    // Checked MONTH-WISE by actual date (allocateLeaveByDate): each date
+    // uses the balance available as of its own month — that month's
+    // accrual counts, a later month's never covers an earlier date — and
+    // only what can't be covered becomes Loss of Pay, on those exact dates.
     const annualLeaveConfig = countsTowardAnnualLeave(leaveType.code) ? await getAnnualLeaveConfig(prisma) : null;
-    if (annualLeaveConfig) {
-      const currentYear = start.getFullYear();
-      const poolTypeIds = (await prisma.leaveType.findMany({ where: { code: { notIn: ANNUAL_LEAVE_EXCLUDED_CODES } }, select: { id: true } })).map((t) => t.id);
-      const used = await prisma.leaveRequest.aggregate({
-        where: { employeeId: employee.id, leaveTypeId: { in: poolTypeIds }, status: 'APPROVED', startDate: { gte: new Date(`${currentYear}-01-01`) } },
-        _sum: { days: true },
-      });
-      const usedDays = Number(used._sum.days || 0);
-      const accruedDays = computeAccruedPoolDays(annualLeaveConfig.annualDays, currentYear);
-      const requestedDays = Number(days);
+    // Earned Leave: the days earned by working week offs / paid holidays in
+    // each year the request touches (computeEarnedLeaveDays), not a fixed quota.
+    const isEarned = leaveType.code === 'EARNED';
+    const earnedByYear = new Map<number, number>();
+    if (isEarned) for (let y = start.getUTCFullYear(); y <= end.getUTCFullYear(); y++) earnedByYear.set(y, await computeEarnedLeaveDays(employee.id, y));
+    const quota = !annualLeaveConfig && !isEarned && leaveType.annualQuota != null ? Number(leaveType.annualQuota) : null;
+    if (annualLeaveConfig || quota != null || isEarned) {
+      const toDay = (d: Date) => d.toISOString().slice(0, 10);
+      const poolTypeIds = annualLeaveConfig
+        ? (await prisma.leaveType.findMany({ where: { code: { notIn: ANNUAL_LEAVE_EXCLUDED_CODES } }, select: { id: true } })).map((t) => t.id)
+        : [leaveType.id];
+      // Days already used (approved) per calendar year the request touches.
+      const usedByYear = new Map<number, number>();
+      for (let y = start.getUTCFullYear(); y <= end.getUTCFullYear(); y++) {
+        const used = await prisma.leaveRequest.aggregate({
+          where: { employeeId: employee.id, leaveTypeId: { in: poolTypeIds }, status: 'APPROVED', startDate: { gte: new Date(`${y}-01-01`), lt: new Date(`${y + 1}-01-01`) } },
+          _sum: { days: true },
+        });
+        usedByYear.set(y, Number(used._sum.days || 0));
+      }
+      const availableAsOf = (day: string) => {
+        const year = Number(day.slice(0, 4));
+        const month = Number(day.slice(5, 7));
+        const entitlement = annualLeaveConfig
+          ? computeAccruedPoolDays(annualLeaveConfig.annualDays, year, new Date(year, month - 1, 15)) // accrued by that month
+          : isEarned ? earnedByYear.get(year) || 0 : quota!;
+        return entitlement - (usedByYear.get(year) || 0);
+      };
+      const allocation = allocateLeaveByDate({ startDate: toDay(start), endDate: toDay(end), days: Number(days), availableAsOf });
 
-      if (usedDays + requestedDays > accruedDays) {
-        const availableDays = Math.max(0, round2(accruedDays - usedDays));
-        const excessDays = round2(requestedDays - availableDays);
+      if (allocation.lopDays > 0) {
+        const availableDays = allocation.paidDays;
+        const excessDays = allocation.lopDays;
 
         // First attempt (no acknowledgement yet) — the My Leave form's own
         // confirmation modal uses these fields to ask "...the excess leave
@@ -190,98 +213,106 @@ export async function POST(request: NextRequest) {
               leaveTypeName: leaveType.name,
               availableDays,
               excessDays,
+              byMonth: allocation.byMonth,
             },
             { status: 400 },
           );
         }
 
-        // Acknowledged — split into up to two requests: the common pool's
-        // remaining days under the originally-picked leave type, and the
-        // rest logged against Loss of Pay (LOP), same date range on both.
-        // No re-check of the overlap/balance rules below this branch since
-        // this whole block is itself the "exceeds balance" path they guard.
+        // Acknowledged — one request per month and kind, each on its real
+        // dates: the selected leave type for the dates the balance covers,
+        // Loss of Pay only for the dates it doesn't. No re-check of the
+        // overlap/balance rules below this branch since this whole block is
+        // itself the "exceeds balance" path they guard.
         const lopType = await prisma.leaveType.findFirst({ where: { code: 'LOP', isActive: true } });
         if (!lopType) return NextResponse.json({ message: 'Loss of Pay leave type is not configured — contact HR/Admin' }, { status: 400 });
 
         const created = await prisma.$transaction(async (tx) => {
           const rows = [];
-          if (availableDays > 0) {
-            rows.push(await tx.leaveRequest.create({ data: { employeeId: employee.id, leaveTypeId: leaveType.id, startDate: start, endDate: end, days: availableDays, reason: reason || null } }));
+          for (const seg of allocation.segments) {
+            rows.push(await tx.leaveRequest.create({
+              data: {
+                employeeId: employee.id,
+                leaveTypeId: seg.kind === 'PAID' ? leaveType.id : lopType.id,
+                startDate: new Date(`${seg.startDate}T00:00:00.000Z`),
+                endDate: new Date(`${seg.endDate}T00:00:00.000Z`),
+                days: seg.days,
+                reason: reason || null,
+              },
+            }));
           }
-          rows.push(await tx.leaveRequest.create({ data: { employeeId: employee.id, leaveTypeId: lopType.id, startDate: start, endDate: end, days: excessDays, reason: reason || null } }));
           return rows;
         });
 
+        await notifyLeaveApprovers(employee, created[0].id, leaveType.name, startDate, endDate, Number(days), excessDays);
         const departmentOverlapWarning = await notifyDepartmentOverlapIfAny(employee, created[0].id, start, end);
 
-        return NextResponse.json({ split: true, requests: created, availableDays, excessDays, departmentOverlapWarning }, { status: 201 });
+        return NextResponse.json({ split: true, requests: created, availableDays, excessDays, byMonth: allocation.byMonth, departmentOverlapWarning }, { status: 201 });
       }
-      // Within the available common-pool balance — falls through to the
-      // plain create below, same as any other non-exceeding request.
-    } else if (leaveType.annualQuota != null) {
-      const currentYear = start.getFullYear();
-      const used = await prisma.leaveRequest.aggregate({
-        where: { employeeId: employee.id, leaveTypeId: leaveType.id, status: 'APPROVED', startDate: { gte: new Date(`${currentYear}-01-01`) } },
-        _sum: { days: true },
-      });
-      const usedDays = Number(used._sum.days || 0);
-      const quota = Number(leaveType.annualQuota);
-      const requestedDays = Number(days);
-
-      if (usedDays + requestedDays > quota) {
-        const availableDays = Math.max(0, round2(quota - usedDays));
-        const excessDays = round2(requestedDays - availableDays);
-
-        // First attempt (no acknowledgement yet) — same "would exceed" shape
-        // as before, plus the extra fields the My Leave form's own
-        // confirmation modal needs to ask "...the additional N day(s) will
-        // be treated as Loss of Pay. Continue?" instead of just blocking.
-        if (!body.acknowledgeLossOfPay) {
-          return NextResponse.json(
-            {
-              message: 'Your leave request exceeds your available paid leave balance. The excess leave will be treated as Loss of Pay.',
-              quotaExceeded: true,
-              leaveTypeName: leaveType.name,
-              availableDays,
-              excessDays,
-            },
-            { status: 400 },
-          );
-        }
-
-        // Acknowledged — split into up to two requests: the quota's own
-        // remaining days under the originally-picked leave type, and the
-        // rest logged against Loss of Pay (LOP), same date range on both.
-        // No re-check of the overlap/quota rules below this branch since
-        // this whole block is itself the "over quota" path they guard.
-        const lopType = await prisma.leaveType.findFirst({ where: { code: 'LOP', isActive: true } });
-        if (!lopType) return NextResponse.json({ message: 'Loss of Pay leave type is not configured — contact HR/Admin' }, { status: 400 });
-
-        const created = await prisma.$transaction(async (tx) => {
-          const rows = [];
-          if (availableDays > 0) {
-            rows.push(await tx.leaveRequest.create({ data: { employeeId: employee.id, leaveTypeId: leaveType.id, startDate: start, endDate: end, days: availableDays, reason: reason || null } }));
-          }
-          rows.push(await tx.leaveRequest.create({ data: { employeeId: employee.id, leaveTypeId: lopType.id, startDate: start, endDate: end, days: excessDays, reason: reason || null } }));
-          return rows;
-        });
-
-        const departmentOverlapWarning = await notifyDepartmentOverlapIfAny(employee, created[0].id, start, end);
-
-        return NextResponse.json({ split: true, requests: created, availableDays, excessDays, departmentOverlapWarning }, { status: 201 });
-      }
+      // Within the balance for every date — falls through to the plain
+      // single-request create below, same as before.
     }
 
     const leaveRequest = await prisma.leaveRequest.create({
       data: { employeeId: employee.id, leaveTypeId: leaveType.id, startDate: start, endDate: end, days: Number(days), reason: reason || null },
     });
 
+    await notifyLeaveApprovers(employee, leaveRequest.id, leaveType.name, startDate, endDate, Number(days), 0);
     const departmentOverlapWarning = await notifyDepartmentOverlapIfAny(employee, leaveRequest.id, start, end);
 
     return NextResponse.json({ ...leaveRequest, departmentOverlapWarning }, { status: 201 });
   } catch (error: any) {
     console.error('POST /api/payroll/leave-requests/mine error:', error);
     return NextResponse.json({ message: error.message || 'Failed to apply for leave' }, { status: 400 });
+  }
+}
+
+const LEAVE_APPROVAL_LINK = '/dashboard/payroll/timesheet?tab=requests';
+
+// Tells every Admin / approve_leave holder a leave was applied for, so it
+// doesn't sit unnoticed in the Time-off request queue. Best-effort, like
+// the overlap notice below — never fails the (already committed) request.
+async function notifyLeaveApprovers(
+  employee: { userId: number | null; firstName: string; lastName: string },
+  leaveRequestId: number,
+  leaveTypeName: string,
+  startDate: string,
+  endDate: string,
+  days: number,
+  lopDays: number
+): Promise<void> {
+  try {
+    const approvers = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { roles: { some: { role: { name: 'ADMIN' } } } },
+          { roles: { some: { role: { permissions: { some: { permission: { name: 'approve_leave' } } } } } } },
+        ],
+      },
+      select: { id: true },
+    });
+    const ids = approvers.map((a) => a.id).filter((id) => id !== employee.userId);
+    if (!ids.length) return;
+    const from = String(startDate).slice(0, 10);
+    const to = String(endDate).slice(0, 10);
+    const dates = from === to ? `on ${from}` : `from ${from} to ${to}`;
+    const title = 'Leave request to approve';
+    const message = `${[employee.firstName, employee.lastName].map((n) => (n || '').trim()).filter(Boolean).join(' ')} applied for ${leaveTypeName} ${dates} (${days} day${days === 1 ? '' : 's'}${lopDays > 0 ? `, ${lopDays} as Loss of Pay` : ''}).`;
+    await prisma.notification.createMany({
+      data: ids.map((userId) => ({ userId, title, message, type: 'LEAVE_APPLIED', channel: 'IN_APP', entityType: 'LEAVE_REQUEST', entityId: leaveRequestId })),
+    });
+    if (isPushConfigured()) {
+      for (const userId of ids) {
+        try {
+          await sendPushToUser(userId, { title, body: message, url: LEAVE_APPROVAL_LINK });
+        } catch (error) {
+          console.error(`Push send failed for user ${userId}:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('notifyLeaveApprovers failed:', error);
   }
 }
 
