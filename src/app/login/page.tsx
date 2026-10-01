@@ -2,13 +2,11 @@
 
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { TEKFILO_LOGO } from '@/lib/logo';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -31,7 +29,11 @@ export default function LoginPage() {
     if (result?.error) {
       setError('Invalid email or password');
     } else {
-      router.push('/dashboard');
+      // Full page load, not router.push: an earlier unauthenticated visit
+      // leaves the middleware's /dashboard -> /login redirect in the client
+      // router cache (~30s), so push() would bounce back here even though
+      // sign-in succeeded.
+      window.location.assign('/dashboard');
     }
   };
 
