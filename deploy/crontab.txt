@@ -1,0 +1,22 @@
+# MeghaSales scheduled jobs for the EC2/Docker deployment (host crontab).
+# Vercel runs these from vercel.json; on EC2 nothing does unless this is
+# installed. Times are UTC (the server's timezone) and match vercel.json,
+# except the attendance import, which stays hourly here (Vercel's Hobby plan
+# only allows daily crons, so it was removed from vercel.json).
+#
+# Install (as ubuntu, from the app folder — adjust the path if different):
+#   chmod +x deploy/run-cron.sh
+#   crontab deploy/crontab.txt
+#   crontab -l
+# Logs: /var/log/meghasales-cron.log (create once: sudo touch /var/log/meghasales-cron.log && sudo chown ubuntu /var/log/meghasales-cron.log)
+
+APP=/home/ubuntu/meghasales
+LOG=/var/log/meghasales-cron.log
+
+0 6 * * *  $APP/deploy/run-cron.sh /api/accounting/reminders/generate        >> $LOG 2>&1
+0 7 * * *  $APP/deploy/run-cron.sh /api/admin-ticket/reminders/generate      >> $LOG 2>&1
+0 8 * * *  $APP/deploy/run-cron.sh /api/reminders/deadlines/generate         >> $LOG 2>&1
+0 9 * * *  $APP/deploy/run-cron.sh /api/reminders/action-items/generate      >> $LOG 2>&1
+0 6 * * *  $APP/deploy/run-cron.sh /api/quotations/milestones/generate       >> $LOG 2>&1
+0 10 * * * $APP/deploy/run-cron.sh /api/payroll/probation/reminders/generate >> $LOG 2>&1
+0 * * * *  $APP/deploy/run-cron.sh /api/payroll/attendance/imports/cron      >> $LOG 2>&1

@@ -107,10 +107,17 @@ Certbot installs its own renewal timer — nothing further to do there.
 
 ## 7. Install the reminder crons
 
+`deploy/run-cron.sh` reads `CRON_SECRET` from `.env.production` at run time
+and calls the app on `127.0.0.1:3000`, so nothing secret goes in the
+crontab. Check the `APP=` path at the top of `deploy/crontab.txt` matches
+where you cloned the repo, then:
+
 ```bash
-nano deploy/crontab.txt   # fill in your real domain + CRON_SECRET
+chmod +x deploy/run-cron.sh
+sudo touch /var/log/meghasales-cron.log && sudo chown $USER /var/log/meghasales-cron.log
 crontab deploy/crontab.txt
 crontab -l   # verify
+deploy/run-cron.sh /api/reminders/deadlines/generate   # one manual run should print "-> 200"
 ```
 
 ## 8. Verify
